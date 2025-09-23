@@ -48,6 +48,7 @@ members = [
     "protocol/flows",
     "components/addressmanager",
     "components/connectionmanager",
+    "sensor",
     "components/consensusmanager",
     "database",
     "crypto/txscript",

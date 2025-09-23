@@ -1,0 +1,59 @@
+[package]
+name = "kaspa-sensor"
+version = "0.1.0"
+edition = "2021"
+authors = ["Kaspa Network Sensor Team"]
+description = "Lightweight P2P network sensor for Kaspa network topology mapping"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+# Core kaspa dependencies
+kaspa-core = { path = "../core" }
+kaspa-hashes = { path = "../crypto/hashes" }
+kaspa-utils = { path = "../utils" }
+kaspa-utils-tower = { path = "../utils/tower" }
+kaspa-addressmanager = { path = "../components/addressmanager" }
+kaspa-p2p-lib = { path = "../protocol/p2p" }
+kaspa-protocol-flows = { path = "../protocol/flows" }
+kaspa-consensus-core = { path = "../consensus/core" }
+kaspa-database = { path = "../database" }
+
+# Async runtime
+tokio = { version = "1.40", features = ["rt-multi-thread", "macros", "signal", "time", "sync", "net"] }
+async-trait = "0.1"
+futures = "0.3"
+
+# Data structures
+parking_lot = "0.12"
+itertools = "0.13"
+uuid = { version = "1.8", features = ["v4"] }
+rand = "0.8"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+# Network utilities
+thiserror = "1.0"
+
+# Data export (Firebase/HTTP)
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+
+# Metrics
+prometheus = { version = "0.13", features = ["process"] }
+
+# CLI
+clap = { version = "4.5", features = ["derive", "env"] }
+
+[features]
+default = []
+devnet = []
+testnet = []
+
+[[bin]]
+name = "kaspa-sensor"
+path = "src/main.rs"
