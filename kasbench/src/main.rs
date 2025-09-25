@@ -7,6 +7,8 @@ use kaspa_core::{info, kaspad_env::version};
 use std::sync::Arc;
 use tokio::signal;
 
+type AnyError = Box<dyn std::error::Error + Send + Sync + 'static>;
+
 #[derive(Parser)]
 #[command(name = "kasbench")]
 #[command(about = "High-performance Kaspa network benchmarking platform", long_about = None)]
@@ -54,6 +56,22 @@ struct Cli {
     /// Seconds to hold an input reservation before recycling it
     #[arg(long, default_value_t = 30)]
     pending_ttl: u64,
+
+    /// Max parallel split transactions during UTXO preparation
+    #[arg(long, default_value_t = 64)]
+    split_parallel: usize,
+
+    /// Allow orphan for split submissions (spend unconfirmed change)
+    #[arg(long, default_value_t = false)]
+    split_allow_orphan: bool,
+
+    /// Chain-only splitting (disable wave planning and only run chains)
+    #[arg(long, default_value_t = false)]
+    chain_only: bool,
+
+    /// Max outputs per chain transaction (excluding change)
+    #[arg(long, default_value_t = 2)]
+    chain_outputs_max: usize,
 }
 
 #[derive(Subcommand)]
@@ -84,7 +102,7 @@ enum Commands {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), AnyError> {
     // Initialize logger
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).format_timestamp_millis().init();
 
@@ -123,7 +141,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn run_benchmark(config: Arc<config::Config>, duration: u64) -> Result<(), Box<dyn std::error::Error>> {
+async fn run_benchmark(config: Arc<config::Config>, duration: u64) -> Result<(), AnyError> {
     let engine = engine::BenchmarkEngine::new(config.clone()).await?;
 
     // Start metrics server if dashboard is enabled
@@ -159,19 +177,19 @@ async fn run_benchmark(config: Arc<config::Config>, duration: u64) -> Result<(),
     Ok(())
 }
 
-async fn prepare_utxos(config: Arc<config::Config>, utxo_count: usize) -> Result<(), Box<dyn std::error::Error>> {
+async fn prepare_utxos(config: Arc<config::Config>, utxo_count: usize) -> Result<(), AnyError> {
     let engine = engine::BenchmarkEngine::new(config).await?;
     engine.prepare_utxos(utxo_count, None).await?;
     Ok(())
 }
 
-async fn sweep_utxos(config: Arc<config::Config>) -> Result<(), Box<dyn std::error::Error>> {
+async fn sweep_utxos(config: Arc<config::Config>) -> Result<(), AnyError> {
     let engine = engine::BenchmarkEngine::new(config).await?;
     engine.sweep_all_utxos().await?;
     Ok(())
 }
 
-async fn send_funds(config: Arc<config::Config>, address: String, amount: f64) -> Result<(), Box<dyn std::error::Error>> {
+async fn send_funds(config: Arc<config::Config>, address: String, amount: f64) -> Result<(), AnyError> {
     let engine = engine::BenchmarkEngine::new(config).await?;
     engine.send_funds(address, amount).await?;
     Ok(())

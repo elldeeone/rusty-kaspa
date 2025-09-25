@@ -3,9 +3,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_channel::{SendError, Sender};
-use kaspa_addresses::Address;
+use kaspa_addresses::{Address, Prefix};
 use kaspa_consensus_core::{
+    config::params::{Params, DEVNET_PARAMS, MAINNET_PARAMS, SIMNET_PARAMS, TESTNET_PARAMS},
     constants::{SOMPI_PER_KASPA, STORAGE_MASS_PARAMETER, TX_VERSION},
+    mass::calc_storage_mass,
     sign::sign,
     subnets::SUBNETWORK_ID_NATIVE,
     tx::{MutableTransaction, Transaction, TransactionInput, TransactionOutpoint, TransactionOutput, UtxoEntry},
@@ -22,6 +24,9 @@ use tokio::time::{interval, Instant, MissedTickBehavior};
 
 use crate::config::Config;
 use crate::metrics::MetricsCollector;
+
+type AnyError = Box<dyn std::error::Error + Send + Sync + 'static>;
+// MAX_STANDARD_STORAGE_MASS handled implicitly by conservative output caps
 
 pub struct BenchmarkEngine {
     config: Arc<Config>,
@@ -46,7 +51,20 @@ struct UtxoPlan {
 }
 
 impl BenchmarkEngine {
-    pub async fn new(config: Arc<Config>) -> Result<Self, Box<dyn std::error::Error>> {
+    fn consensus_params(&self) -> &'static Params {
+        match self.config.address.prefix {
+            Prefix::Mainnet => &MAINNET_PARAMS,
+            Prefix::Testnet => &TESTNET_PARAMS,
+            Prefix::Devnet => &DEVNET_PARAMS,
+            Prefix::Simnet => &SIMNET_PARAMS,
+        }
+    }
+
+    fn calc_storage_mass_for(&self, entries: &[UtxoEntry], outputs: &[TransactionOutput]) -> Option<u64> {
+        let params = self.consensus_params();
+        calc_storage_mass(false, entries.iter().map(|e| e.into()), outputs.iter().map(|o| o.into()), params.storage_mass_parameter)
+    }
+    pub async fn new(config: Arc<Config>) -> Result<Self, AnyError> {
         let subscription_context = SubscriptionContext::new();
 
         // Create main RPC client
@@ -106,13 +124,13 @@ impl BenchmarkEngine {
         output_value: u64,
         min_outputs_per_tx: usize,
         phase_label: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), AnyError> {
         if output_value == 0 || min_outputs_per_tx == 0 {
             return Ok(());
         }
 
         const MAX_PARALLEL_UTXOS: usize = 128;
-        const MAX_PARALLEL_TXS: usize = 64;
+        let max_parallel_txs = self.config.split_parallel.max(1);
 
         let max_outputs_per_tx = self.max_outputs_for_value(output_value);
         let effective_min_outputs = if max_outputs_per_tx < min_outputs_per_tx { 1 } else { min_outputs_per_tx };
@@ -140,7 +158,7 @@ impl BenchmarkEngine {
             {
                 let mut pending = self.pending_txs.lock();
                 for (idx, (outpoint, entry)) in current_utxos.iter().enumerate() {
-                    if idx >= MAX_PARALLEL_UTXOS || selections.len() >= MAX_PARALLEL_TXS || total_outputs_planned >= remaining_needed {
+                    if idx >= MAX_PARALLEL_UTXOS || selections.len() >= max_parallel_txs || total_outputs_planned >= remaining_needed {
                         break;
                     }
 
@@ -175,16 +193,13 @@ impl BenchmarkEngine {
             if selections.is_empty() || total_outputs_planned < remaining_needed {
                 let mut pending = self.pending_txs.lock();
                 // Collect small candidates not yet pending
-                let mut small: Vec<(TransactionOutpoint, UtxoEntry)> = current_utxos
-                    .iter()
-                    .filter(|(op, _)| !pending.contains_key(op))
-                    .map(|(op, e)| (*op, e.clone()))
-                    .collect();
+                let mut small: Vec<(TransactionOutpoint, UtxoEntry)> =
+                    current_utxos.iter().filter(|(op, _)| !pending.contains_key(op)).map(|(op, e)| (*op, e.clone())).collect();
                 // Sort ascending by amount to group small ones
                 small.sort_by(|a, b| a.1.amount.cmp(&b.1.amount));
 
                 let mut idx = 0usize;
-                while idx < small.len() && selections.len() < MAX_PARALLEL_TXS && total_outputs_planned < remaining_needed {
+                while idx < small.len() && selections.len() < max_parallel_txs && total_outputs_planned < remaining_needed {
                     // Form a group of 2-4 inputs
                     let mut group: Vec<(TransactionOutpoint, UtxoEntry)> = Vec::new();
                     let mut sum = 0u64;
@@ -203,8 +218,9 @@ impl BenchmarkEngine {
                         idx += 1;
                         if group.len() >= 2 {
                             // Try to see if we can produce at least effective_min_outputs
-                            let mut outputs_to_create =
-                                max_outputs_per_tx.min(remaining_needed.saturating_sub(total_outputs_planned)).max(effective_min_outputs);
+                            let mut outputs_to_create = max_outputs_per_tx
+                                .min(remaining_needed.saturating_sub(total_outputs_planned))
+                                .max(effective_min_outputs);
                             while outputs_to_create >= effective_min_outputs {
                                 let fee = self.calculate_fee(group.len(), outputs_to_create);
                                 let required = output_value * outputs_to_create as u64 + fee;
@@ -248,10 +264,30 @@ impl BenchmarkEngine {
                     }
                     continue;
                 } else {
-                    warn!(
-                        "[{phase_label}] Giving up after waiting for confirmations without new eligible UTXOs"
-                    );
-                    break;
+                    warn!("[{phase_label}] Giving up after waiting for confirmations without new eligible UTXOs");
+                    // Fallback: attempt sequential chain split from the largest UTXO to push progress
+                    let remaining_needed = desired_count.saturating_sub(current_utxos.len());
+                    let chain_count = self.config.split_parallel.max(1).min(8);
+                    if !current_utxos.is_empty() {
+                        info!("[{phase_label}] Fallback: launching up to {} sequential chains from largest UTXOs", chain_count);
+                        let seeds: Vec<(TransactionOutpoint, UtxoEntry)> = current_utxos.iter().take(chain_count).cloned().collect();
+                        let per_chain = (remaining_needed / seeds.len().max(1)).max(1);
+                        let mut tasks = Vec::with_capacity(seeds.len());
+                        for (i, seed) in seeds.into_iter().enumerate() {
+                            let share = if i == chain_count - 1 { remaining_needed.saturating_sub(per_chain * i) } else { per_chain };
+                            tasks.push(self.run_chain_from_seed(seed, share, output_value));
+                        }
+                        let results = futures::future::join_all(tasks).await;
+                        let produced: usize = results.into_iter().filter_map(Result::ok).sum();
+                        info!("[{phase_label}] Chain batch submitted ~{} outputs; refreshing state", produced);
+                        *current_utxos = self.fetch_spendable_utxos_with_min_conf(1).await?;
+                        self.metrics.update_utxo_count(current_utxos.len());
+                        no_selection_backoffs = 0;
+                        last_count_for_backoff = current_utxos.len();
+                        continue;
+                    } else {
+                        break;
+                    }
                 }
             }
 
@@ -265,7 +301,12 @@ impl BenchmarkEngine {
                     // Build split tx
                     let inputs: Vec<TransactionInput> = inputs_group
                         .iter()
-                        .map(|(outpoint, _)| TransactionInput { previous_outpoint: *outpoint, signature_script: vec![], sequence: 0, sig_op_count: 1 })
+                        .map(|(outpoint, _)| TransactionInput {
+                            previous_outpoint: *outpoint,
+                            signature_script: vec![],
+                            sequence: 0,
+                            sig_op_count: 1,
+                        })
                         .collect();
 
                     let mut outputs = Vec::with_capacity(outputs_to_create);
@@ -381,7 +422,207 @@ impl BenchmarkEngine {
         Ok(())
     }
 
-    pub async fn prepare_utxos(&self, target_count: usize, utxo_size_hint: Option<u64>) -> Result<(), Box<dyn std::error::Error>> {
+    // Sequential chain splitter: spends one seed UTXO repeatedly, creating N outputs per tx and chaining change.
+    // Uses allow_orphan=true to permit spending unconfirmed change, avoiding reliance on global refresh.
+    async fn run_chain_from_seed(
+        &self,
+        mut seed: (TransactionOutpoint, UtxoEntry),
+        remaining_needed: usize,
+        utxo_value: u64,
+    ) -> Result<usize, AnyError> {
+        if remaining_needed == 0 || utxo_value == 0 {
+            return Ok(0);
+        }
+
+        // Dynamic outputs cap based on storage mass budget to avoid non-standard rejects
+        let params = self.consensus_params();
+        let storage_param = params.storage_mass_parameter;
+        // conservative headroom below 100k
+        const MASS_BUDGET: u64 = 90_000;
+        let per_out_storage_mass = if utxo_value > 0 { storage_param / utxo_value } else { u64::MAX };
+        let mass_allowed = if per_out_storage_mass == 0 { 10 } else { (MASS_BUDGET / per_out_storage_mass).max(1).min(10) } as usize;
+        let max_per_tx = self.max_outputs_for_value(utxo_value).max(1).min(self.config.chain_outputs_max.max(1).min(mass_allowed));
+        let min_change = 1_000_000u64; // 0.01 KAS to avoid dust chaining
+        let mut created = 0usize;
+        let mut iterations = 0usize;
+        let client = self.rpc_client.clone();
+
+        while created < remaining_needed && iterations < 128 {
+            iterations += 1;
+            let outputs_cap = max_per_tx.min(remaining_needed - created);
+
+            // Determine how many outputs this tx can afford (we require >=2 outputs per link)
+            let mut outputs_this_tx = outputs_cap.max(2);
+            let mut num_inputs = 1usize;
+            let mut total_available = seed.1.amount;
+            while outputs_this_tx >= 2 {
+                let fee = self.calculate_fee(num_inputs, outputs_this_tx);
+                let required = utxo_value * outputs_this_tx as u64 + fee;
+                if total_available >= required {
+                    break;
+                }
+                outputs_this_tx -= 1;
+            }
+            // If one input is not enough to create >=2 outputs, try to augment with 1-3 extra inputs just for this link
+            let mut extra_inputs: Vec<(TransactionOutpoint, UtxoEntry)> = Vec::new();
+            if outputs_this_tx < 2 {
+                // Fetch fresh spendable UTXOs (confirmed, not pending)
+                let pool = self.fetch_spendable_utxos_with_min_conf(1).await?;
+                let pending = self.pending_txs.lock();
+                for (op, ent) in pool.into_iter().filter(|(op, _)| *op != seed.0 && !pending.contains_key(op)) {
+                    extra_inputs.push((op, ent.clone()));
+                    total_available = total_available.saturating_add(ent.amount);
+                    num_inputs += 1;
+                    outputs_this_tx = outputs_cap;
+                    while outputs_this_tx >= 2 {
+                        let fee = self.calculate_fee(num_inputs, outputs_this_tx);
+                        let required = utxo_value * outputs_this_tx as u64 + fee;
+                        if total_available >= required {
+                            break;
+                        }
+                        outputs_this_tx -= 1;
+                    }
+                    if outputs_this_tx >= 2 || extra_inputs.len() >= 3 {
+                        break;
+                    }
+                }
+            }
+            if outputs_this_tx < 2 {
+                break;
+            }
+
+            // Build tx
+            let mut inputs = Vec::with_capacity(1 + extra_inputs.len());
+            inputs.push(TransactionInput { previous_outpoint: seed.0, signature_script: vec![], sequence: 0, sig_op_count: 1 });
+            for (op, _) in &extra_inputs {
+                inputs.push(TransactionInput { previous_outpoint: *op, signature_script: vec![], sequence: 0, sig_op_count: 1 });
+            }
+            // Determine outputs and fee using local fee estimator (keeps sums consistent)
+            let sum_inputs: u64 = extra_inputs.iter().map(|(_, e)| e.amount).fold(seed.1.amount, |acc, v| acc.saturating_add(v));
+            let fee = self.calculate_fee(1 + extra_inputs.len(), outputs_this_tx);
+            if sum_inputs < utxo_value.saturating_mul(outputs_this_tx as u64).saturating_add(fee) {
+                // Safety guard: if suddenly insufficient, retry loop
+                continue;
+            }
+            let change_pre = sum_inputs.saturating_sub(utxo_value * outputs_this_tx as u64 + fee);
+            let change = change_pre;
+            // Always fold change into last output to avoid extra storage mass from small outputs
+            let mut outputs = Vec::with_capacity(outputs_this_tx);
+            for _ in 0..outputs_this_tx {
+                outputs.push(TransactionOutput { value: utxo_value, script_public_key: pay_to_address_script(&self.config.address) });
+            }
+            if let Some(last) = outputs.last_mut() {
+                last.value = last.value.saturating_add(change);
+            }
+
+            let unsigned_tx = Transaction::new(TX_VERSION, inputs, outputs, 0, SUBNETWORK_ID_NATIVE, 0, vec![]);
+            let mut entries = Vec::with_capacity(1 + extra_inputs.len());
+            entries.push(seed.1.clone());
+            for (_, e) in &extra_inputs {
+                entries.push(e.clone());
+            }
+            let signed_tx = sign(MutableTransaction::with_entries(unsigned_tx, entries), self.config.keypair);
+
+            // Submit with allow_orphan=true to permit chaining unconfirmed change
+            // Reserve inputs in the pending map to avoid reuse across chains
+            {
+                let mut pending = self.pending_txs.lock();
+                let now = Instant::now();
+                pending.insert(seed.0, now);
+                for (op, _) in &extra_inputs {
+                    pending.insert(*op, now);
+                }
+            }
+
+            match client.submit_transaction(signed_tx.tx.as_ref().into(), self.config.split_allow_orphan).await {
+                Ok(id) => {
+                    info!("[chain] Submitted split tx with {} outputs: {}", outputs_this_tx, id);
+                    created += outputs_this_tx;
+
+                    // Chain next: change is folded into last output index (outputs_this_tx - 1)
+                    let next_outpoint =
+                        TransactionOutpoint { transaction_id: id.into(), index: (outputs_this_tx as u32).saturating_sub(1) };
+                    // Construct a synthetic UtxoEntry for signing next tx (amount and script are sufficient)
+                    seed = (
+                        next_outpoint,
+                        UtxoEntry {
+                            amount: change,
+                            script_public_key: pay_to_address_script(&self.config.address),
+                            block_daa_score: seed.1.block_daa_score,
+                            is_coinbase: false,
+                        },
+                    );
+
+                    // Light per-chain pacing to reduce oscillation under high parallelism
+                    let pace_ms = self.config.block_interval_ms.saturating_mul(1).max(100) as u64;
+                    tokio::time::sleep(Duration::from_millis(pace_ms)).await;
+                }
+                Err(e) => {
+                    warn!("[chain] Split submit failed: {}", e);
+                    // Release reservations on failure
+                    let mut pending = self.pending_txs.lock();
+                    pending.remove(&seed.0);
+                    for (op, _) in &extra_inputs {
+                        pending.remove(op);
+                    }
+                    break;
+                }
+            }
+        }
+
+        Ok(created)
+    }
+
+    // Launch up to split_parallel sequential chains from the largest UTXOs.
+    // Returns true if any outputs were produced.
+    async fn run_chains_until_progress(
+        &self,
+        current_utxos: &mut Vec<(TransactionOutpoint, UtxoEntry)>,
+        desired_count: usize,
+        utxo_value: u64,
+    ) -> Result<bool, AnyError> {
+        if current_utxos.is_empty() || current_utxos.len() >= desired_count {
+            return Ok(false);
+        }
+
+        let remaining_needed = desired_count.saturating_sub(current_utxos.len());
+        let chain_count = self.config.split_parallel.max(1).min(8);
+
+        current_utxos.sort_by(|a, b| b.1.amount.cmp(&a.1.amount));
+        let seeds: Vec<(TransactionOutpoint, UtxoEntry)> = current_utxos.iter().take(chain_count).cloned().collect();
+        if seeds.is_empty() {
+            return Ok(false);
+        }
+
+        // Reserve seed inputs to avoid them being taken as extras by other chains
+        {
+            let mut pending = self.pending_txs.lock();
+            let now = Instant::now();
+            for (op, _) in &seeds {
+                pending.insert(*op, now);
+            }
+        }
+
+        let per_chain = (remaining_needed / seeds.len().max(1)).max(1);
+        let mut tasks = Vec::with_capacity(seeds.len());
+        for (i, seed) in seeds.into_iter().enumerate() {
+            let share = if i == chain_count - 1 { remaining_needed.saturating_sub(per_chain * i) } else { per_chain };
+            tasks.push(self.run_chain_from_seed(seed, share, utxo_value));
+        }
+
+        let results = futures::future::join_all(tasks).await;
+        let produced: usize = results.into_iter().filter_map(Result::ok).sum();
+        if produced > 0 {
+            info!("[chain-first] Chain batch produced ~{} outputs; refreshing state", produced);
+            *current_utxos = self.fetch_spendable_utxos_with_min_conf(1).await?;
+            self.metrics.update_utxo_count(current_utxos.len());
+            return Ok(true);
+        }
+
+        Ok(false)
+    }
+
+    pub async fn prepare_utxos(&self, target_count: usize, utxo_size_hint: Option<u64>) -> Result<(), AnyError> {
         info!("Preparing {} UTXOs for benchmarking", target_count);
 
         let mut current_utxos = self.fetch_spendable_utxos().await?;
@@ -427,7 +668,27 @@ impl BenchmarkEngine {
         let coarse_value = (utxo_size.saturating_mul(3)).clamp(utxo_size + min_utxo_size / 2, max_utxo_size);
         let coarse_applicable = coarse_value > utxo_size && current_utxos.iter().any(|(_, entry)| entry.amount >= coarse_value * 2);
 
-        if coarse_applicable {
+        // Chain-first phase: favor sequential chain splitting to avoid oscillation
+        if current_utxos.len() < target_count {
+            info!(
+                "Chain-first phase: targeting {} UTXOs with {:.2} KAS outputs",
+                target_count,
+                utxo_size as f64 / SOMPI_PER_KASPA as f64
+            );
+
+            // Try chains a few rounds before falling back to wave planning
+            let mut chain_rounds = 0usize;
+            let max_rounds = 8usize;
+            while current_utxos.len() < target_count && chain_rounds < max_rounds {
+                chain_rounds += 1;
+                if !self.run_chains_until_progress(&mut current_utxos, target_count, utxo_size).await? {
+                    break;
+                }
+            }
+        }
+
+        // Optional coarse wave only if still significantly short after chains and large UTXOs exist, and chain_only is false
+        if !self.config.chain_only && coarse_applicable && current_utxos.len() + target_count / 4 < target_count {
             let coarse_goal = target_count.max(current_utxos.len()) + target_count;
             info!(
                 "Coarse split phase: aiming for ~{} UTXOs with {:.2} KAS outputs",
@@ -437,9 +698,16 @@ impl BenchmarkEngine {
             self.run_split_phase(&mut current_utxos, coarse_goal, coarse_value, 2, "coarse").await?;
         }
 
-        if current_utxos.len() < target_count {
+        if !self.config.chain_only && current_utxos.len() < target_count {
+            // One more chain-first attempt before final wave
+            if self.run_chains_until_progress(&mut current_utxos, target_count, utxo_size).await? {
+                // fallthrough to completion check
+            }
+        }
+
+        if !self.config.chain_only && current_utxos.len() < target_count {
             info!(
-                "Fine split phase: targeting {} UTXOs with {:.2} KAS outputs",
+                "Fine split phase (wave fallback): targeting {} UTXOs with {:.2} KAS outputs",
                 target_count,
                 utxo_size as f64 / SOMPI_PER_KASPA as f64
             );
@@ -462,7 +730,7 @@ impl BenchmarkEngine {
         Ok(())
     }
 
-    pub async fn run(&self, duration_seconds: u64) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn run(&self, duration_seconds: u64) -> Result<(), AnyError> {
         self.ensure_utxo_inventory(duration_seconds).await?;
 
         // Start metrics timing and TPS calculator
@@ -541,7 +809,7 @@ impl BenchmarkEngine {
         Ok(())
     }
 
-    async fn ensure_utxo_inventory(&self, _duration_seconds: u64) -> Result<(), Box<dyn std::error::Error>> {
+    async fn ensure_utxo_inventory(&self, _duration_seconds: u64) -> Result<(), AnyError> {
         let utxos = self.fetch_spendable_utxos().await?;
         let current_count = utxos.len();
         let mut amounts: Vec<u64> = utxos.iter().map(|(_, entry)| entry.amount).collect();
@@ -771,18 +1039,17 @@ impl BenchmarkEngine {
         limit.max(1) as usize
     }
 
-    async fn fetch_spendable_utxos(&self) -> Result<Vec<(TransactionOutpoint, UtxoEntry)>, Box<dyn std::error::Error>> {
+    async fn fetch_spendable_utxos(&self) -> Result<Vec<(TransactionOutpoint, UtxoEntry)>, AnyError> {
         self.fetch_spendable_utxos_with_min_conf(self.config.confirmation_depth).await
     }
 
     async fn fetch_spendable_utxos_with_min_conf(
         &self,
         min_confirmations: u64,
-    ) -> Result<Vec<(TransactionOutpoint, UtxoEntry)>, Box<dyn std::error::Error>> {
+    ) -> Result<Vec<(TransactionOutpoint, UtxoEntry)>, AnyError> {
         let resp = self.rpc_client.get_utxos_by_addresses(vec![self.config.address.clone()]).await?;
         let dag_info = self.rpc_client.get_block_dag_info().await?;
-        let available: HashSet<TransactionOutpoint> =
-            resp.iter().map(|entry| TransactionOutpoint::from(entry.outpoint)).collect();
+        let available: HashSet<TransactionOutpoint> = resp.iter().map(|entry| TransactionOutpoint::from(entry.outpoint)).collect();
 
         let mut pending = self.pending_txs.lock();
         let ttl = self.config.pending_ttl;
@@ -838,7 +1105,7 @@ impl BenchmarkEngine {
         self.metrics.clone()
     }
 
-    pub async fn sweep_all_utxos(&self) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn sweep_all_utxos(&self) -> Result<(), AnyError> {
         info!("Sweeping all UTXOs to consolidate");
 
         // Fetch all UTXOs
@@ -905,7 +1172,7 @@ impl BenchmarkEngine {
         Ok(())
     }
 
-    pub async fn send_funds(&self, address: String, amount: f64) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn send_funds(&self, address: String, amount: f64) -> Result<(), AnyError> {
         info!("Sending {} KAS to {}", amount, address);
 
         // Parse destination address

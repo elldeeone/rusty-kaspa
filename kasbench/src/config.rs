@@ -5,6 +5,8 @@ use secp256k1::Keypair;
 use std::sync::Arc;
 use std::time::Duration;
 
+type AnyError = Box<dyn std::error::Error + Send + Sync + 'static>;
+
 pub struct Config {
     pub rpc_server: String,
     pub target_tps: u64,
@@ -19,10 +21,14 @@ pub struct Config {
     pub utxo_refresh_interval: Duration,
     pub pending_ttl: Duration,
     pub block_interval_ms: u64,
+    pub split_parallel: usize,
+    pub split_allow_orphan: bool,
+    pub chain_only: bool,
+    pub chain_outputs_max: usize,
 }
 
 impl Config {
-    pub async fn from_cli(cli: &crate::Cli) -> Result<Arc<Self>, Box<dyn std::error::Error>> {
+    pub async fn from_cli(cli: &crate::Cli) -> Result<Arc<Self>, AnyError> {
         // Generate or parse keypair
         let keypair = if let Some(private_key_hex) = &cli.private_key {
             let mut private_key_bytes = [0u8; 32];
@@ -81,6 +87,10 @@ impl Config {
             utxo_refresh_interval: Duration::from_millis(utxo_refresh_ms),
             pending_ttl,
             block_interval_ms,
+            split_parallel: cli.split_parallel.max(1),
+            split_allow_orphan: cli.split_allow_orphan,
+            chain_only: cli.chain_only,
+            chain_outputs_max: cli.chain_outputs_max.max(1).min(10),
         };
 
         info!("Configuration:");
