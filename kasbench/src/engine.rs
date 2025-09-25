@@ -125,6 +125,7 @@ impl BenchmarkEngine {
         }
 
         let mut iteration = 0usize;
+        let mut no_selection_backoffs = 0usize;
 
         while current_utxos.len() < desired_count {
             iteration += 1;
@@ -174,11 +175,24 @@ impl BenchmarkEngine {
 
             if selections.is_empty() {
                 warn!(
-                    "[{phase_label}] No eligible UTXOs left to reach {} (shortfall: {})",
-                    desired_count,
-                    desired_count.saturating_sub(current_utxos.len())
+                    "[{phase_label}] No eligible UTXOs available (have: {}, need: {}). Waiting for confirmations...",
+                    current_utxos.len(),
+                    desired_count
                 );
-                break;
+
+                if no_selection_backoffs < 30 {
+                    no_selection_backoffs += 1;
+                    let wait_ms = self.config.block_interval_ms.max(200);
+                    tokio::time::sleep(Duration::from_millis(wait_ms)).await;
+                    *current_utxos = self.fetch_spendable_utxos_with_min_conf(1).await?;
+                    self.metrics.update_utxo_count(current_utxos.len());
+                    continue;
+                } else {
+                    warn!(
+                        "[{phase_label}] Giving up after waiting for confirmations without new eligible UTXOs"
+                    );
+                    break;
+                }
             }
 
             info!("[{phase_label}] iteration {} planning {} txs for ~{} outputs", iteration, selections.len(), total_outputs_planned);
@@ -265,7 +279,7 @@ impl BenchmarkEngine {
             info!("[{phase_label}] Submitting wave yielded {} accepted outputs", successful_outputs);
 
             let split_conf = self.config.confirmation_depth.min(1u64);
-            let wait_ms = split_conf.saturating_mul(self.config.block_interval_ms).max(100u64);
+            let wait_ms = split_conf.saturating_mul(self.config.block_interval_ms).max(300u64);
             tokio::time::sleep(Duration::from_millis(wait_ms)).await;
 
             *current_utxos = self.fetch_spendable_utxos_with_min_conf(split_conf).await?;
