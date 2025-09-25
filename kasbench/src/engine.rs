@@ -127,6 +127,7 @@ impl BenchmarkEngine {
 
         let mut iteration = 0usize;
         let mut no_selection_backoffs = 0usize;
+        let mut last_count_for_backoff = current_utxos.len();
 
         while current_utxos.len() < desired_count {
             iteration += 1;
@@ -181,12 +182,16 @@ impl BenchmarkEngine {
                     desired_count
                 );
 
-                if no_selection_backoffs < 30 {
+                if no_selection_backoffs < 200 {
                     no_selection_backoffs += 1;
                     let wait_ms = self.config.block_interval_ms.max(200);
                     tokio::time::sleep(Duration::from_millis(wait_ms)).await;
                     *current_utxos = self.fetch_spendable_utxos_with_min_conf(1).await?;
                     self.metrics.update_utxo_count(current_utxos.len());
+                    if current_utxos.len() > last_count_for_backoff {
+                        no_selection_backoffs = 0;
+                        last_count_for_backoff = current_utxos.len();
+                    }
                     continue;
                 } else {
                     warn!(
@@ -289,11 +294,20 @@ impl BenchmarkEngine {
             info!("[{phase_label}] Submitting wave yielded {} accepted outputs", successful_outputs);
 
             let split_conf = self.config.confirmation_depth.min(1u64);
-            let wait_ms = split_conf.saturating_mul(self.config.block_interval_ms).max(300u64);
+            let mut wait_ms = (self.config.utxo_refresh_interval.as_millis() as u64)
+                .max(self.config.block_interval_ms.saturating_mul(2))
+                .max(1000u64);
+            if split_conf > 1 {
+                wait_ms = wait_ms.max(self.config.block_interval_ms.saturating_mul(split_conf));
+            }
             tokio::time::sleep(Duration::from_millis(wait_ms)).await;
 
             *current_utxos = self.fetch_spendable_utxos_with_min_conf(split_conf).await?;
             self.metrics.update_utxo_count(current_utxos.len());
+            if current_utxos.len() > last_count_for_backoff {
+                no_selection_backoffs = 0;
+                last_count_for_backoff = current_utxos.len();
+            }
             info!(
                 "[{phase_label}] Progress: {} / {} UTXOs ({:.1}%)",
                 current_utxos.len(),
@@ -375,10 +389,7 @@ impl BenchmarkEngine {
             self.run_split_phase(&mut current_utxos, target_count, utxo_size, 2, "fine").await?;
         }
 
-        if current_utxos.len() < target_count {
-            info!("Tail cleanup: allowing single-output splits to finish toward {}", target_count);
-            self.run_split_phase(&mut current_utxos, target_count, utxo_size, 1, "tail").await?;
-        }
+        // Skip tail cleanup with single-output splits: they don't increase UTXO count
 
         info!("\n=== UTXO Preparation Complete ===");
         info!("Final UTXO count: {}", current_utxos.len());
