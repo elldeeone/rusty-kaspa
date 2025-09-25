@@ -134,7 +134,7 @@ impl BenchmarkEngine {
             current_utxos.sort_by(|a, b| b.1.amount.cmp(&a.1.amount));
 
             let remaining_needed = desired_count.saturating_sub(current_utxos.len());
-            let mut selections: Vec<(TransactionOutpoint, UtxoEntry, usize)> = Vec::new();
+            let mut selections: Vec<(Vec<(TransactionOutpoint, UtxoEntry)>, usize)> = Vec::new();
             let mut total_outputs_planned = 0usize;
 
             {
@@ -149,10 +149,8 @@ impl BenchmarkEngine {
                     }
 
                     let available = entry.amount;
-                    if available <= output_value {
-                        continue;
-                    }
 
+                    // First, try single-input split if it can create at least the minimum outputs
                     let mut outputs_to_create =
                         max_outputs_per_tx.min(remaining_needed.saturating_sub(total_outputs_planned)).max(effective_min_outputs);
 
@@ -165,13 +163,69 @@ impl BenchmarkEngine {
                         outputs_to_create -= 1;
                     }
 
-                    if outputs_to_create < effective_min_outputs {
-                        continue;
+                    if outputs_to_create >= effective_min_outputs {
+                        pending.insert(*outpoint, Instant::now());
+                        selections.push((vec![(*outpoint, entry.clone())], outputs_to_create));
+                        total_outputs_planned += outputs_to_create;
                     }
+                }
+            }
 
-                    pending.insert(*outpoint, Instant::now());
-                    selections.push((*outpoint, entry.clone(), outputs_to_create));
-                    total_outputs_planned += outputs_to_create;
+            // If we still need more outputs or had no single-input candidates, try multi-input grouping of small UTXOs
+            if selections.is_empty() || total_outputs_planned < remaining_needed {
+                let mut pending = self.pending_txs.lock();
+                // Collect small candidates not yet pending
+                let mut small: Vec<(TransactionOutpoint, UtxoEntry)> = current_utxos
+                    .iter()
+                    .filter(|(op, _)| !pending.contains_key(op))
+                    .map(|(op, e)| (*op, e.clone()))
+                    .collect();
+                // Sort ascending by amount to group small ones
+                small.sort_by(|a, b| a.1.amount.cmp(&b.1.amount));
+
+                let mut idx = 0usize;
+                while idx < small.len() && selections.len() < MAX_PARALLEL_TXS && total_outputs_planned < remaining_needed {
+                    // Form a group of 2-4 inputs
+                    let mut group: Vec<(TransactionOutpoint, UtxoEntry)> = Vec::new();
+                    let mut sum = 0u64;
+                    let start_idx = idx;
+                    while idx < small.len() && group.len() < 4 {
+                        let (op, e) = {
+                            let (op_ref, e_ref) = &small[idx];
+                            (*op_ref, e_ref.clone())
+                        };
+                        if pending.contains_key(&op) {
+                            idx += 1;
+                            continue;
+                        }
+                        group.push((op, e.clone()));
+                        sum = sum.saturating_add(e.amount);
+                        idx += 1;
+                        if group.len() >= 2 {
+                            // Try to see if we can produce at least effective_min_outputs
+                            let mut outputs_to_create =
+                                max_outputs_per_tx.min(remaining_needed.saturating_sub(total_outputs_planned)).max(effective_min_outputs);
+                            while outputs_to_create >= effective_min_outputs {
+                                let fee = self.calculate_fee(group.len(), outputs_to_create);
+                                let required = output_value * outputs_to_create as u64 + fee;
+                                if sum >= required {
+                                    break;
+                                }
+                                outputs_to_create -= 1;
+                            }
+                            if outputs_to_create >= effective_min_outputs {
+                                for (op_used, _) in &group {
+                                    pending.insert(*op_used, Instant::now());
+                                }
+                                selections.push((group.clone(), outputs_to_create));
+                                total_outputs_planned += outputs_to_create;
+                                break;
+                            }
+                        }
+                    }
+                    if start_idx == idx {
+                        idx += 1;
+                    }
                 }
             }
 
@@ -205,25 +259,24 @@ impl BenchmarkEngine {
 
             let addr = self.config.address.clone();
             let keypair = self.config.keypair;
-            let prepared: Vec<(Transaction, TransactionOutpoint, UtxoEntry, usize)> = selections
+            let prepared: Vec<(Transaction, Vec<TransactionOutpoint>, Vec<UtxoEntry>, usize)> = selections
                 .into_par_iter()
-                .map(|(outpoint, entry, outputs_to_create)| {
+                .map(|(inputs_group, outputs_to_create)| {
                     // Build split tx
-                    let inputs = vec![TransactionInput {
-                        previous_outpoint: outpoint,
-                        signature_script: vec![],
-                        sequence: 0,
-                        sig_op_count: 1,
-                    }];
+                    let inputs: Vec<TransactionInput> = inputs_group
+                        .iter()
+                        .map(|(outpoint, _)| TransactionInput { previous_outpoint: *outpoint, signature_script: vec![], sequence: 0, sig_op_count: 1 })
+                        .collect();
 
                     let mut outputs = Vec::with_capacity(outputs_to_create);
                     for _ in 0..outputs_to_create {
                         outputs.push(TransactionOutput { value: output_value, script_public_key: pay_to_address_script(&addr) });
                     }
 
-                    let fee = self.calculate_fee(1, outputs_to_create);
+                    let fee = self.calculate_fee(inputs.len(), outputs_to_create);
                     let required = output_value * outputs_to_create as u64 + fee;
-                    let change = entry.amount.saturating_sub(required);
+                    let sum_inputs: u64 = inputs_group.iter().map(|(_, e)| e.amount).sum();
+                    let change = sum_inputs.saturating_sub(required);
                     if change > 0 && !outputs.is_empty() {
                         // Fold change into the last output to keep storage mass low
                         let last = outputs.last_mut().unwrap();
@@ -231,9 +284,11 @@ impl BenchmarkEngine {
                     }
 
                     let unsigned_tx = Transaction::new(TX_VERSION, inputs, outputs, 0, SUBNETWORK_ID_NATIVE, 0, vec![]);
-                    let signed_tx = sign(MutableTransaction::with_entries(unsigned_tx, vec![entry.clone()]), keypair);
+                    let utxo_entries: Vec<UtxoEntry> = inputs_group.iter().map(|(_, e)| e.clone()).collect();
+                    let signed_tx = sign(MutableTransaction::with_entries(unsigned_tx, utxo_entries.clone()), keypair);
 
-                    (signed_tx.tx, outpoint, entry, outputs_to_create)
+                    let input_points: Vec<TransactionOutpoint> = inputs_group.iter().map(|(op, _)| *op).collect();
+                    (signed_tx.tx, input_points, utxo_entries, outputs_to_create)
                 })
                 .collect();
 
@@ -245,12 +300,12 @@ impl BenchmarkEngine {
             }
 
             let results = futures::future::join_all(submission_futures).await;
-            let mut failed_inputs = Vec::new();
+            let mut failed_inputs: Vec<(TransactionOutpoint, UtxoEntry)> = Vec::new();
             let mut successful_outputs = 0usize;
             let mut rejected_over_mass = 0usize;
             let mut other_rejected = 0usize;
 
-            for ((_, input, entry, outputs_expected), result) in prepared.into_iter().zip(results.into_iter()) {
+            for ((_, inputs_used, entries_used, outputs_expected), result) in prepared.into_iter().zip(results.into_iter()) {
                 match result {
                     Ok(id) => {
                         successful_outputs += outputs_expected;
@@ -263,7 +318,9 @@ impl BenchmarkEngine {
                         } else {
                             other_rejected += 1;
                         }
-                        failed_inputs.push((input, entry));
+                        for (inp, ent) in inputs_used.into_iter().zip(entries_used.into_iter()) {
+                            failed_inputs.push((inp, ent));
+                        }
                     }
                 }
             }
