@@ -183,40 +183,44 @@ impl BenchmarkEngine {
 
             info!("[{phase_label}] iteration {} planning {} txs for ~{} outputs", iteration, selections.len(), total_outputs_planned);
 
-            let mut prepared: Vec<(Transaction, TransactionOutpoint, UtxoEntry, usize)> = Vec::with_capacity(selections.len());
+            let addr = self.config.address.clone();
+            let keypair = self.config.keypair;
+            let prepared: Vec<(Transaction, TransactionOutpoint, UtxoEntry, usize)> = selections
+                .into_par_iter()
+                .map(|(outpoint, entry, outputs_to_create)| {
+                    info!(
+                        "[{phase_label}] iteration {}: {:.2} KAS → {} x {:.2} KAS",
+                        iteration,
+                        entry.amount as f64 / SOMPI_PER_KASPA as f64,
+                        outputs_to_create,
+                        output_value as f64 / SOMPI_PER_KASPA as f64
+                    );
 
-            for (outpoint, entry, outputs_to_create) in selections {
-                info!(
-                    "[{phase_label}] iteration {}: {:.2} KAS → {} x {:.2} KAS",
-                    iteration,
-                    entry.amount as f64 / SOMPI_PER_KASPA as f64,
-                    outputs_to_create,
-                    output_value as f64 / SOMPI_PER_KASPA as f64
-                );
+                    let inputs = vec![TransactionInput {
+                        previous_outpoint: outpoint,
+                        signature_script: vec![],
+                        sequence: 0,
+                        sig_op_count: 1,
+                    }];
 
-                let inputs =
-                    vec![TransactionInput { previous_outpoint: outpoint, signature_script: vec![], sequence: 0, sig_op_count: 1 }];
+                    let mut outputs = Vec::with_capacity(outputs_to_create + 1);
+                    for _ in 0..outputs_to_create {
+                        outputs.push(TransactionOutput { value: output_value, script_public_key: pay_to_address_script(&addr) });
+                    }
 
-                let mut outputs = Vec::with_capacity(outputs_to_create + 1);
-                for _ in 0..outputs_to_create {
-                    outputs.push(TransactionOutput {
-                        value: output_value,
-                        script_public_key: pay_to_address_script(&self.config.address),
-                    });
-                }
+                    let fee = self.calculate_fee(1, outputs_to_create);
+                    let required = output_value * outputs_to_create as u64 + fee;
+                    let change = entry.amount.saturating_sub(required);
+                    if change > 50_000 {
+                        outputs.push(TransactionOutput { value: change, script_public_key: pay_to_address_script(&addr) });
+                    }
 
-                let fee = self.calculate_fee(1, outputs_to_create);
-                let required = output_value * outputs_to_create as u64 + fee;
-                let change = entry.amount.saturating_sub(required);
-                if change > 50_000 {
-                    outputs.push(TransactionOutput { value: change, script_public_key: pay_to_address_script(&self.config.address) });
-                }
+                    let unsigned_tx = Transaction::new(TX_VERSION, inputs, outputs, 0, SUBNETWORK_ID_NATIVE, 0, vec![]);
+                    let signed_tx = sign(MutableTransaction::with_entries(unsigned_tx, vec![entry.clone()]), keypair);
 
-                let unsigned_tx = Transaction::new(TX_VERSION, inputs, outputs, 0, SUBNETWORK_ID_NATIVE, 0, vec![]);
-                let signed_tx = sign(MutableTransaction::with_entries(unsigned_tx, vec![entry.clone()]), self.config.keypair);
-
-                prepared.push((signed_tx.tx, outpoint, entry, outputs_to_create));
-            }
+                    (signed_tx.tx, outpoint, entry, outputs_to_create)
+                })
+                .collect();
 
             let mut submission_futures = Vec::with_capacity(prepared.len());
             for (tx, _, _, _) in &prepared {
@@ -260,10 +264,11 @@ impl BenchmarkEngine {
 
             info!("[{phase_label}] Submitting wave yielded {} accepted outputs", successful_outputs);
 
-            let wait_ms = self.config.confirmation_depth.saturating_mul(self.config.block_interval_ms).max(200);
+            let split_conf = self.config.confirmation_depth.min(1u64);
+            let wait_ms = split_conf.saturating_mul(self.config.block_interval_ms).max(100u64);
             tokio::time::sleep(Duration::from_millis(wait_ms)).await;
 
-            *current_utxos = self.fetch_spendable_utxos().await?;
+            *current_utxos = self.fetch_spendable_utxos_with_min_conf(split_conf).await?;
             self.metrics.update_utxo_count(current_utxos.len());
             info!(
                 "[{phase_label}] Progress: {} / {} UTXOs ({:.1}%)",
@@ -367,6 +372,13 @@ impl BenchmarkEngine {
 
     pub async fn run(&self, duration_seconds: u64) -> Result<(), Box<dyn std::error::Error>> {
         self.ensure_utxo_inventory(duration_seconds).await?;
+
+        // Start metrics timing and TPS calculator
+        self.metrics.mark_start();
+        let metrics = self.metrics.clone();
+        tokio::spawn(async move {
+            metrics.start_tps_calculator().await;
+        });
 
         let tx_sender = self.start_submission_pool();
 
@@ -553,7 +565,7 @@ impl BenchmarkEngine {
                 }
 
                 pending.insert(*outpoint, Instant::now());
-                selected.push((outpoint.clone(), entry.clone()));
+                selected.push((*outpoint, entry.clone()));
             }
         }
 
@@ -660,15 +672,22 @@ impl BenchmarkEngine {
             limit = 1;
         }
 
-        limit = limit.min(10);
+        limit = limit.min(20);
         limit.max(2) as usize
     }
 
     async fn fetch_spendable_utxos(&self) -> Result<Vec<(TransactionOutpoint, UtxoEntry)>, Box<dyn std::error::Error>> {
+        self.fetch_spendable_utxos_with_min_conf(self.config.confirmation_depth).await
+    }
+
+    async fn fetch_spendable_utxos_with_min_conf(
+        &self,
+        min_confirmations: u64,
+    ) -> Result<Vec<(TransactionOutpoint, UtxoEntry)>, Box<dyn std::error::Error>> {
         let resp = self.rpc_client.get_utxos_by_addresses(vec![self.config.address.clone()]).await?;
         let dag_info = self.rpc_client.get_block_dag_info().await?;
         let available: HashSet<TransactionOutpoint> =
-            resp.iter().map(|entry| TransactionOutpoint::from(entry.outpoint.clone())).collect();
+            resp.iter().map(|entry| TransactionOutpoint::from(entry.outpoint)).collect();
 
         let mut pending = self.pending_txs.lock();
         let ttl = self.config.pending_ttl;
@@ -682,7 +701,7 @@ impl BenchmarkEngine {
             }
 
             let confirmations = dag_info.virtual_daa_score.saturating_sub(entry.utxo_entry.block_daa_score);
-            if confirmations < self.config.confirmation_depth {
+            if confirmations < min_confirmations {
                 continue;
             }
 
@@ -811,7 +830,7 @@ impl BenchmarkEngine {
         let mut selected_amount = 0u64;
 
         for (outpoint, entry) in utxos.iter() {
-            selected_utxos.push((outpoint.clone(), entry.clone()));
+            selected_utxos.push((*outpoint, entry.clone()));
             selected_amount += entry.amount;
 
             // Estimate fee and check if we have enough
