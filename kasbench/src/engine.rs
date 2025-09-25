@@ -203,14 +203,7 @@ impl BenchmarkEngine {
             let prepared: Vec<(Transaction, TransactionOutpoint, UtxoEntry, usize)> = selections
                 .into_par_iter()
                 .map(|(outpoint, entry, outputs_to_create)| {
-                    info!(
-                        "[{phase_label}] iteration {}: {:.2} KAS → {} x {:.2} KAS",
-                        iteration,
-                        entry.amount as f64 / SOMPI_PER_KASPA as f64,
-                        outputs_to_create,
-                        output_value as f64 / SOMPI_PER_KASPA as f64
-                    );
-
+                    // Build split tx
                     let inputs = vec![TransactionInput {
                         previous_outpoint: outpoint,
                         signature_script: vec![],
@@ -218,7 +211,7 @@ impl BenchmarkEngine {
                         sig_op_count: 1,
                     }];
 
-                    let mut outputs = Vec::with_capacity(outputs_to_create + 1);
+                    let mut outputs = Vec::with_capacity(outputs_to_create);
                     for _ in 0..outputs_to_create {
                         outputs.push(TransactionOutput { value: output_value, script_public_key: pay_to_address_script(&addr) });
                     }
@@ -226,8 +219,10 @@ impl BenchmarkEngine {
                     let fee = self.calculate_fee(1, outputs_to_create);
                     let required = output_value * outputs_to_create as u64 + fee;
                     let change = entry.amount.saturating_sub(required);
-                    if change > 50_000 {
-                        outputs.push(TransactionOutput { value: change, script_public_key: pay_to_address_script(&addr) });
+                    if change > 0 && !outputs.is_empty() {
+                        // Fold change into the last output to keep storage mass low
+                        let last = outputs.last_mut().unwrap();
+                        last.value = last.value.saturating_add(change);
                     }
 
                     let unsigned_tx = Transaction::new(TX_VERSION, inputs, outputs, 0, SUBNETWORK_ID_NATIVE, 0, vec![]);
@@ -247,6 +242,8 @@ impl BenchmarkEngine {
             let results = futures::future::join_all(submission_futures).await;
             let mut failed_inputs = Vec::new();
             let mut successful_outputs = 0usize;
+            let mut rejected_over_mass = 0usize;
+            let mut other_rejected = 0usize;
 
             for ((_, input, entry, outputs_expected), result) in prepared.into_iter().zip(results.into_iter()) {
                 match result {
@@ -255,7 +252,12 @@ impl BenchmarkEngine {
                         info!("[{phase_label}] Accepted split tx ({outputs_expected} outputs): {}", id);
                     }
                     Err(e) => {
-                        warn!("[{phase_label}] Failed to submit split: {}", e);
+                        let es = e.to_string();
+                        if es.contains("storage mass") && es.contains("max allowed") {
+                            rejected_over_mass += 1;
+                        } else {
+                            other_rejected += 1;
+                        }
                         failed_inputs.push((input, entry));
                     }
                 }
@@ -269,6 +271,13 @@ impl BenchmarkEngine {
                         current_utxos.push((input, entry));
                     }
                 }
+            }
+
+            if rejected_over_mass > 0 || other_rejected > 0 {
+                info!(
+                    "[{phase_label}] Submission results: accepted_outputs={}, rejected_over_mass={}, other_rejected={}",
+                    successful_outputs, rejected_over_mass, other_rejected
+                );
             }
 
             if successful_outputs == 0 {
@@ -677,18 +686,21 @@ impl BenchmarkEngine {
             return 0;
         }
 
-        let mass_per_output = STORAGE_MASS_PARAMETER / value.max(1);
+        // Conservative mass-per-output using ceil division
+        let mass_per_output = (STORAGE_MASS_PARAMETER.saturating_add(value.max(1) - 1)) / value.max(1);
         if mass_per_output == 0 {
             return 10;
         }
 
-        let mut limit = MAX_TX_MASS / mass_per_output;
+        // Use headroom to account for base tx mass and serialization overhead
+        let effective_max = (MAX_TX_MASS as f64 * 0.85) as u64;
+        let mut limit = effective_max / mass_per_output;
         if limit == 0 {
             limit = 1;
         }
 
-        limit = limit.min(20);
-        limit.max(2) as usize
+        limit = limit.min(10);
+        limit.max(1) as usize
     }
 
     async fn fetch_spendable_utxos(&self) -> Result<Vec<(TransactionOutpoint, UtxoEntry)>, Box<dyn std::error::Error>> {
