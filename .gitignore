@@ -21,3 +21,4 @@ package-sizes.js
 AGENTS.md
 kasbench_prepare.log
 txgen_run_*.log
+txgen-main.rs
