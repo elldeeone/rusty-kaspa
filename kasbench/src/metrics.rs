@@ -2,7 +2,9 @@ use serde::Serialize;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant as StdInstant};
+use tokio::net::TcpListener;
 use tokio::time::interval;
+use tokio_stream::wrappers::TcpListenerStream;
 use warp::Filter;
 
 pub struct MetricsCollector {
@@ -126,7 +128,20 @@ pub async fn start_metrics_server(port: u16, metrics: Arc<MetricsCollector>) -> 
 
     let routes = metrics_route.or(dashboard_route);
 
-    println!("Dashboard available at http://0.0.0.0:{}", port);
-    warp::serve(routes).run(([0, 0, 0, 0], port)).await;
+    // Try to bind starting from the requested port, incrementing until available (up to 20 tries)
+    let mut bind_port = port;
+    let max_tries: u16 = 20;
+    let listener = loop {
+        match TcpListener::bind(("0.0.0.0", bind_port)).await {
+            Ok(l) => break l,
+            Err(e) if e.kind() == std::io::ErrorKind::AddrInUse && (bind_port - port) < max_tries => {
+                bind_port = bind_port.saturating_add(1);
+            }
+            Err(e) => return Err(e.into()),
+        }
+    };
+
+    println!("Dashboard available at http://0.0.0.0:{}", bind_port);
+    warp::serve(routes).run_incoming(TcpListenerStream::new(listener)).await;
     Ok(())
 }

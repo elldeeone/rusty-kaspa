@@ -115,10 +115,11 @@ impl BenchmarkEngine {
         const MAX_PARALLEL_TXS: usize = 64;
 
         let max_outputs_per_tx = self.max_outputs_for_value(output_value);
-        if max_outputs_per_tx < min_outputs_per_tx {
+        let effective_min_outputs = if max_outputs_per_tx < min_outputs_per_tx { 1 } else { min_outputs_per_tx };
+        if max_outputs_per_tx < effective_min_outputs {
             warn!(
                 "[{phase_label}] Mass limits prevent creating {} outputs of {:.2} KAS each",
-                min_outputs_per_tx,
+                effective_min_outputs,
                 output_value as f64 / SOMPI_PER_KASPA as f64
             );
             return Ok(());
@@ -152,9 +153,9 @@ impl BenchmarkEngine {
                     }
 
                     let mut outputs_to_create =
-                        max_outputs_per_tx.min(remaining_needed.saturating_sub(total_outputs_planned)).max(min_outputs_per_tx);
+                        max_outputs_per_tx.min(remaining_needed.saturating_sub(total_outputs_planned)).max(effective_min_outputs);
 
-                    while outputs_to_create >= min_outputs_per_tx {
+                    while outputs_to_create >= effective_min_outputs {
                         let fee = self.calculate_fee(1, outputs_to_create);
                         let required = output_value * outputs_to_create as u64 + fee;
                         if available >= required {
@@ -163,7 +164,7 @@ impl BenchmarkEngine {
                         outputs_to_create -= 1;
                     }
 
-                    if outputs_to_create < min_outputs_per_tx {
+                    if outputs_to_create < effective_min_outputs {
                         continue;
                     }
 
