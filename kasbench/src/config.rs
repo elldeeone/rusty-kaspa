@@ -27,10 +27,33 @@ pub struct Config {
     pub chain_outputs_max: usize,
 }
 
+#[derive(Default)]
+pub struct ConfigOverrides {
+    pub rpc_server: Option<String>,
+    pub target_tps: Option<u64>,
+    pub keypair: Option<Keypair>,
+    pub address: Option<Address>,
+    pub client_pool_size: Option<usize>,
+    pub dashboard_enabled: Option<bool>,
+    pub dashboard_port: Option<u16>,
+    pub confirmation_depth: Option<u64>,
+    pub utxo_refresh_ms: Option<u64>,
+    pub pending_ttl_secs: Option<u64>,
+    pub split_parallel: Option<usize>,
+    pub split_allow_orphan: Option<bool>,
+    pub chain_only: Option<bool>,
+    pub chain_outputs_max: Option<usize>,
+}
+
 impl Config {
     pub async fn from_cli(cli: &crate::Cli) -> Result<Arc<Self>, AnyError> {
+        // Env overrides for server deployments / .env files
+        let rpc_server_env = std::env::var("RPC_SERVER").ok();
+        let network_env = std::env::var("NETWORK").ok();
         // Generate or parse keypair
-        let keypair = if let Some(private_key_hex) = &cli.private_key {
+        // Allow PRIVATE_KEY env override (dev convenience)
+        let env_priv = std::env::var("PRIVATE_KEY").ok();
+        let keypair = if let Some(private_key_hex) = env_priv.as_ref().or(cli.private_key.as_ref()) {
             let mut private_key_bytes = [0u8; 32];
             faster_hex::hex_decode(private_key_hex.as_bytes(), &mut private_key_bytes)?;
             Keypair::from_seckey_slice(secp256k1::SECP256K1, &private_key_bytes)?
@@ -44,21 +67,27 @@ impl Config {
             kp
         };
 
-        // Determine network prefix and consensus params
-        let (prefix, params): (Prefix, &'static Params) = match cli.network.to_lowercase().as_str() {
+        // Determine network prefix and consensus params (allow NETWORK env override)
+        // Allow ADDRESS env override (dev convenience)
+        let network_str = network_env.as_deref().unwrap_or(&cli.network);
+        let (prefix, params): (Prefix, &'static Params) = match network_str.to_lowercase().as_str() {
             "mainnet" => (Prefix::Mainnet, &MAINNET_PARAMS),
             "testnet" => (Prefix::Testnet, &TESTNET_PARAMS),
             "devnet" => (Prefix::Devnet, &DEVNET_PARAMS),
             "simnet" => (Prefix::Simnet, &SIMNET_PARAMS),
             _ => {
-                return Err(format!("Invalid network: {}. Use mainnet, testnet, devnet, or simnet", cli.network).into());
+                return Err(format!("Invalid network: {}. Use mainnet, testnet, devnet, or simnet", network_str).into());
             }
         };
 
-        // Create address with correct network prefix
-        let address = Address::new(prefix, Version::PubKey, &keypair.x_only_public_key().0.serialize());
+        // Create address with correct network prefix, unless ADDRESS env provided
+        let address = if let Ok(addr_str) = std::env::var("ADDRESS") {
+            Address::try_from(addr_str.as_str()).unwrap_or_else(|_| Address::new(prefix, Version::PubKey, &keypair.x_only_public_key().0.serialize()))
+        } else {
+            Address::new(prefix, Version::PubKey, &keypair.x_only_public_key().0.serialize())
+        };
 
-        info!("Network: {}", cli.network);
+        info!("Network: {}", network_str);
         info!("Using address: {}", address);
 
         // Auto-optimize based on system resources
@@ -74,7 +103,7 @@ impl Config {
 
         // For maximum TPS, we need aggressive settings
         let config = Config {
-            rpc_server: cli.rpc_server.clone(),
+            rpc_server: rpc_server_env.unwrap_or_else(|| cli.rpc_server.clone()),
             target_tps: cli.tps,
             keypair,
             address,
@@ -108,5 +137,46 @@ impl Config {
         );
 
         Ok(Arc::new(config))
+    }
+
+    pub fn clone_with_overrides(&self, o: ConfigOverrides) -> Arc<Self> {
+        let mut cfg = self.clone_inner();
+        if let Some(v) = o.rpc_server { cfg.rpc_server = v; }
+        if let Some(v) = o.target_tps { cfg.target_tps = v; }
+        if let Some(v) = o.keypair { cfg.keypair = v; }
+        if let Some(v) = o.address { cfg.address = v; }
+        if let Some(v) = o.client_pool_size { cfg.client_pool_size = v; }
+        if let Some(v) = o.dashboard_enabled { cfg.dashboard_enabled = v; }
+        if let Some(v) = o.dashboard_port { cfg.dashboard_port = v; }
+        if let Some(v) = o.confirmation_depth { cfg.confirmation_depth = v.max(1); }
+        if let Some(v) = o.utxo_refresh_ms { cfg.utxo_refresh_interval = Duration::from_millis(v); }
+        if let Some(v) = o.pending_ttl_secs { cfg.pending_ttl = Duration::from_secs(v.max(1)); }
+        if let Some(v) = o.split_parallel { cfg.split_parallel = v.max(1); }
+        if let Some(v) = o.split_allow_orphan { cfg.split_allow_orphan = v; }
+        if let Some(v) = o.chain_only { cfg.chain_only = v; }
+        if let Some(v) = o.chain_outputs_max { cfg.chain_outputs_max = v.max(1).min(10); }
+        Arc::new(cfg)
+    }
+
+    fn clone_inner(&self) -> Self {
+        Self {
+            rpc_server: self.rpc_server.clone(),
+            target_tps: self.target_tps,
+            keypair: self.keypair,
+            address: self.address.clone(),
+            client_pool_size: self.client_pool_size,
+            channel_capacity: self.channel_capacity,
+            dashboard_enabled: self.dashboard_enabled,
+            dashboard_port: self.dashboard_port,
+            tick_ms: self.tick_ms,
+            confirmation_depth: self.confirmation_depth,
+            utxo_refresh_interval: self.utxo_refresh_interval,
+            pending_ttl: self.pending_ttl,
+            block_interval_ms: self.block_interval_ms,
+            split_parallel: self.split_parallel,
+            split_allow_orphan: self.split_allow_orphan,
+            chain_only: self.chain_only,
+            chain_outputs_max: self.chain_outputs_max,
+        }
     }
 }

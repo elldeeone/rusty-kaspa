@@ -7,7 +7,6 @@ use kaspa_addresses::{Address, Prefix};
 use kaspa_consensus_core::{
     config::params::{Params, DEVNET_PARAMS, MAINNET_PARAMS, SIMNET_PARAMS, TESTNET_PARAMS},
     constants::{SOMPI_PER_KASPA, STORAGE_MASS_PARAMETER, TX_VERSION},
-    mass::calc_storage_mass,
     sign::sign,
     subnets::SUBNETWORK_ID_NATIVE,
     tx::{MutableTransaction, Transaction, TransactionInput, TransactionOutpoint, TransactionOutput, UtxoEntry},
@@ -51,20 +50,7 @@ struct UtxoPlan {
 }
 
 impl BenchmarkEngine {
-    fn consensus_params(&self) -> &'static Params {
-        match self.config.address.prefix {
-            Prefix::Mainnet => &MAINNET_PARAMS,
-            Prefix::Testnet => &TESTNET_PARAMS,
-            Prefix::Devnet => &DEVNET_PARAMS,
-            Prefix::Simnet => &SIMNET_PARAMS,
-        }
-    }
-
-    fn calc_storage_mass_for(&self, entries: &[UtxoEntry], outputs: &[TransactionOutput]) -> Option<u64> {
-        let params = self.consensus_params();
-        calc_storage_mass(false, entries.iter().map(|e| e.into()), outputs.iter().map(|o| o.into()), params.storage_mass_parameter)
-    }
-    pub async fn new(config: Arc<Config>) -> Result<Self, AnyError> {
+    pub async fn new_with_metrics(config: Arc<Config>, metrics: Arc<MetricsCollector>) -> Result<Self, AnyError> {
         let subscription_context = SubscriptionContext::new();
 
         // Create main RPC client
@@ -112,9 +98,23 @@ impl BenchmarkEngine {
             config,
             rpc_client,
             client_pool,
-            metrics: Arc::new(MetricsCollector::new()),
+            metrics,
             pending_txs: Arc::new(Mutex::new(HashMap::new())),
         })
+    }
+
+    fn consensus_params(&self) -> &'static Params {
+        match self.config.address.prefix {
+            Prefix::Mainnet => &MAINNET_PARAMS,
+            Prefix::Testnet => &TESTNET_PARAMS,
+            Prefix::Devnet => &DEVNET_PARAMS,
+            Prefix::Simnet => &SIMNET_PARAMS,
+        }
+    }
+
+    // removed unused calc_storage_mass_for
+    pub async fn new(config: Arc<Config>) -> Result<Self, AnyError> {
+        Self::new_with_metrics(config, Arc::new(MetricsCollector::new())).await
     }
 
     async fn run_split_phase(
@@ -442,7 +442,7 @@ impl BenchmarkEngine {
         let per_out_storage_mass = if utxo_value > 0 { storage_param / utxo_value } else { u64::MAX };
         let mass_allowed = if per_out_storage_mass == 0 { 10 } else { (MASS_BUDGET / per_out_storage_mass).max(1).min(10) } as usize;
         let max_per_tx = self.max_outputs_for_value(utxo_value).max(1).min(self.config.chain_outputs_max.max(1).min(mass_allowed));
-        let min_change = 1_000_000u64; // 0.01 KAS to avoid dust chaining
+        // removed unused min_change; change is always folded
         let mut created = 0usize;
         let mut iterations = 0usize;
         let client = self.rpc_client.clone();
@@ -624,6 +624,7 @@ impl BenchmarkEngine {
 
     pub async fn prepare_utxos(&self, target_count: usize, utxo_size_hint: Option<u64>) -> Result<(), AnyError> {
         info!("Preparing {} UTXOs for benchmarking", target_count);
+        self.metrics.append_line(format!("Preparing {} UTXOs", target_count));
 
         let mut current_utxos = self.fetch_spendable_utxos().await?;
         info!("Current UTXO count: {}", current_utxos.len());
@@ -675,6 +676,11 @@ impl BenchmarkEngine {
                 target_count,
                 utxo_size as f64 / SOMPI_PER_KASPA as f64
             );
+            self.metrics.append_line(format!(
+                "Chain-first: target {} @ {:.2} KAS",
+                target_count,
+                utxo_size as f64 / SOMPI_PER_KASPA as f64
+            ));
 
             // Try chains a few rounds before falling back to wave planning
             let mut chain_rounds = 0usize;
@@ -695,6 +701,7 @@ impl BenchmarkEngine {
                 coarse_goal,
                 coarse_value as f64 / SOMPI_PER_KASPA as f64
             );
+            self.metrics.append_line(format!("Coarse: ~{} @ {:.2} KAS", coarse_goal, coarse_value as f64 / SOMPI_PER_KASPA as f64));
             self.run_split_phase(&mut current_utxos, coarse_goal, coarse_value, 2, "coarse").await?;
         }
 
@@ -711,14 +718,18 @@ impl BenchmarkEngine {
                 target_count,
                 utxo_size as f64 / SOMPI_PER_KASPA as f64
             );
+            self.metrics.append_line(format!("Fine: {} @ {:.2} KAS", target_count, utxo_size as f64 / SOMPI_PER_KASPA as f64));
             self.run_split_phase(&mut current_utxos, target_count, utxo_size, 2, "fine").await?;
         }
 
         // Skip tail cleanup with single-output splits: they don't increase UTXO count
 
         info!("\n=== UTXO Preparation Complete ===");
+        self.metrics.append_line("=== UTXO Preparation Complete ===");
         info!("Final UTXO count: {}", current_utxos.len());
+        self.metrics.append_line(format!("Final UTXO count: {}", current_utxos.len()));
         info!("Target was: {}", target_count);
+        self.metrics.append_line(format!("Target was: {}", target_count));
 
         if current_utxos.len() < target_count {
             warn!("Could not reach target. You may need more initial balance.");
@@ -1105,8 +1116,23 @@ impl BenchmarkEngine {
         self.metrics.clone()
     }
 
+    pub async fn spendable_summary(&self) -> Result<(usize, u64), AnyError> {
+        let utxos = self.fetch_spendable_utxos().await?;
+        let count = utxos.len();
+        let total: u64 = utxos.iter().map(|(_, entry)| entry.amount).sum();
+        Ok((count, total))
+    }
+
+    pub async fn spendable_summary_with_min_conf(&self, min_confirmations: u64) -> Result<(usize, u64), AnyError> {
+        let utxos = self.fetch_spendable_utxos_with_min_conf(min_confirmations).await?;
+        let count = utxos.len();
+        let total: u64 = utxos.iter().map(|(_, entry)| entry.amount).sum();
+        Ok((count, total))
+    }
+
     pub async fn sweep_all_utxos(&self) -> Result<(), AnyError> {
         info!("Sweeping all UTXOs to consolidate");
+        self.metrics.append_line("Sweeping all UTXOs to consolidate");
 
         // Fetch all UTXOs
         let utxos = self.fetch_spendable_utxos().await?;
@@ -1117,6 +1143,7 @@ impl BenchmarkEngine {
         }
 
         info!("Found {} UTXOs to sweep", utxos.len());
+        self.metrics.append_line(format!("Found {} UTXOs to sweep", utxos.len()));
 
         let total_amount: u64 = utxos.iter().map(|(_, entry)| entry.amount).sum();
         info!("Total amount: {} KAS", total_amount as f64 / SOMPI_PER_KASPA as f64);
@@ -1152,22 +1179,25 @@ impl BenchmarkEngine {
         }
 
         info!("Submitting {} sweep transactions", transactions.len());
+        self.metrics.append_line(format!("Submitting {} sweep transactions", transactions.len()));
 
         // Submit all transactions
         for (i, tx) in transactions.iter().enumerate() {
             match self.rpc_client.submit_transaction(tx.as_ref().into(), false).await {
-                Ok(id) => info!("Sweep transaction {} submitted: {}", i + 1, id),
-                Err(e) => warn!("Failed to submit sweep transaction {}: {}", i + 1, e),
+                Ok(id) => { info!("Sweep transaction {} submitted: {}", i + 1, id); self.metrics.append_line(format!("Sweep transaction {} submitted: {}", i + 1, id)); },
+                Err(e) => { warn!("Failed to submit sweep transaction {}: {}", i + 1, e); self.metrics.append_line(format!("Sweep tx {} failed: {}", i + 1, e)); },
             }
         }
 
         // Wait a bit for confirmations
         info!("Waiting 10 seconds for sweep to complete...");
+        self.metrics.append_line("Waiting 10 seconds for sweep to complete...");
         tokio::time::sleep(Duration::from_secs(10)).await;
 
         // Check final UTXO count
         let final_utxos = self.fetch_spendable_utxos().await?;
         info!("Sweep complete. Final UTXO count: {}", final_utxos.len());
+        self.metrics.append_line(format!("Sweep complete. Final UTXO count: {}", final_utxos.len()));
 
         Ok(())
     }

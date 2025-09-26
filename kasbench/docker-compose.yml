@@ -1,63 +1,16 @@
 version: '3.8'
 
 services:
-  kaspa-node:
-    image: kaspanet/kaspad:latest
-    container_name: kasbench-kaspa-node
-    ports:
-      - "16110:16110"  # gRPC
-      - "16111:16111"  # P2P
-    environment:
-      - KASPAD_NETWORK=mainnet
-      - KASPAD_ENABLE_UNSYNCED_MINING=true
-      - KASPAD_MAX_INBOUND_PEERS=0
-      - KASPAD_OUTBOUND_TARGET=0
-    command: >
-      kaspad
-      --testnet
-      --rpclisten=0.0.0.0:16110
-      --listen=0.0.0.0:16111
-      --profile=7000
-      --nogrpc=false
-    networks:
-      - kasbench-network
-    volumes:
-      - kaspa-data:/data
-
-  kasbench-engine:
+  kasbench:
     build:
-      context: .
-      dockerfile: docker/Dockerfile.engine
-    container_name: kasbench-engine
-    depends_on:
-      - kaspa-node
+      context: ../
+      dockerfile: Dockerfile
+    container_name: kasbench
     environment:
-      - KASPA_RPC_URL=grpc://kaspa-node:16110
-      - TARGET_TPS=${TARGET_TPS:-1000}
-      - AUTO_OPTIMIZE=true
-      - LOG_LEVEL=info
-    networks:
-      - kasbench-network
-    volumes:
-      - ./results:/app/results
-
-  kasbench-dashboard:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.dashboard
-    container_name: kasbench-dashboard
+      RPC_SERVER: grpc://10.0.4.30:16110
+      NETWORK: mainnet
     ports:
       - "8080:8080"
-    depends_on:
-      - kasbench-engine
-    environment:
-      - ENGINE_URL=ws://kasbench-engine:9090
-    networks:
-      - kasbench-network
-
-networks:
-  kasbench-network:
-    driver: bridge
-
-volumes:
-  kaspa-data:
+    volumes:
+      - ../kasbench-data:/data
+    restart: unless-stopped

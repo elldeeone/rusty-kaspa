@@ -15,6 +15,7 @@ pub struct MetricsCollector {
     last_tps: AtomicU64,
     peak_tps: AtomicU64,
     start_time: Mutex<Option<StdInstant>>,
+    recent_lines: Mutex<Vec<String>>,
 }
 
 impl MetricsCollector {
@@ -27,6 +28,7 @@ impl MetricsCollector {
             last_tps: AtomicU64::new(0),
             peak_tps: AtomicU64::new(0),
             start_time: Mutex::new(None),
+            recent_lines: Mutex::new(Vec::with_capacity(1024)),
         }
     }
 
@@ -81,6 +83,18 @@ impl MetricsCollector {
                 self.transactions_enqueued.load(Ordering::Relaxed),
                 self.utxo_count.load(Ordering::Relaxed)
             );
+            let line = format!(
+                "TPS: {} | Peak: {} | Accepted: {} | Failed: {} | Enqueued: {} | UTXOs: {}",
+                tps,
+                self.peak_tps.load(Ordering::Relaxed),
+                current_count,
+                self.transactions_failed.load(Ordering::Relaxed),
+                self.transactions_enqueued.load(Ordering::Relaxed),
+                self.utxo_count.load(Ordering::Relaxed)
+            );
+            let mut buf = self.recent_lines.lock().unwrap();
+            buf.push(line);
+            if buf.len() > 2000 { let drop_n = buf.len() - 2000; buf.drain(0..drop_n); }
         }
     }
 
@@ -99,6 +113,18 @@ impl MetricsCollector {
             runtime_seconds: self.runtime_seconds(),
             utxo_count: self.utxo_count.load(Ordering::Relaxed),
         }
+    }
+
+    pub fn recent_log_lines(&self, last_n: usize) -> Vec<String> {
+        let buf = self.recent_lines.lock().unwrap();
+        let n = last_n.min(buf.len());
+        buf[buf.len()-n..].to_vec()
+    }
+
+    pub fn append_line<S: Into<String>>(&self, line: S) {
+        let mut buf = self.recent_lines.lock().unwrap();
+        buf.push(line.into());
+        if buf.len() > 2000 { let drop_n = buf.len() - 2000; buf.drain(0..drop_n); }
     }
 }
 
