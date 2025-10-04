@@ -2,7 +2,7 @@ use crate::config::MetricsConfig;
 use crate::models::PeerClassification;
 use log::{error, info};
 use prometheus::{
-    Counter, CounterVec, Gauge, GaugeVec, Histogram, HistogramOpts, IntCounter, IntCounterVec,
+    Histogram, HistogramOpts, IntCounter, IntCounterVec,
     IntGauge, Opts, Registry,
 };
 use std::sync::Arc;
@@ -257,7 +257,6 @@ impl SensorMetrics {
 
     /// Get metrics as Prometheus text format
     pub fn gather(&self) -> String {
-        use prometheus::Encoder;
         let encoder = prometheus::TextEncoder::new();
         let metric_families = self.registry.gather();
         encoder.encode_to_string(&metric_families).unwrap_or_default()
@@ -275,20 +274,63 @@ impl SensorMetrics {
         let listener = TcpListener::bind(&config.address).await?;
 
         tokio::spawn(async move {
+            use tokio::io::{AsyncBufReadExt, BufReader};
+
             loop {
                 match listener.accept().await {
-                    Ok((mut stream, _addr)) => {
-                        let metrics_text = self.gather();
+                    Ok((stream, _addr)) => {
+                        let self_clone = self.clone();
+                        tokio::spawn(async move {
+                            let (reader, mut writer) = stream.into_split();
+                            let mut reader = BufReader::new(reader);
+                            let mut request_line = String::new();
 
-                        let response = format!(
-                            "HTTP/1.1 200 OK\r\nContent-Type: text/plain; version=0.0.4\r\nContent-Length: {}\r\n\r\n{}",
-                            metrics_text.len(),
-                            metrics_text
-                        );
+                            // Read the HTTP request line
+                            match reader.read_line(&mut request_line).await {
+                                Ok(0) => return, // Connection closed
+                                Ok(_) => {
+                                    // Parse request line (e.g., "GET /metrics HTTP/1.1")
+                                    let parts: Vec<&str> = request_line.trim().split_whitespace().collect();
 
-                        if let Err(e) = stream.write_all(response.as_bytes()).await {
-                            error!("Failed to write metrics response: {}", e);
-                        }
+                                    if parts.len() >= 2 {
+                                        let method = parts[0];
+                                        let path = parts[1];
+
+                                        // Only serve GET /metrics
+                                        if method == "GET" && path == "/metrics" {
+                                            let metrics_text = self_clone.gather();
+                                            let response = format!(
+                                                "HTTP/1.1 200 OK\r\nContent-Type: text/plain; version=0.0.4; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                                                metrics_text.len(),
+                                                metrics_text
+                                            );
+                                            let _ = writer.write_all(response.as_bytes()).await;
+                                        } else if method == "GET" && path == "/" {
+                                            // Health check endpoint
+                                            let body = "Kaspa Sensor Metrics\nVisit /metrics for Prometheus metrics\n";
+                                            let response = format!(
+                                                "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                                                body.len(),
+                                                body
+                                            );
+                                            let _ = writer.write_all(response.as_bytes()).await;
+                                        } else {
+                                            // 404 for other paths
+                                            let body = "404 Not Found\n";
+                                            let response = format!(
+                                                "HTTP/1.1 404 Not Found\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                                                body.len(),
+                                                body
+                                            );
+                                            let _ = writer.write_all(response.as_bytes()).await;
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    error!("Failed to read HTTP request: {}", e);
+                                }
+                            }
+                        });
                     }
                     Err(e) => {
                         error!("Failed to accept metrics connection: {}", e);

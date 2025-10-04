@@ -9,11 +9,10 @@ use kaspa_consensus_core::config::Config as ConsensusConfig;
 use kaspa_consensus_core::network::NetworkType;
 use kaspa_core::task::tick::TickService;
 use kaspa_core::{info, warn, error};
-use kaspa_database::create_temp_db;
 use kaspa_database::prelude::ConnBuilder;
 use kaspa_p2p_lib::common::ProtocolError;
-use kaspa_p2p_lib::{Adaptor, ConnectionInitializer, Hub, Router};
-use kaspa_p2p_flows::handshake::KaspadHandshake;
+use kaspa_p2p_lib::{Adaptor, ConnectionInitializer, Hub, KaspadHandshake, Router};
+use kaspa_p2p_lib::pb::VersionMessage;
 use kaspa_utils::networking::ContextualNetAddress;
 use kaspa_utils_tower::counters::TowerConnectionCounters;
 use parking_lot::Mutex;
@@ -150,9 +149,17 @@ async fn main() {
         }
     };
 
-    let consensus_config = Arc::new(ConsensusConfig::new(network_type));
+    let consensus_config = Arc::new(ConsensusConfig::new(network_type.into()));
     let tick_service = Arc::new(TickService::default());
-    let (db_lifetime, db) = create_temp_db!(ConnBuilder::default().with_files_limit(10));
+
+    // Create persistent database for address manager
+    let addressdb_path = config.database.addressdb_path.clone();
+    info!("Address manager database: {:?}", addressdb_path);
+    let db = ConnBuilder::default()
+        .with_db_path(addressdb_path)
+        .with_files_limit(10)
+        .build()
+        .expect("Failed to create address manager database");
 
     // Create address manager
     let (address_manager, _) = AddressManager::new(consensus_config.clone(), db.clone(), tick_service.clone());
@@ -169,7 +176,7 @@ async fn main() {
     // Create P2P adaptor
     let hub = Hub::new();
     let listen_addr = match ContextualNetAddress::from_str(&config.network.listen_address) {
-        Ok(addr) => addr,
+        Ok(addr) => addr.normalize(consensus_config.default_p2p_port()),
         Err(e) => {
             error!("Invalid listen address: {}", e);
             std::process::exit(1);
@@ -181,9 +188,7 @@ async fn main() {
         hub,
         initializer.clone(),
         Arc::new(TowerConnectionCounters::default()),
-    )
-    .await
-    {
+    ) {
         Ok(a) => {
             info!("P2P service started on {}", config.network.listen_address);
             a
@@ -281,7 +286,7 @@ async fn main() {
 
     info!("Shutting down services...");
     tick_service.shutdown();
-    drop(db_lifetime);
+    drop(db);  // Close database connection
 
     // Final stats
     if let Ok(stats) = storage.get_statistics() {
@@ -333,7 +338,7 @@ impl SensorConnectionInitializer {
 #[async_trait::async_trait]
 impl ConnectionInitializer for SensorConnectionInitializer {
     async fn initialize_connection(&self, router: Arc<Router>) -> Result<(), ProtocolError> {
-        let peer_address = router.identity().to_string();
+        let peer_address = router.net_address().to_string();
         let is_outbound = router.is_outbound();
 
         // Record connection in metrics
@@ -346,16 +351,19 @@ impl ConnectionInitializer for SensorConnectionInitializer {
         let network_name = self.consensus_config.network_name();
         let local_address = self.address_manager.lock().best_local_address();
 
-        let mut version = kaspa_p2p_lib::Version::new(
-            local_address,
-            uuid::Uuid::new_v4(),
-            network_name.clone(),
-            None,
-            7,
-        );
-        version.add_user_agent("kaspa-sensor", env!("CARGO_PKG_VERSION"), &[&self.config.sensor.sensor_id]);
+        let version_message = VersionMessage {
+            protocol_version: 7,
+            services: 0,
+            timestamp: kaspa_core::time::unix_now() as i64,
+            address: local_address.map(|addr| addr.into()),
+            id: Vec::from(uuid::Uuid::new_v4().as_bytes()),
+            user_agent: format!("kaspa-sensor:{} ({})", env!("CARGO_PKG_VERSION"), self.config.sensor.sensor_id),
+            disable_relay_tx: false,
+            subnetwork_id: None,
+            network: network_name.to_string(),
+        };
 
-        let peer_version = handshake.handshake(version, network_name.clone()).await?;
+        let peer_version = handshake.handshake(version_message).await?;
         handshake.exchange_ready_messages().await?;
 
         info!(
@@ -374,7 +382,7 @@ impl ConnectionInitializer for SensorConnectionInitializer {
         };
 
         // Create connection event
-        let mut event = PeerConnectionEvent::new(
+        let event = PeerConnectionEvent::new(
             self.config.sensor.sensor_id.clone(),
             peer_ip,
             peer_port,

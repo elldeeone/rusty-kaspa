@@ -137,7 +137,7 @@ pub struct ExportConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DatabaseConfig {
-    /// Path to SQLite database file
+    /// Path to SQLite database file for event storage
     #[serde(default = "default_db_path")]
     pub path: PathBuf,
 
@@ -152,6 +152,10 @@ pub struct DatabaseConfig {
     /// Enable WAL mode for better concurrency
     #[serde(default = "default_enable_wal")]
     pub enable_wal: bool,
+
+    /// Path to RocksDB database for address manager
+    #[serde(default = "default_addressdb_path")]
+    pub addressdb_path: PathBuf,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -215,7 +219,7 @@ fn default_skip_private_ips() -> bool {
 }
 
 fn default_enable_export() -> bool {
-    true
+    false  // Disabled by default since no endpoint is configured
 }
 
 fn default_export_backend() -> String {
@@ -240,6 +244,10 @@ fn default_retry_backoff_secs() -> u64 {
 
 fn default_db_path() -> PathBuf {
     PathBuf::from("sensor-data.db")
+}
+
+fn default_addressdb_path() -> PathBuf {
+    PathBuf::from("sensor-addresses.db")
 }
 
 fn default_db_pool_size() -> u32 {
@@ -300,6 +308,7 @@ impl Default for SensorConfig {
                 pool_size: default_db_pool_size(),
                 retention_days: default_retention_days(),
                 enable_wal: default_enable_wal(),
+                addressdb_path: default_addressdb_path(),
             },
             metrics: MetricsConfig {
                 enabled: default_enable_metrics(),

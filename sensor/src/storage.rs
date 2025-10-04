@@ -20,6 +20,9 @@ pub enum StorageError {
     #[error("Serialization error: {0}")]
     SerializationError(#[from] serde_json::Error),
 
+    #[error("IO error: {0}")]
+    IoError(#[from] std::io::Error),
+
     #[error("Invalid data: {0}")]
     InvalidData(String),
 }
@@ -34,10 +37,11 @@ pub struct EventStorage {
 impl EventStorage {
     /// Create a new event storage instance
     pub fn new(config: &DatabaseConfig) -> StorageResult<Self> {
+        let enable_wal = config.enable_wal;
         let manager = SqliteConnectionManager::file(&config.path)
-            .with_init(|conn| {
+            .with_init(move |conn| {
                 // Enable WAL mode for better concurrency if configured
-                if config.enable_wal {
+                if enable_wal {
                     conn.execute_batch("PRAGMA journal_mode = WAL;")?;
                 }
                 // Performance optimizations
@@ -118,7 +122,7 @@ impl EventStorage {
         let classification_str = serde_json::to_string(&event.classification)?;
         let direction_str = serde_json::to_string(&event.direction)?;
 
-        let id = conn.execute(
+        conn.execute(
             "INSERT INTO peer_events (
                 event_id, timestamp, sensor_id, peer_ip, peer_port,
                 protocol_version, user_agent, network, direction, classification,
@@ -140,6 +144,7 @@ impl EventStorage {
             ],
         )?;
 
+        let id = conn.last_insert_rowid();
         debug!("Inserted event {} with id {}", event.event_id, id);
         Ok(id)
     }
@@ -162,7 +167,7 @@ impl EventStorage {
             .query_map([limit], |row| {
                 let timestamp_str: String = row.get(1)?;
                 let timestamp = DateTime::parse_from_rfc3339(&timestamp_str)
-                    .map_err(|e| rusqlite::Error::InvalidQuery)
+                    .map_err(|_e| rusqlite::Error::InvalidQuery)
                     .map(|dt| dt.with_timezone(&Utc))?;
 
                 let peer_ip_str: String = row.get(3)?;
@@ -320,6 +325,7 @@ mod tests {
             pool_size: 5,
             retention_days: 30,
             enable_wal: false,
+            addressdb_path: PathBuf::from(":memory:"),
         };
 
         let storage = EventStorage::new(&config).unwrap();
@@ -333,6 +339,7 @@ mod tests {
             pool_size: 5,
             retention_days: 30,
             enable_wal: false,
+            addressdb_path: PathBuf::from(":memory:"),
         };
 
         let storage = EventStorage::new(&config).unwrap();
@@ -361,6 +368,7 @@ mod tests {
             pool_size: 5,
             retention_days: 30,
             enable_wal: false,
+            addressdb_path: PathBuf::from(":memory:"),
         };
 
         let storage = EventStorage::new(&config).unwrap();
@@ -394,6 +402,7 @@ mod tests {
             pool_size: 5,
             retention_days: 30,
             enable_wal: false,
+            addressdb_path: PathBuf::from(":memory:"),
         };
 
         let storage = EventStorage::new(&config).unwrap();

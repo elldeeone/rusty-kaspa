@@ -180,12 +180,7 @@ impl EventExporter {
         } else {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            Err(ExportError::HttpError(reqwest::Error::from(
-                std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("HTTP {} - {}", status, body),
-                ),
-            )))
+            Err(ExportError::ConfigError(format!("HTTP {} - {}", status, body)))
         }
     }
 
@@ -217,12 +212,7 @@ impl EventExporter {
             if !response.status().is_success() {
                 let status = response.status();
                 let body = response.text().await.unwrap_or_default();
-                return Err(ExportError::HttpError(reqwest::Error::from(
-                    std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        format!("Firestore HTTP {} - {}", status, body),
-                    ),
-                )));
+                return Err(ExportError::ConfigError(format!("Firestore HTTP {} - {}", status, body)));
             }
         }
 
@@ -300,6 +290,7 @@ mod tests {
             pool_size: 5,
             retention_days: 30,
             enable_wal: false,
+            addressdb_path: PathBuf::from(":memory:"),
         };
 
         let storage = Arc::new(EventStorage::new(&db_config).unwrap());
