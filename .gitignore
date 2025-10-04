@@ -14,3 +14,17 @@ testing/integration/perflogs*
 Servers.toml
 release
 package-sizes.js
+
+# Local agents and logs (not part of repo)
+.claude/
+.serena/
+AGENTS.md
+kasbench_prepare.log
+kasbench/.env
+*.env
+*.log
+bench_run_*.log
+metrics_*.prom
+txgen_run_*.log
+txgen-main.rs
+kasbench/
