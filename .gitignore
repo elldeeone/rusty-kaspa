@@ -28,3 +28,9 @@ metrics_*.prom
 txgen_run_*.log
 txgen-main.rs
 kasbench/
+
+# Sensor runtime files (when run from project root)
+sensor.toml
+sensor-data.db*
+sensor-addresses.db/
+sensor.log
