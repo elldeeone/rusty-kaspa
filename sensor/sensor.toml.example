@@ -1,0 +1,98 @@
+# Kaspa Network Sensor Configuration Example
+# Copy this file to sensor.toml and customize for your deployment
+
+[sensor]
+# Unique identifier for this sensor instance
+sensor_id = "sensor-001"
+
+# Optional: Human-readable description or location
+description = "Kaspa Network Sensor - AWS US-East-1"
+
+# Optional: Deployment environment tag
+environment = "production"
+
+[network]
+# Address to listen for P2P connections
+listen_address = "0.0.0.0:16111"
+
+# Network type: mainnet, testnet, or devnet
+network_type = "mainnet"
+
+# Maximum concurrent inbound connections
+max_inbound_connections = 500
+
+# Maximum concurrent outbound connections
+max_outbound_connections = 50
+
+# DNS seeders to query for initial peer discovery
+dns_seeders = [
+    "seeder1.kaspad.net",
+    "seeder2.kaspad.net",
+    "seeder3.kaspad.net"
+]
+
+# Number of peers to fetch from each DNS seeder
+peers_per_seeder = 10
+
+[probing]
+# Enable active peer probing to classify as Public/Private
+enabled = true
+
+# Timeout for probe attempts (milliseconds)
+timeout_ms = 5000
+
+# Delay before probing after handshake (milliseconds)
+delay_ms = 100
+
+# Maximum number of concurrent probe operations
+max_concurrent_probes = 100
+
+# Skip probing private/local IP addresses
+skip_private_ips = true
+
+[export]
+# Enable data export to external services
+enabled = true
+
+# Export backend: "http", "firestore", or "webhook"
+backend = "http"
+
+# Export endpoint URL
+# For HTTP: POST endpoint that accepts JSON
+# For Firestore: REST API URL like https://firestore.googleapis.com/v1/projects/PROJECT/databases/(default)/documents/COLLECTION
+endpoint = "https://your-api-endpoint.com/sensor-data"
+
+# Optional: API key or authentication token
+api_key = "your-api-key-here"
+
+# Number of events to batch per export
+batch_size = 100
+
+# Export interval (seconds)
+interval_secs = 60
+
+# Maximum retry attempts for failed exports
+max_retries = 3
+
+# Backoff time between retries (seconds)
+retry_backoff_secs = 5
+
+[database]
+# Path to SQLite database file
+path = "sensor-data.db"
+
+# Connection pool size
+pool_size = 10
+
+# Data retention period (days)
+retention_days = 30
+
+# Enable WAL mode for better concurrency
+enable_wal = true
+
+[metrics]
+# Enable Prometheus metrics endpoint
+enabled = true
+
+# Metrics HTTP server address
+address = "0.0.0.0:9090"

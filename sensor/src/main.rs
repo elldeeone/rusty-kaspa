@@ -1,36 +1,49 @@
-mod prober;
+use kaspa_sensor::{
+    config::SensorConfig, export::EventExporter, metrics::SensorMetrics, models::{ConnectionDirection, PeerConnectionEvent},
+    prober::ActiveProber, storage::EventStorage,
+};
 
-use prober::ActiveProber;
 use clap::Parser;
 use kaspa_addressmanager::AddressManager;
 use kaspa_consensus_core::config::Config as ConsensusConfig;
 use kaspa_consensus_core::network::NetworkType;
 use kaspa_core::task::tick::TickService;
-use kaspa_core::{debug, info};
+use kaspa_core::{info, warn, error};
 use kaspa_database::create_temp_db;
 use kaspa_database::prelude::ConnBuilder;
 use kaspa_p2p_lib::common::ProtocolError;
-use kaspa_p2p_lib::{Adaptor, ConnectionHandler, ConnectionInitializer, Hub, Router};
-use kaspa_protocol_flows::handshake::KaspadHandshake;
+use kaspa_p2p_lib::{Adaptor, ConnectionInitializer, Hub, Router};
+use kaspa_p2p_flows::handshake::KaspadHandshake;
 use kaspa_utils::networking::ContextualNetAddress;
 use kaspa_utils_tower::counters::TowerConnectionCounters;
 use parking_lot::Mutex;
-use std::sync::Arc;
+use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::signal;
+use tokio::sync::RwLock;
+use tokio::time::interval;
 
 #[derive(Parser, Debug)]
 #[command(name = "kaspa-sensor")]
-#[command(version, about = "Kaspa Network Sensor - Maps network topology")]
+#[command(version, about = "Kaspa Network Sensor - Maps network topology and classifies peers")]
 struct Args {
-    #[arg(long, default_value = "sensor")]
-    sensor_id: String,
+    /// Path to configuration file
+    #[arg(long, short = 'c')]
+    config: Option<PathBuf>,
 
-    #[arg(long, default_value = "0.0.0.0:16111")]
-    listen: String,
+    /// Sensor ID (overrides config file)
+    #[arg(long)]
+    sensor_id: Option<String>,
 
-    #[arg(long, default_value = "true")]
-    enable_probing: bool,
+    /// Listen address (overrides config file)
+    #[arg(long)]
+    listen: Option<String>,
+
+    /// Generate default configuration file
+    #[arg(long)]
+    generate_config: bool,
 }
 
 #[tokio::main]
@@ -38,94 +51,299 @@ async fn main() {
     kaspa_core::log::init_logger(None, "INFO");
     let args = Args::parse();
 
-    info!("Starting Kaspa Network Sensor - ID: {}", args.sensor_id);
+    // Handle config generation
+    if args.generate_config {
+        let path = PathBuf::from("sensor.toml");
+        match SensorConfig::create_default_config_file(&path) {
+            Ok(_) => {
+                info!("Generated default configuration at {:?}", path);
+                return;
+            }
+            Err(e) => {
+                error!("Failed to generate config: {}", e);
+                std::process::exit(1);
+            }
+        }
+    }
 
-    // Create minimal components
-    let config = Arc::new(ConsensusConfig::new(NetworkType::Mainnet));
+    // Load configuration
+    let mut config = match &args.config {
+        Some(path) => match SensorConfig::from_file(path) {
+            Ok(cfg) => {
+                info!("Loaded configuration from {:?}", path);
+                cfg
+            }
+            Err(e) => {
+                error!("Failed to load config: {}", e);
+                std::process::exit(1);
+            }
+        },
+        None => {
+            info!("No config file specified, using defaults");
+            SensorConfig::default()
+        }
+    };
+
+    // Override with CLI args if provided
+    if let Some(sensor_id) = args.sensor_id {
+        config.sensor.sensor_id = sensor_id;
+    }
+    if let Some(listen) = args.listen {
+        config.network.listen_address = listen;
+    }
+
+    info!("=== Kaspa Network Sensor Starting ===");
+    info!("Sensor ID: {}", config.sensor.sensor_id);
+    info!("Network: {}", config.network.network_type);
+    info!("Listen: {}", config.network.listen_address);
+
+    // Initialize metrics
+    let metrics = match SensorMetrics::new() {
+        Ok(m) => {
+            let m = Arc::new(m);
+            if config.metrics.enabled {
+                if let Err(e) = m.clone().start_server(config.metrics.clone()).await {
+                    error!("Failed to start metrics server: {}", e);
+                    std::process::exit(1);
+                }
+                info!("Metrics server started on {}", config.metrics.address);
+            }
+            m
+        }
+        Err(e) => {
+            error!("Failed to initialize metrics: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    // Initialize storage
+    let storage = match EventStorage::new(&config.database) {
+        Ok(s) => Arc::new(s),
+        Err(e) => {
+            error!("Failed to initialize storage: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    // Initialize exporter
+    let mut exporter = match EventExporter::new(config.export.clone(), storage.clone()) {
+        Ok(e) => e,
+        Err(e) => {
+            error!("Failed to initialize exporter: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    if let Err(e) = exporter.start().await {
+        error!("Failed to start exporter: {}", e);
+        std::process::exit(1);
+    }
+
+    // Create minimal kaspa components
+    let network_type = match config.network.network_type.as_str() {
+        "mainnet" => NetworkType::Mainnet,
+        "testnet" => NetworkType::Testnet,
+        "devnet" => NetworkType::Devnet,
+        _ => {
+            error!("Invalid network type: {}", config.network.network_type);
+            std::process::exit(1);
+        }
+    };
+
+    let consensus_config = Arc::new(ConsensusConfig::new(network_type));
     let tick_service = Arc::new(TickService::default());
     let (db_lifetime, db) = create_temp_db!(ConnBuilder::default().with_files_limit(10));
 
     // Create address manager
-    let (address_manager, _) = AddressManager::new(config.clone(), db.clone(), tick_service.clone());
+    let (address_manager, _) = AddressManager::new(consensus_config.clone(), db.clone(), tick_service.clone());
 
-    // Create hub
-    let hub = Arc::new(Hub::new());
-
-    // Create connection handler with our initializer
-    let initializer = Arc::new(SensorConnectionInitializer {
-        address_manager: address_manager.clone(),
-        config: config.clone(),
-        sensor_id: args.sensor_id.clone(),
-        prober: ActiveProber::new(5000),
-        enable_probing: args.enable_probing,
-    });
-
-    // Create connection handler (handles P2P connections)
-    let handler = Arc::new(ConnectionHandler::new(
-        hub.clone(),
-        TowerConnectionCounters::default(),
-        initializer,
+    // Create connection initializer
+    let initializer = Arc::new(SensorConnectionInitializer::new(
+        address_manager.clone(),
+        consensus_config.clone(),
+        config.clone(),
+        storage.clone(),
+        metrics.clone(),
     ));
 
-    // Start listening for connections
-    let listen_addr = ContextualNetAddress::from_str(&args.listen).unwrap();
-    handler.start_listening(listen_addr, None).await;
-    info!("P2P service started on {}", args.listen);
+    // Create P2P adaptor
+    let hub = Hub::new();
+    let listen_addr = match ContextualNetAddress::from_str(&config.network.listen_address) {
+        Ok(addr) => addr,
+        Err(e) => {
+            error!("Invalid listen address: {}", e);
+            std::process::exit(1);
+        }
+    };
 
-    // Connect to some initial peers from DNS
+    let adaptor = match Adaptor::bidirectional(
+        listen_addr,
+        hub,
+        initializer.clone(),
+        Arc::new(TowerConnectionCounters::default()),
+    )
+    .await
+    {
+        Ok(a) => {
+            info!("P2P service started on {}", config.network.listen_address);
+            a
+        }
+        Err(e) => {
+            error!("Failed to start P2P service: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    // Start uptime tracker
+    let start_time = Instant::now();
+    let metrics_clone = metrics.clone();
     tokio::spawn(async move {
-        let dns_seeders = vec![
-            "seeder1.kaspad.net",
-            "seeder2.kaspad.net",
-            "seeder3.kaspad.net",
-        ];
+        let mut ticker = interval(Duration::from_secs(10));
+        loop {
+            ticker.tick().await;
+            metrics_clone.update_uptime(start_time.elapsed().as_secs() as i64);
+        }
+    });
+
+    // Start storage metrics updater
+    let storage_clone = storage.clone();
+    let metrics_clone = metrics.clone();
+    tokio::spawn(async move {
+        let mut ticker = interval(Duration::from_secs(30));
+        loop {
+            ticker.tick().await;
+            if let Ok(stats) = storage_clone.get_statistics() {
+                metrics_clone.update_storage_metrics(
+                    stats.total_events as i64,
+                    stats.pending_exports as i64,
+                    storage_clone.get_database_size().unwrap_or(0),
+                );
+            }
+        }
+    });
+
+    // Start database cleanup task
+    let storage_clone = storage.clone();
+    let retention_days = config.database.retention_days;
+    tokio::spawn(async move {
+        let mut ticker = interval(Duration::from_secs(86400)); // Daily
+        loop {
+            ticker.tick().await;
+            match storage_clone.cleanup_old_events(retention_days) {
+                Ok(deleted) if deleted > 0 => {
+                    info!("Cleaned up {} old events", deleted);
+                }
+                Err(e) => {
+                    error!("Failed to cleanup old events: {}", e);
+                }
+                _ => {}
+            }
+        }
+    });
+
+    // Connect to DNS seeders
+    let adaptor_clone = adaptor.clone();
+    let dns_seeders = config.network.dns_seeders.clone();
+    let peers_per_seeder = config.network.peers_per_seeder;
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(2)).await;
 
         for seeder in dns_seeders {
-            info!("Querying DNS seeder {}", seeder);
-            match tokio::net::lookup_host((seeder, 16111)).await {
+            info!("Querying DNS seeder: {}", seeder);
+            match tokio::net::lookup_host((seeder.as_str(), 16111)).await {
                 Ok(addrs) => {
-                    for addr in addrs.take(5) {
+                    for addr in addrs.take(peers_per_seeder) {
                         let peer_addr = addr.to_string();
-                        info!("Connecting to {}", peer_addr);
-                        if let Err(e) = handler.connect_peer(peer_addr).await {
-                            debug!("Failed to connect: {}", e);
+                        info!("Connecting to peer: {}", peer_addr);
+                        if let Err(e) = adaptor_clone.connect_peer(peer_addr).await {
+                            warn!("Failed to connect to peer: {}", e);
                         }
                     }
                 }
                 Err(e) => {
-                    debug!("DNS lookup failed for {}: {}", seeder, e);
+                    warn!("DNS lookup failed for {}: {}", seeder, e);
                 }
             }
         }
     });
 
-    // Wait for shutdown
+    // Wait for shutdown signal
+    info!("Sensor running. Press Ctrl+C to shutdown.");
     signal::ctrl_c().await.expect("Failed to install CTRL+C signal handler");
-    info!("Shutting down...");
+    info!("=== Shutdown signal received ===");
 
-    handler.terminate_all_peers().await;
+    // Graceful shutdown
+    info!("Closing P2P connections...");
+    adaptor.close().await;
+
+    info!("Shutting down exporter...");
+    exporter.shutdown().await;
+
+    info!("Shutting down services...");
     tick_service.shutdown();
     drop(db_lifetime);
+
+    // Final stats
+    if let Ok(stats) = storage.get_statistics() {
+        info!("=== Final Statistics ===");
+        info!("Total events: {}", stats.total_events);
+        info!("Public peers: {}", stats.public_peers);
+        info!("Private peers: {}", stats.private_peers);
+        info!("Pending exports: {}", stats.pending_exports);
+    }
+
+    info!("Sensor shutdown complete");
 }
 
-// Minimal connection initializer with probe-back
+/// Connection initializer for the sensor
 struct SensorConnectionInitializer {
     address_manager: Arc<Mutex<AddressManager>>,
-    config: Arc<ConsensusConfig>,
-    sensor_id: String,
-    prober: ActiveProber,
-    enable_probing: bool,
+    consensus_config: Arc<ConsensusConfig>,
+    config: SensorConfig,
+    storage: Arc<EventStorage>,
+    metrics: Arc<SensorMetrics>,
+    prober: Arc<RwLock<Option<ActiveProber>>>,
+}
+
+impl SensorConnectionInitializer {
+    fn new(
+        address_manager: Arc<Mutex<AddressManager>>,
+        consensus_config: Arc<ConsensusConfig>,
+        config: SensorConfig,
+        storage: Arc<EventStorage>,
+        metrics: Arc<SensorMetrics>,
+    ) -> Self {
+        let prober = if config.probing.enabled {
+            Some(ActiveProber::with_metrics(config.probing.clone(), metrics.clone()))
+        } else {
+            None
+        };
+
+        Self {
+            address_manager,
+            consensus_config,
+            config,
+            storage,
+            metrics,
+            prober: Arc::new(RwLock::new(prober)),
+        }
+    }
 }
 
 #[async_trait::async_trait]
 impl ConnectionInitializer for SensorConnectionInitializer {
     async fn initialize_connection(&self, router: Arc<Router>) -> Result<(), ProtocolError> {
-        // Use kaspad's EXACT handshake
+        let peer_address = router.identity().to_string();
+        let is_outbound = router.is_outbound();
+
+        // Record connection in metrics
+        self.metrics.record_connection(!is_outbound, true);
+
+        // Perform handshake
         let mut handshake = KaspadHandshake::new(&router);
         router.start();
 
-        // Build version message
-        let network_name = self.config.network_name();
+        let network_name = self.consensus_config.network_name();
         let local_address = self.address_manager.lock().best_local_address();
 
         let mut version = kaspa_p2p_lib::Version::new(
@@ -133,36 +351,102 @@ impl ConnectionInitializer for SensorConnectionInitializer {
             uuid::Uuid::new_v4(),
             network_name.clone(),
             None,
-            7, // Protocol version
+            7,
         );
-        version.add_user_agent("kaspa-sensor", env!("CARGO_PKG_VERSION"), &[&self.sensor_id]);
+        version.add_user_agent("kaspa-sensor", env!("CARGO_PKG_VERSION"), &[&self.config.sensor.sensor_id]);
 
-        // Perform handshake
         let peer_version = handshake.handshake(version, network_name.clone()).await?;
         handshake.exchange_ready_messages().await?;
 
-        let peer_address = router.identity().to_string();
-        info!("Connected to peer: {} - UserAgent: {}", peer_address, peer_version.user_agent);
+        info!(
+            "Handshake complete with {} - UserAgent: {} (Protocol: {})",
+            peer_address, peer_version.user_agent, peer_version.protocol_version
+        );
 
-        // SURGICAL ADDITION: Probe-back classification
-        if self.enable_probing {
-            let prober = self.prober.clone();
-            let peer_address_clone = peer_address.clone();
-            tokio::spawn(async move {
-                match prober.probe_peer(&peer_address_clone).await {
-                    Ok(classification) => {
-                        info!("Peer {} classified as {:?}", peer_address_clone, classification);
+        // Parse peer address
+        let (peer_ip, peer_port) = match peer_address.parse::<std::net::SocketAddr>() {
+            Ok(addr) => (addr.ip(), addr.port()),
+            Err(_) => {
+                warn!("Failed to parse peer address: {}", peer_address);
+                self.metrics.record_connection_closed();
+                return Ok(());
+            }
+        };
+
+        // Create connection event
+        let mut event = PeerConnectionEvent::new(
+            self.config.sensor.sensor_id.clone(),
+            peer_ip,
+            peer_port,
+            peer_version.protocol_version as u32,
+            peer_version.user_agent.clone(),
+            self.consensus_config.network_name().to_string(),
+            if is_outbound { ConnectionDirection::Outbound } else { ConnectionDirection::Inbound },
+        );
+
+        // Perform active probe if enabled and inbound
+        if !is_outbound {
+            if let Some(ref prober) = *self.prober.read().await {
+                let peer_addr_clone = peer_address.clone();
+                let prober_clone = prober.clone();
+                let metrics_clone = self.metrics.clone();
+                let storage_clone = self.storage.clone();
+                let event_clone = event.clone();
+
+                tokio::spawn(async move {
+                    match prober_clone.probe_peer(&peer_addr_clone).await {
+                        Ok((classification, duration_ms)) => {
+                            info!("Peer {} classified as {:?} ({}ms)", peer_addr_clone, classification, duration_ms);
+
+                            let updated_event = event_clone.with_probe_result(classification, duration_ms, None);
+
+                            // Store event
+                            if let Err(e) = storage_clone.insert_event(&updated_event) {
+                                error!("Failed to store event: {}", e);
+                            }
+                        }
+                        Err(e) => {
+                            warn!("Failed to probe {}: {}", peer_addr_clone, e);
+
+                            let updated_event = event_clone.with_probe_result(
+                                kaspa_sensor::models::PeerClassification::Private,
+                                0,
+                                Some(e.to_string()),
+                            );
+
+                            // Store event even if probe failed
+                            if let Err(e) = storage_clone.insert_event(&updated_event) {
+                                error!("Failed to store event: {}", e);
+                            }
+
+                            metrics_clone.record_probe_error("probe_failed");
+                        }
                     }
-                    Err(e) => {
-                        debug!("Failed to probe {}: {}", peer_address_clone, e);
-                    }
+                });
+            } else {
+                // Store event without probing
+                if let Err(e) = self.storage.insert_event(&event) {
+                    error!("Failed to store event: {}", e);
                 }
-            });
+            }
+        } else {
+            // Outbound connection - no probing needed
+            if let Err(e) = self.storage.insert_event(&event) {
+                error!("Failed to store event: {}", e);
+            }
         }
 
-        // Register minimal flows for gossip
-        use kaspa_p2p_lib::{KaspadMessagePayloadType, make_message};
+        // Handle address gossip
+        self.handle_address_gossip(router).await;
+
+        Ok(())
+    }
+}
+
+impl SensorConnectionInitializer {
+    async fn handle_address_gossip(&self, router: Arc<Router>) {
         use kaspa_p2p_lib::pb::{kaspad_message::Payload, AddressesMessage};
+        use kaspa_p2p_lib::{make_message, KaspadMessagePayloadType};
 
         let incoming_route = router.subscribe(vec![
             KaspadMessagePayloadType::RequestAddresses,
@@ -171,21 +455,24 @@ impl ConnectionInitializer for SensorConnectionInitializer {
 
         let router_clone = router.clone();
         let address_manager = self.address_manager.clone();
+
         tokio::spawn(async move {
             let mut incoming = incoming_route;
             while let Some(msg) = incoming.recv().await {
                 match msg.payload {
                     Some(Payload::RequestAddresses(_)) => {
-                        let addresses = address_manager.lock()
+                        let addresses: Vec<_> = address_manager
+                            .lock()
                             .iterate_addresses()
                             .take(1000)
                             .map(|addr| (addr.ip, addr.port).into())
                             .collect();
 
-                        let _ = router_clone.enqueue(make_message!(
-                            Payload::Addresses,
-                            AddressesMessage { address_list: addresses }
-                        )).await;
+                        let _ = router_clone
+                            .enqueue(make_message!(Payload::Addresses, AddressesMessage {
+                                address_list: addresses
+                            }))
+                            .await;
                     }
                     Some(Payload::Addresses(msg)) => {
                         let mut am = address_manager.lock();
@@ -199,7 +486,5 @@ impl ConnectionInitializer for SensorConnectionInitializer {
                 }
             }
         });
-
-        Ok(())
     }
 }

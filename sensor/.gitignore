@@ -1,0 +1,25 @@
+# Sensor-specific gitignore
+
+# Configuration files (may contain secrets)
+sensor.toml
+*.toml
+!sensor.toml.example
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+
+# Data directories
+data/
+logs/
+prometheus/
+grafana/
+
+# Docker volumes
+config/
+
+# API keys and secrets
+.env
+*.key
+*.pem

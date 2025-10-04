@@ -14,7 +14,7 @@ kaspa-utils = { path = "../utils" }
 kaspa-utils-tower = { path = "../utils/tower" }
 kaspa-addressmanager = { path = "../components/addressmanager" }
 kaspa-p2p-lib = { path = "../protocol/p2p" }
-kaspa-protocol-flows = { path = "../protocol/flows" }
+kaspa-p2p-flows = { path = "../protocol/flows" }
 kaspa-consensus-core = { path = "../consensus/core" }
 kaspa-database = { path = "../database" }
 
@@ -43,11 +43,20 @@ thiserror = "1.0"
 # Data export (Firebase/HTTP)
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 
+# Database
+rusqlite = { version = "0.32", features = ["bundled"] }
+r2d2 = "0.8"
+r2d2_sqlite = "0.25"
+
 # Metrics
 prometheus = { version = "0.13", features = ["process"] }
 
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
 # CLI
 clap = { version = "4.5", features = ["derive", "env"] }
+toml = "0.8"
 
 [features]
 default = []

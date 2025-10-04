@@ -1,15 +1,13 @@
-use kaspa_core::debug;
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub enum PeerClassification {
-    Public,
-    Private,
-}
+use crate::config::ProbingConfig;
+use crate::metrics::SensorMetrics;
+use crate::models::PeerClassification;
+use log::debug;
 use std::net::SocketAddr;
-use std::time::Duration;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 use thiserror::Error;
 use tokio::net::TcpStream;
+use tokio::sync::Semaphore;
 use tokio::time::timeout;
 
 #[derive(Debug, Error)]
@@ -28,66 +26,110 @@ pub enum ProbeError {
 
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
+
+    #[error("Rate limit exceeded")]
+    RateLimitExceeded,
 }
 
-#[derive(Clone)]
+/// Active prober with rate limiting and metrics
 pub struct ActiveProber {
-    timeout_ms: u64,
+    config: ProbingConfig,
+    semaphore: Arc<Semaphore>,
+    metrics: Option<Arc<SensorMetrics>>,
 }
 
 impl ActiveProber {
-    pub fn new(timeout_ms: u64) -> Self {
-        Self { timeout_ms }
+    /// Create a new prober with configuration
+    pub fn new(config: ProbingConfig) -> Self {
+        let semaphore = Arc::new(Semaphore::new(config.max_concurrent_probes));
+        Self {
+            config,
+            semaphore,
+            metrics: None,
+        }
+    }
+
+    /// Create prober with metrics
+    pub fn with_metrics(config: ProbingConfig, metrics: Arc<SensorMetrics>) -> Self {
+        let semaphore = Arc::new(Semaphore::new(config.max_concurrent_probes));
+        Self {
+            config,
+            semaphore,
+            metrics: Some(metrics),
+        }
     }
 
     /// Probe a peer to determine if it's publicly accessible
-    pub async fn probe_peer(&self, address: &str) -> Result<PeerClassification, ProbeError> {
+    pub async fn probe_peer(&self, address: &str) -> Result<(PeerClassification, u64), ProbeError> {
+        // Acquire semaphore permit for rate limiting
+        let _permit = self.semaphore.try_acquire()
+            .map_err(|_| ProbeError::RateLimitExceeded)?;
+
+        let start = Instant::now();
+
         // Parse the address
         let socket_addr: SocketAddr = address
             .parse()
             .map_err(|_| ProbeError::InvalidAddress(address.to_string()))?;
 
-        // Don't probe private/local addresses
-        if self.is_private_address(&socket_addr) {
+        // Skip private addresses if configured
+        if self.config.skip_private_ips && self.is_private_address(&socket_addr) {
             debug!("Skipping probe for private address: {}", address);
-            return Ok(PeerClassification::Private);
+            let duration_ms = start.elapsed().as_millis() as u64;
+            return Ok((PeerClassification::Private, duration_ms));
+        }
+
+        // Add delay before probing if configured
+        if self.config.delay_ms > 0 {
+            tokio::time::sleep(Duration::from_millis(self.config.delay_ms)).await;
         }
 
         // Attempt to connect with timeout
-        let probe_timeout = Duration::from_millis(self.timeout_ms);
+        let probe_timeout = Duration::from_millis(self.config.timeout_ms);
 
-        match timeout(probe_timeout, TcpStream::connect(socket_addr)).await {
+        let classification = match timeout(probe_timeout, TcpStream::connect(socket_addr)).await {
             Ok(Ok(_stream)) => {
                 // Successfully connected - peer is public
                 debug!("Successfully probed peer {} - classified as Public", address);
-                Ok(PeerClassification::Public)
+                PeerClassification::Public
             }
             Ok(Err(e)) => {
                 // Connection failed - peer is private or unreachable
                 debug!("Failed to probe peer {}: {} - classified as Private", address, e);
 
-                // Check specific error types for better classification
-                match e.kind() {
-                    std::io::ErrorKind::ConnectionRefused => {
-                        // Port is closed but host is reachable
-                        Ok(PeerClassification::Private)
-                    }
-                    std::io::ErrorKind::TimedOut => {
-                        // Likely behind firewall/NAT
-                        Ok(PeerClassification::Private)
-                    }
-                    _ => {
-                        // Other errors still classify as private
-                        Ok(PeerClassification::Private)
-                    }
+                // Track specific error types in metrics
+                if let Some(ref metrics) = self.metrics {
+                    let error_type = match e.kind() {
+                        std::io::ErrorKind::ConnectionRefused => "connection_refused",
+                        std::io::ErrorKind::TimedOut => "timeout",
+                        std::io::ErrorKind::ConnectionReset => "connection_reset",
+                        _ => "other",
+                    };
+                    metrics.record_probe_error(error_type);
                 }
+
+                PeerClassification::Private
             }
             Err(_) => {
                 // Timeout elapsed - peer is not reachable
                 debug!("Probe timeout for peer {} - classified as Private", address);
-                Ok(PeerClassification::Private)
+
+                if let Some(ref metrics) = self.metrics {
+                    metrics.record_probe_error("timeout");
+                }
+
+                PeerClassification::Private
             }
+        };
+
+        let duration_ms = start.elapsed().as_millis() as u64;
+
+        // Record metrics
+        if let Some(ref metrics) = self.metrics {
+            metrics.record_probe(classification, duration_ms as f64 / 1000.0);
         }
+
+        Ok((classification, duration_ms))
     }
 
     /// Check if an address is private/local
@@ -111,32 +153,24 @@ impl ActiveProber {
         }
     }
 
-    /// Batch probe multiple peers concurrently
-    pub async fn batch_probe(
-        &self,
-        addresses: Vec<String>,
-    ) -> Vec<(String, Result<PeerClassification, ProbeError>)> {
-        let mut results = Vec::new();
-        let mut handles = Vec::new();
+    /// Get current number of active probes
+    pub fn active_probes(&self) -> usize {
+        self.config.max_concurrent_probes - self.semaphore.available_permits()
+    }
 
-        for address in addresses {
-            let timeout_ms = self.timeout_ms;
-            let handle = tokio::spawn(async move {
-                let prober = ActiveProber::new(timeout_ms);
-                let result = prober.probe_peer(&address).await;
-                (address, result)
-            });
-            handles.push(handle);
+    /// Get maximum concurrent probes
+    pub fn max_probes(&self) -> usize {
+        self.config.max_concurrent_probes
+    }
+}
+
+impl Clone for ActiveProber {
+    fn clone(&self) -> Self {
+        Self {
+            config: self.config.clone(),
+            semaphore: self.semaphore.clone(),
+            metrics: self.metrics.clone(),
         }
-
-        // Collect all results
-        for handle in handles {
-            if let Ok(result) = handle.await {
-                results.push(result);
-            }
-        }
-
-        results
     }
 }
 
@@ -146,24 +180,40 @@ mod tests {
 
     #[tokio::test]
     async fn test_private_address_detection() {
-        let prober = ActiveProber::new(1000);
+        let config = ProbingConfig {
+            enabled: true,
+            timeout_ms: 1000,
+            delay_ms: 0,
+            max_concurrent_probes: 10,
+            skip_private_ips: true,
+        };
+
+        let prober = ActiveProber::new(config);
 
         // Test localhost
-        let result = prober.probe_peer("127.0.0.1:16111").await;
-        assert!(matches!(result, Ok(PeerClassification::Private)));
+        let (classification, _) = prober.probe_peer("127.0.0.1:16111").await.unwrap();
+        assert_eq!(classification, PeerClassification::Private);
 
         // Test private IPv4
-        let result = prober.probe_peer("192.168.1.1:16111").await;
-        assert!(matches!(result, Ok(PeerClassification::Private)));
+        let (classification, _) = prober.probe_peer("192.168.1.1:16111").await.unwrap();
+        assert_eq!(classification, PeerClassification::Private);
 
         // Test private IPv4 (10.x.x.x)
-        let result = prober.probe_peer("10.0.0.1:16111").await;
-        assert!(matches!(result, Ok(PeerClassification::Private)));
+        let (classification, _) = prober.probe_peer("10.0.0.1:16111").await.unwrap();
+        assert_eq!(classification, PeerClassification::Private);
     }
 
     #[test]
     fn test_is_private_address() {
-        let prober = ActiveProber::new(1000);
+        let config = ProbingConfig {
+            enabled: true,
+            timeout_ms: 1000,
+            delay_ms: 0,
+            max_concurrent_probes: 10,
+            skip_private_ips: true,
+        };
+
+        let prober = ActiveProber::new(config);
 
         // Localhost
         let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
@@ -176,5 +226,25 @@ mod tests {
         // Public address
         let addr: SocketAddr = "8.8.8.8:8080".parse().unwrap();
         assert!(!prober.is_private_address(&addr));
+    }
+
+    #[tokio::test]
+    async fn test_rate_limiting() {
+        let config = ProbingConfig {
+            enabled: true,
+            timeout_ms: 1000,
+            delay_ms: 0,
+            max_concurrent_probes: 2,
+            skip_private_ips: false,
+        };
+
+        let prober = ActiveProber::new(config);
+
+        // These should succeed (within limit)
+        let _permit1 = prober.semaphore.try_acquire().unwrap();
+        let _permit2 = prober.semaphore.try_acquire().unwrap();
+
+        // This should fail (over limit)
+        assert!(prober.semaphore.try_acquire().is_err());
     }
 }
