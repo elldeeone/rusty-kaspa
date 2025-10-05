@@ -34,3 +34,9 @@ sensor.toml
 sensor-data.db*
 sensor-addresses.db/
 sensor.log
+
+# Sensor deployment documentation (local only)
+sensor/DEPLOYMENT.md
+sensor/POSTGRES_SETUP.md
+sensor/CHANGELOG.md
+sensor/ADDRESS_GOSSIP_IMPLEMENTATION.md
