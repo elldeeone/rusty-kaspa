@@ -115,12 +115,24 @@ async fn main() {
         }
     };
 
-    // Initialize storage
-    let storage = match EventStorage::new(&config.database) {
-        Ok(s) => Arc::new(s),
-        Err(e) => {
-            error!("Failed to initialize storage: {}", e);
-            std::process::exit(1);
+    // Initialize storage (with PostgreSQL if configured)
+    let storage = if config.database.postgres.is_some() {
+        info!("PostgreSQL configured, initializing dual storage (SQLite + PostgreSQL)");
+        match EventStorage::new_with_postgres(&config.database, config.sensor.sensor_id.clone()).await {
+            Ok(s) => Arc::new(s),
+            Err(e) => {
+                error!("Failed to initialize storage with PostgreSQL: {}", e);
+                std::process::exit(1);
+            }
+        }
+    } else {
+        info!("PostgreSQL not configured, using local SQLite storage only");
+        match EventStorage::new(&config.database) {
+            Ok(s) => Arc::new(s),
+            Err(e) => {
+                error!("Failed to initialize storage: {}", e);
+                std::process::exit(1);
+            }
         }
     };
 
@@ -371,6 +383,11 @@ impl ConnectionInitializer for SensorConnectionInitializer {
             peer_address, peer_version.user_agent, peer_version.protocol_version
         );
 
+        // Launch address gossip flows immediately after ready exchange
+        // CRITICAL: Must be done before any other processing to avoid race condition
+        // where peer sends RequestAddresses before we've subscribed
+        kaspa_sensor::address_flows::launch_address_flows(self.address_manager.clone(), router.clone());
+
         // Parse peer address
         let (peer_ip, peer_port) = match peer_address.parse::<std::net::SocketAddr>() {
             Ok(addr) => (addr.ip(), addr.port()),
@@ -444,55 +461,6 @@ impl ConnectionInitializer for SensorConnectionInitializer {
             }
         }
 
-        // Handle address gossip
-        self.handle_address_gossip(router).await;
-
         Ok(())
-    }
-}
-
-impl SensorConnectionInitializer {
-    async fn handle_address_gossip(&self, router: Arc<Router>) {
-        use kaspa_p2p_lib::pb::{kaspad_message::Payload, AddressesMessage};
-        use kaspa_p2p_lib::{make_message, KaspadMessagePayloadType};
-
-        let incoming_route = router.subscribe(vec![
-            KaspadMessagePayloadType::RequestAddresses,
-            KaspadMessagePayloadType::Addresses,
-        ]);
-
-        let router_clone = router.clone();
-        let address_manager = self.address_manager.clone();
-
-        tokio::spawn(async move {
-            let mut incoming = incoming_route;
-            while let Some(msg) = incoming.recv().await {
-                match msg.payload {
-                    Some(Payload::RequestAddresses(_)) => {
-                        let addresses: Vec<_> = address_manager
-                            .lock()
-                            .iterate_addresses()
-                            .take(1000)
-                            .map(|addr| (addr.ip, addr.port).into())
-                            .collect();
-
-                        let _ = router_clone
-                            .enqueue(make_message!(Payload::Addresses, AddressesMessage {
-                                address_list: addresses
-                            }))
-                            .await;
-                    }
-                    Some(Payload::Addresses(msg)) => {
-                        let mut am = address_manager.lock();
-                        for addr in msg.address_list {
-                            if let Ok(net_addr) = addr.try_into() {
-                                am.add_address(net_addr);
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        });
     }
 }

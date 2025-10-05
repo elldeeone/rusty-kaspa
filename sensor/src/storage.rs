@@ -1,7 +1,8 @@
 use crate::config::DatabaseConfig;
 use crate::models::{PeerConnectionEvent, PeerClassification};
+use crate::postgres::{PostgresWriter, PeerEvent};
 use chrono::{DateTime, Utc};
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{params, OptionalExtension, Result as SqliteResult};
@@ -29,9 +30,10 @@ pub enum StorageError {
 
 pub type StorageResult<T> = Result<T, StorageError>;
 
-/// SQLite-based storage for peer connection events
+/// Dual storage for peer connection events (local SQLite + optional remote PostgreSQL)
 pub struct EventStorage {
     pool: Arc<Pool<SqliteConnectionManager>>,
+    postgres: Option<Arc<PostgresWriter>>,
 }
 
 impl EventStorage {
@@ -59,12 +61,40 @@ impl EventStorage {
             .max_size(config.pool_size)
             .build(manager)?;
 
-        let storage = Self { pool: Arc::new(pool) };
+        let storage = Self {
+            pool: Arc::new(pool),
+            postgres: None,
+        };
 
         // Initialize database schema
         storage.init_schema()?;
 
         info!("Event storage initialized at {:?}", config.path);
+        Ok(storage)
+    }
+
+    /// Create a new event storage with PostgreSQL integration
+    pub async fn new_with_postgres(
+        config: &DatabaseConfig,
+        sensor_id: String,
+    ) -> StorageResult<Self> {
+        // Initialize local SQLite storage
+        let mut storage = Self::new(config)?;
+
+        // Initialize PostgreSQL if configured
+        if let Some(pg_config) = &config.postgres {
+            match PostgresWriter::new(pg_config, sensor_id).await {
+                Ok(pg_writer) => {
+                    info!("PostgreSQL writer initialized successfully");
+                    storage.postgres = Some(pg_writer);
+                }
+                Err(e) => {
+                    error!("Failed to initialize PostgreSQL writer: {}", e);
+                    warn!("Continuing with local storage only");
+                }
+            }
+        }
+
         Ok(storage)
     }
 
@@ -115,8 +145,9 @@ impl EventStorage {
         Ok(())
     }
 
-    /// Insert a new peer connection event
+    /// Insert a new peer connection event (writes to both SQLite and PostgreSQL)
     pub fn insert_event(&self, event: &PeerConnectionEvent) -> StorageResult<i64> {
+        // Write to local SQLite (synchronous)
         let conn = self.pool.get()?;
 
         let classification_str = serde_json::to_string(&event.classification)?;
@@ -145,7 +176,44 @@ impl EventStorage {
         )?;
 
         let id = conn.last_insert_rowid();
-        debug!("Inserted event {} with id {}", event.event_id, id);
+        debug!("Inserted event {} with id {} to local SQLite", event.event_id, id);
+
+        // Write to PostgreSQL (asynchronous, non-blocking)
+        if let Some(pg_writer) = &self.postgres {
+            let peer_address = format!("{}:{}", event.peer_ip, event.peer_port);
+            let classification = match &event.classification {
+                PeerClassification::Public => Some("public".to_string()),
+                PeerClassification::Private => Some("private".to_string()),
+                PeerClassification::Unknown => None,
+            };
+
+            // Build metadata JSON
+            let metadata = serde_json::json!({
+                "protocol_version": event.protocol_version,
+                "user_agent": event.user_agent,
+                "network": event.network,
+                "direction": event.direction,
+                "probe_duration_ms": event.probe_duration_ms,
+                "probe_error": event.probe_error,
+            });
+
+            let pg_event = PeerEvent {
+                sensor_id: event.sensor_id.clone(),
+                peer_address,
+                event_type: "discovered".to_string(),
+                classification,
+                timestamp: event.timestamp.timestamp(),
+                metadata: Some(metadata.to_string()),
+            };
+
+            if let Err(e) = pg_writer.queue_event(pg_event) {
+                warn!("Failed to queue event for PostgreSQL: {}", e);
+                // Don't fail the entire operation if PostgreSQL queueing fails
+            } else {
+                debug!("Queued event {} for PostgreSQL", event.event_id);
+            }
+        }
+
         Ok(id)
     }
 

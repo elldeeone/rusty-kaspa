@@ -137,11 +137,11 @@ pub struct ExportConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DatabaseConfig {
-    /// Path to SQLite database file for event storage
+    /// Path to SQLite database file for local event storage (backup)
     #[serde(default = "default_db_path")]
     pub path: PathBuf,
 
-    /// Connection pool size
+    /// Connection pool size for SQLite
     #[serde(default = "default_db_pool_size")]
     pub pool_size: u32,
 
@@ -156,6 +156,54 @@ pub struct DatabaseConfig {
     /// Path to RocksDB database for address manager
     #[serde(default = "default_addressdb_path")]
     pub addressdb_path: PathBuf,
+
+    /// PostgreSQL configuration for central storage
+    #[serde(default)]
+    pub postgres: Option<PostgresConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PostgresConfig {
+    /// PostgreSQL host
+    pub host: String,
+
+    /// PostgreSQL port
+    #[serde(default = "default_postgres_port")]
+    pub port: u16,
+
+    /// PostgreSQL database name
+    pub database: String,
+
+    /// PostgreSQL username
+    pub user: String,
+
+    /// PostgreSQL password (can also use env var SENSOR_POSTGRES_PASSWORD)
+    #[serde(default)]
+    pub password: Option<String>,
+
+    /// Connection pool size for PostgreSQL
+    #[serde(default = "default_postgres_pool_size")]
+    pub pool_size: usize,
+
+    /// Maximum time to wait for connection (seconds)
+    #[serde(default = "default_postgres_timeout_secs")]
+    pub timeout_secs: u64,
+
+    /// Batch size for bulk inserts
+    #[serde(default = "default_postgres_batch_size")]
+    pub batch_size: usize,
+
+    /// Batch flush interval (seconds)
+    #[serde(default = "default_postgres_flush_interval_secs")]
+    pub flush_interval_secs: u64,
+
+    /// Enable retry on connection failure
+    #[serde(default = "default_postgres_retry_enabled")]
+    pub retry_enabled: bool,
+
+    /// Max retry attempts
+    #[serde(default = "default_postgres_max_retries")]
+    pub max_retries: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -270,6 +318,34 @@ fn default_metrics_address() -> String {
     "0.0.0.0:9090".to_string()
 }
 
+fn default_postgres_port() -> u16 {
+    5432
+}
+
+fn default_postgres_pool_size() -> usize {
+    5
+}
+
+fn default_postgres_timeout_secs() -> u64 {
+    10
+}
+
+fn default_postgres_batch_size() -> usize {
+    100
+}
+
+fn default_postgres_flush_interval_secs() -> u64 {
+    30
+}
+
+fn default_postgres_retry_enabled() -> bool {
+    true
+}
+
+fn default_postgres_max_retries() -> usize {
+    5
+}
+
 impl Default for SensorConfig {
     fn default() -> Self {
         Self {
@@ -309,6 +385,7 @@ impl Default for SensorConfig {
                 retention_days: default_retention_days(),
                 enable_wal: default_enable_wal(),
                 addressdb_path: default_addressdb_path(),
+                postgres: None,
             },
             metrics: MetricsConfig {
                 enabled: default_enable_metrics(),

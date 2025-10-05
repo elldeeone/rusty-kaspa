@@ -8,17 +8,20 @@
 // 4. Logging all interactions to local storage
 // 5. Exporting data to centralized services (Firebase, HTTP, etc.)
 
+pub mod address_flows;
 pub mod config;
 pub mod export;
 pub mod metrics;
 pub mod models;
+pub mod postgres;
 pub mod prober;
 pub mod storage;
 
 // Re-export commonly used types
-pub use config::{SensorConfig, ProbingConfig, ExportConfig, DatabaseConfig, MetricsConfig};
+pub use config::{SensorConfig, ProbingConfig, ExportConfig, DatabaseConfig, MetricsConfig, PostgresConfig};
 pub use export::EventExporter;
 pub use metrics::SensorMetrics;
 pub use models::{PeerConnectionEvent, PeerClassification, ConnectionDirection, EventBatch};
+pub use postgres::{PostgresWriter, PeerEvent};
 pub use prober::{ActiveProber, ProbeError};
 pub use storage::{EventStorage, StorageStatistics};

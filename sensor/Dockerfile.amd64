@@ -1,0 +1,61 @@
+# Multi-stage Dockerfile optimized for kaspa-sensor
+# Builds for linux/amd64 (x86_64) architecture
+
+# Build stage - use amd64 explicitly
+FROM --platform=linux/amd64 rust:1.82 AS builder
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    protobuf-compiler \
+    libclang-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Copy entire workspace
+COPY . .
+
+# Build ONLY kaspa-sensor for release (amd64/x86_64)
+RUN cargo build --release --bin kaspa-sensor
+
+# Runtime stage - minimal Debian image for amd64
+FROM --platform=linux/amd64 debian:bookworm-slim
+
+# Install runtime dependencies only
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN useradd -m -u 1000 sensor && \
+    mkdir -p /data && \
+    chown -R sensor:sensor /data
+
+WORKDIR /app
+
+# Copy ONLY the sensor binary from builder
+COPY --from=builder /build/target/release/kaspa-sensor /app/kaspa-sensor
+
+# Set ownership
+RUN chown -R sensor:sensor /app
+
+# Switch to non-root
+USER sensor
+
+# Data volume
+VOLUME ["/data"]
+
+# Expose ports
+EXPOSE 16111 9090
+
+# Environment
+ENV RUST_LOG=info
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD pgrep -x kaspa-sensor > /dev/null || exit 1
+
+# Run
+ENTRYPOINT ["/app/kaspa-sensor"]
+CMD ["--config", "/data/sensor.toml", "--sensor-id", "sensor-1"]

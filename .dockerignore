@@ -1,0 +1,35 @@
+# Rust build artifacts
+target/
+**/*.rs.bk
+*.pdb
+
+# Git
+.git
+.gitignore
+
+# Runtime files
+*.db
+*.db-shm
+*.db-wal
+*.log
+sensor-addresses.db/
+sensor-data.db
+sensor.toml
+
+# Documentation (we don't need in container)
+docs/
+*.md
+!sensor/README.md
+
+# IDE
+.vscode
+.idea
+*.swp
+.DS_Store
+
+# Benchmarks
+kasbench/
+
+# Other binaries we don't need
+web-root/
+release/

@@ -1,25 +1,16 @@
 # Build stage
 FROM rust:1.82 AS builder
 
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    protobuf-compiler \
+    libclang-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /build
 
-# Copy workspace files
-COPY Cargo.toml Cargo.lock ./
-COPY clippy.toml .rustfmt.toml ./
-
-# Copy all crates (sensor depends on many workspace crates)
-COPY core ./core
-COPY crypto ./crypto
-COPY consensus ./consensus
-COPY database ./database
-COPY mining ./mining
-COPY notify ./notify
-COPY protocol ./protocol
-COPY utils ./utils
-COPY components ./components
-COPY metrics ./metrics
-COPY math ./math
-COPY sensor ./sensor
+# Copy entire workspace (excluding target/ via .dockerignore)
+COPY . .
 
 # Build in release mode
 RUN cargo build --release --bin kaspa-sensor
