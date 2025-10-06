@@ -3222,6 +3222,7 @@ dependencies = [
  "futures",
  "itertools 0.13.0",
  "kaspa-addressmanager",
+ "kaspa-connectionmanager",
  "kaspa-consensus-core",
  "kaspa-core",
  "kaspa-database",

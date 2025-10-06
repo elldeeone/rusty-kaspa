@@ -90,6 +90,19 @@ retention_days = 30
 # Enable WAL mode for better concurrency
 enable_wal = true
 
+# Path to address manager database (RocksDB)
+addressdb_path = "sensor-addresses.db"
+
+# Optional: PostgreSQL configuration for centralized multi-sensor storage
+# If configured, sensor will write to both local SQLite AND remote PostgreSQL
+[database.postgres]
+host = "localhost"
+port = 5432
+database = "kaspa_sensors"
+user = "sensor_writer"
+password = "YOUR_POSTGRES_PASSWORD_HERE"
+pool_size = 10
+
 [metrics]
 # Enable Prometheus metrics endpoint
 enabled = true

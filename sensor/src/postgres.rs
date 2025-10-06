@@ -1,4 +1,4 @@
-use crate::config::PostgresConfig;
+use crate::config::{PostgresConfig, SensorIdentity};
 use deadpool_postgres::{Config, Manager, ManagerConfig, Pool, RecyclingMethod, Runtime};
 use log::{debug, error, info, warn};
 use std::sync::Arc;
@@ -29,7 +29,11 @@ pub struct PostgresWriter {
 
 impl PostgresWriter {
     /// Create a new PostgreSQL writer with connection pooling
-    pub async fn new(config: &PostgresConfig, sensor_id: String) -> Result<Arc<Self>, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn new(
+        config: &PostgresConfig,
+        sensor_identity: &SensorIdentity,
+    ) -> Result<Arc<Self>, Box<dyn std::error::Error + Send + Sync>> {
+        let sensor_id = sensor_identity.sensor_id.clone();
         info!("Initializing PostgreSQL writer for sensor: {}", sensor_id);
 
         // Get password from config or environment
@@ -103,6 +107,28 @@ impl PostgresWriter {
             .await;
 
         info!("PostgreSQL schema initialized");
+
+        // Register this sensor in sensor_metadata table
+        let _ = conn
+            .execute(
+                "INSERT INTO sensor_metadata (sensor_id, description, location, environment, last_seen)
+                 VALUES ($1, $2, $3, $4, NOW())
+                 ON CONFLICT (sensor_id) DO UPDATE SET
+                     description = COALESCE(EXCLUDED.description, sensor_metadata.description),
+                     location = COALESCE(EXCLUDED.location, sensor_metadata.location),
+                     environment = COALESCE(EXCLUDED.environment, sensor_metadata.environment),
+                     last_seen = NOW()",
+                &[
+                    &sensor_identity.sensor_id,
+                    &sensor_identity.description,
+                    &sensor_identity.environment, // Using environment as location for now
+                    &sensor_identity.environment,
+                ],
+            )
+            .await
+            .map_err(|e| warn!("Failed to register sensor metadata: {}", e));
+
+        info!("Sensor registered in metadata table");
 
         // Create channel for batching events
         let (event_tx, event_rx) = mpsc::unbounded_channel();
@@ -241,9 +267,15 @@ impl PostgresWriter {
             classifications.push(&event.classification);
             timestamps.push(&event.timestamp);
 
-            // Convert metadata String to JSON Value for PostgreSQL JSONB
+            // Parse metadata String into JSON Value for PostgreSQL JSONB
             let metadata_json = match &event.metadata {
-                Some(s) => serde_json::Value::String(s.clone()),
+                Some(s) => match serde_json::from_str(s) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        warn!("Failed to parse metadata JSON for {}: {}", event.peer_address, e);
+                        serde_json::Value::Null
+                    }
+                },
                 None => serde_json::Value::Null,
             };
             metadatas.push(metadata_json);

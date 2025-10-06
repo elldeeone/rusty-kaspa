@@ -1,6 +1,6 @@
 [package]
 name = "kaspa-sensor"
-version = "0.1.0"
+version = "0.2.4"
 edition = "2021"
 authors = ["Kaspa Network Sensor Team"]
 description = "Lightweight P2P network sensor for Kaspa network topology mapping"
@@ -13,6 +13,7 @@ kaspa-hashes = { path = "../crypto/hashes" }
 kaspa-utils = { path = "../utils" }
 kaspa-utils-tower = { path = "../utils/tower" }
 kaspa-addressmanager = { path = "../components/addressmanager" }
+kaspa-connectionmanager = { path = "../components/connectionmanager" }
 kaspa-p2p-lib = { path = "../protocol/p2p" }
 kaspa-consensus-core = { path = "../consensus/core" }
 kaspa-database = { path = "../database" }

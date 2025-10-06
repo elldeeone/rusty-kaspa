@@ -20,16 +20,21 @@ CREATE INDEX IF NOT EXISTS idx_peer_events_classification ON peer_events(classif
 CREATE INDEX IF NOT EXISTS idx_peer_events_created_at ON peer_events(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_peer_events_peer_address ON peer_events(peer_address);
 
--- Optional: Table for sensor metadata
+-- Table for sensor metadata (tracks all sensors writing to this database)
 CREATE TABLE IF NOT EXISTS sensor_metadata (
     sensor_id TEXT PRIMARY KEY,
     description TEXT,
-    location TEXT,
-    asn INTEGER,
+    location TEXT,              -- Deployment location (e.g., "hetzner-de", "aws-us-east-1")
+    environment TEXT,            -- Environment (e.g., "production", "development")
+    ip_address INET,             -- Sensor's public IP address
+    asn INTEGER,                 -- Sensor's ASN
     first_seen TIMESTAMP DEFAULT NOW(),
     last_seen TIMESTAMP DEFAULT NOW(),
     total_events BIGINT DEFAULT 0
 );
+
+-- Index for sensor lookups
+CREATE INDEX IF NOT EXISTS idx_sensor_metadata_last_seen ON sensor_metadata(last_seen DESC);
 
 -- Optional: Materialized view for classification statistics
 CREATE MATERIALIZED VIEW IF NOT EXISTS classification_stats AS
@@ -50,6 +55,35 @@ CREATE OR REPLACE FUNCTION refresh_classification_stats()
 RETURNS void AS $$
 BEGIN
     REFRESH MATERIALIZED VIEW CONCURRENTLY classification_stats;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Materialized view for peer persistence tracking
+-- Tracks first/last seen and connection count for each peer across all sensors
+CREATE MATERIALIZED VIEW IF NOT EXISTS peer_persistence AS
+SELECT
+    peer_address,
+    MIN(created_at) as first_seen,
+    MAX(created_at) as last_seen,
+    COUNT(*) as total_connections,
+    COUNT(DISTINCT sensor_id) as sensors_seen_by,
+    array_agg(DISTINCT sensor_id) as sensor_list,
+    MAX(classification) as latest_classification,
+    MAX((metadata::text)::jsonb->>'user_agent') as latest_user_agent
+FROM peer_events
+GROUP BY peer_address;
+
+-- Indexes for peer persistence queries
+CREATE INDEX IF NOT EXISTS idx_peer_persistence_address ON peer_persistence(peer_address);
+CREATE INDEX IF NOT EXISTS idx_peer_persistence_connections ON peer_persistence(total_connections DESC);
+CREATE INDEX IF NOT EXISTS idx_peer_persistence_first_seen ON peer_persistence(first_seen DESC);
+CREATE INDEX IF NOT EXISTS idx_peer_persistence_last_seen ON peer_persistence(last_seen DESC);
+
+-- Function to refresh peer persistence view
+CREATE OR REPLACE FUNCTION refresh_peer_persistence()
+RETURNS void AS $$
+BEGIN
+    REFRESH MATERIALIZED VIEW CONCURRENTLY peer_persistence;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -82,3 +116,9 @@ $$ LANGUAGE plpgsql;
 -- FROM peer_events
 -- WHERE classification IN ('public', 'private')
 -- GROUP BY classification;
+
+-- Grant permissions to sensor_writer user
+GRANT INSERT, UPDATE, SELECT ON peer_events TO sensor_writer;
+GRANT INSERT, UPDATE, SELECT ON sensor_metadata TO sensor_writer;
+GRANT SELECT ON classification_stats TO sensor_writer;
+GRANT SELECT ON peer_persistence TO sensor_writer;

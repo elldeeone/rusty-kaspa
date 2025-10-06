@@ -76,14 +76,14 @@ impl EventStorage {
     /// Create a new event storage with PostgreSQL integration
     pub async fn new_with_postgres(
         config: &DatabaseConfig,
-        sensor_id: String,
+        sensor_identity: &crate::config::SensorIdentity,
     ) -> StorageResult<Self> {
         // Initialize local SQLite storage
         let mut storage = Self::new(config)?;
 
         // Initialize PostgreSQL if configured
         if let Some(pg_config) = &config.postgres {
-            match PostgresWriter::new(pg_config, sensor_id).await {
+            match PostgresWriter::new(pg_config, sensor_identity).await {
                 Ok(pg_writer) => {
                     info!("PostgreSQL writer initialized successfully");
                     storage.postgres = Some(pg_writer);

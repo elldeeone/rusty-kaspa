@@ -5,6 +5,7 @@ use kaspa_sensor::{
 
 use clap::Parser;
 use kaspa_addressmanager::AddressManager;
+use kaspa_connectionmanager::ConnectionManager;
 use kaspa_consensus_core::config::Config as ConsensusConfig;
 use kaspa_consensus_core::network::NetworkType;
 use kaspa_core::task::tick::TickService;
@@ -118,7 +119,7 @@ async fn main() {
     // Initialize storage (with PostgreSQL if configured)
     let storage = if config.database.postgres.is_some() {
         info!("PostgreSQL configured, initializing dual storage (SQLite + PostgreSQL)");
-        match EventStorage::new_with_postgres(&config.database, config.sensor.sensor_id.clone()).await {
+        match EventStorage::new_with_postgres(&config.database, &config.sensor).await {
             Ok(s) => Arc::new(s),
             Err(e) => {
                 error!("Failed to initialize storage with PostgreSQL: {}", e);
@@ -258,31 +259,18 @@ async fn main() {
         }
     });
 
-    // Connect to DNS seeders
-    let adaptor_clone = adaptor.clone();
-    let dns_seeders = config.network.dns_seeders.clone();
-    let peers_per_seeder = config.network.peers_per_seeder;
-    tokio::spawn(async move {
-        tokio::time::sleep(Duration::from_secs(2)).await;
+    // Initialize ConnectionManager for continuous peer discovery
+    // This handles DNS seeders, address manager, and automatic connection rotation
+    let connection_manager = ConnectionManager::new(
+        adaptor.clone(),
+        config.network.max_outbound_connections,  // outbound target
+        config.network.max_inbound_connections,   // inbound limit
+        consensus_config.dns_seeders,             // static DNS seeder list
+        16111,                                     // default port
+        address_manager.clone(),                  // for peer discovery
+    );
 
-        for seeder in dns_seeders {
-            info!("Querying DNS seeder: {}", seeder);
-            match tokio::net::lookup_host((seeder.as_str(), 16111)).await {
-                Ok(addrs) => {
-                    for addr in addrs.take(peers_per_seeder) {
-                        let peer_addr = addr.to_string();
-                        info!("Connecting to peer: {}", peer_addr);
-                        if let Err(e) = adaptor_clone.connect_peer(peer_addr).await {
-                            warn!("Failed to connect to peer: {}", e);
-                        }
-                    }
-                }
-                Err(e) => {
-                    warn!("DNS lookup failed for {}: {}", seeder, e);
-                }
-            }
-        }
-    });
+    info!("Connection manager started - will maintain {} outbound connections", config.network.max_outbound_connections);
 
     // Wait for shutdown signal
     info!("Sensor running. Press Ctrl+C to shutdown.");
@@ -290,6 +278,9 @@ async fn main() {
     info!("=== Shutdown signal received ===");
 
     // Graceful shutdown
+    info!("Stopping connection manager...");
+    connection_manager.stop().await;
+
     info!("Closing P2P connections...");
     adaptor.close().await;
 
