@@ -1,0 +1,600 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {
+        "type": "postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "orientation": "auto",
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres"
+          },
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) as value FROM peer_events",
+          "refId": "A"
+        }
+      ],
+      "title": "Total Events",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "orientation": "auto",
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres"
+          },
+          "format": "table",
+          "rawSql": "SELECT COUNT(DISTINCT SPLIT_PART(peer_address, ':', 1)) as value FROM peer_events WHERE classification = 'private'",
+          "refId": "A"
+        }
+      ],
+      "title": "Total Private IPs",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "id": 3,
+      "options": {
+        "orientation": "auto",
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres"
+          },
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) as value FROM (SELECT SPLIT_PART(peer_address, ':', 1) as ip FROM peer_events WHERE classification = 'private' AND peer_id IS NOT NULL GROUP BY ip HAVING COUNT(DISTINCT peer_id) > 1) t",
+          "refId": "A"
+        }
+      ],
+      "title": "IPs with Multiple Nodes",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "id": 4,
+      "options": {
+        "orientation": "auto",
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres"
+          },
+          "format": "table",
+          "rawSql": "SELECT COUNT(DISTINCT peer_id) as value FROM peer_events WHERE classification = 'private' AND peer_id IS NOT NULL",
+          "refId": "A"
+        }
+      ],
+      "title": "Unique Private Nodes",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 4
+      },
+      "id": 5,
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": ""
+        }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres"
+          },
+          "format": "table",
+          "rawSql": "SELECT SPLIT_PART(peer_address, ':', 1) as ip, COUNT(DISTINCT peer_id) as nodes, COUNT(*) as reconnections, SUBSTRING(array_to_string(array_agg(DISTINCT SUBSTRING(peer_id, 1, 6)), ','), 1, 30) as node_ids FROM peer_events WHERE classification = 'private' AND peer_id IS NOT NULL GROUP BY SPLIT_PART(peer_address, ':', 1) ORDER BY reconnections DESC LIMIT 15",
+          "refId": "A"
+        }
+      ],
+      "title": "Most Active Private IPs",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "barAlignment": 0,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "spanNulls": false,
+            "showPoints": "auto",
+            "pointSize": 5,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisColorMode": "text",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "axisCenteredZero": false,
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "barWidthFactor": 0.6
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 4
+      },
+      "id": 6,
+      "options": {
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres"
+          },
+          "format": "table",
+          "rawSql": "SELECT SUBSTRING(peer_id, 1, 8) || ' (' || SPLIT_PART(MIN(peer_address), ':', 1) || ')' as node, COUNT(*) as reconnections FROM peer_events WHERE classification = 'private' AND peer_id IS NOT NULL GROUP BY peer_id ORDER BY reconnections DESC LIMIT 10",
+          "refId": "A"
+        }
+      ],
+      "title": "Most Active Private Nodes",
+      "type": "barchart"
+    },
+    {
+      "datasource": {
+        "type": "postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 14
+      },
+      "id": 7,
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": ""
+        }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres"
+          },
+          "format": "table",
+          "rawSql": "SELECT metadata->>'user_agent' as user_agent, COUNT(DISTINCT peer_id) as unique_nodes, COUNT(DISTINCT SPLIT_PART(peer_address, ':', 1)) as unique_ips, COUNT(*) as total_connections, string_agg(DISTINCT SPLIT_PART(peer_address, ':', 1), ', ') as example_ips FROM peer_events WHERE classification = 'private' AND peer_id IS NOT NULL GROUP BY metadata->>'user_agent' ORDER BY unique_nodes DESC LIMIT 15",
+          "refId": "A"
+        }
+      ],
+      "title": "Private Node Software Versions",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "barAlignment": 0,
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "spanNulls": false,
+            "showPoints": "auto",
+            "pointSize": 5,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisColorMode": "text",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "axisCenteredZero": false,
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 14
+      },
+      "id": 8,
+      "options": {
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres"
+          },
+          "format": "time_series",
+          "rawSql": "SELECT DATE_TRUNC('hour', created_at) AS time, COUNT(*) FILTER (WHERE classification = 'private') as \"Private\", COUNT(*) FILTER (WHERE classification = 'public') as \"Public\", COUNT(*) FILTER (WHERE classification IS NULL OR classification = 'unknown') as \"Unknown\" FROM peer_events WHERE created_at >= NOW() - INTERVAL '24 hours' GROUP BY time ORDER BY time",
+          "refId": "A"
+        }
+      ],
+      "title": "Node Discovery Over Time (24h)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      },
+      "id": 9,
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": ""
+        }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres"
+          },
+          "format": "table",
+          "rawSql": "SELECT SPLIT_PART(MIN(peer_address), ':', 1) as ip, SUBSTRING(peer_id, 1, 12) as peer_id, MIN(created_at) as first_seen, MAX(created_at) as last_seen, COUNT(DISTINCT peer_address) as different_ports, COUNT(*) as reconnections, MAX(metadata->>'user_agent') as user_agent FROM peer_events WHERE classification = 'private' AND peer_id IS NOT NULL GROUP BY peer_id ORDER BY reconnections DESC LIMIT 20",
+          "refId": "A"
+        }
+      ],
+      "title": "Private Node Connection History",
+      "type": "table"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "tags": [
+    "kaspa",
+    "sensor",
+    "network"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Kaspa Network Sensor - Private Nodes",
+  "uid": "kaspa-sensor-private-nodes",
+  "version": 0,
+  "weekStart": ""
+}

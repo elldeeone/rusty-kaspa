@@ -1,0 +1,407 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {
+        "type": "postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres"
+          },
+          "format": "table",
+          "rawSql": "SELECT sensor_id, COUNT(*) as total_events, COUNT(DISTINCT peer_id) FILTER (WHERE peer_id IS NOT NULL) as unique_nodes, COUNT(DISTINCT peer_id) FILTER (WHERE classification = 'private' AND peer_id IS NOT NULL) as private_nodes, COUNT(*) FILTER (WHERE classification = 'private') as private_events, MAX(created_at) as last_event FROM peer_events GROUP BY sensor_id ORDER BY sensor_id",
+          "refId": "A"
+        }
+      ],
+      "title": "Sensor Overview",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 6
+      },
+      "id": 2,
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres"
+          },
+          "format": "table",
+          "rawSql": "SELECT SPLIT_PART(peer_address, ':', 1) as ip, SUBSTRING(peer_id, 1, 12) as node_id, CASE WHEN COUNT(DISTINCT sensor_id) > 1 THEN 'Multiple' ELSE MAX(sensor_id) END as discovered_by, COUNT(DISTINCT sensor_id) as sensor_count, string_agg(DISTINCT sensor_id, ', ') as sensors, COUNT(*) as total_connections FROM peer_events WHERE classification = 'private' AND peer_id IS NOT NULL GROUP BY SPLIT_PART(peer_address, ':', 1), peer_id ORDER BY sensor_count DESC, total_connections DESC LIMIT 20",
+          "refId": "A"
+        }
+      ],
+      "title": "Node Discovery - Cross-Sensor Visibility",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "barAlignment": 0,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "axisPlacement": "auto"
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 6
+      },
+      "id": 3,
+      "options": {
+        "tooltip": {
+          "mode": "single"
+        },
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres"
+          },
+          "format": "table",
+          "rawSql": "SELECT visibility, COUNT(*) as unique_nodes FROM (SELECT CASE WHEN COUNT(DISTINCT sensor_id) = 1 THEN 'Single Sensor' WHEN COUNT(DISTINCT sensor_id) = 2 THEN 'Both Sensors' ELSE 'Multiple Sensors' END as visibility FROM peer_events WHERE classification = 'private' AND peer_id IS NOT NULL GROUP BY SPLIT_PART(peer_address, ':', 1), peer_id) sub GROUP BY visibility ORDER BY visibility",
+          "refId": "A"
+        }
+      ],
+      "title": "Network Coverage - Single vs Multi-Sensor",
+      "type": "barchart"
+    },
+    {
+      "datasource": {
+        "type": "postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 14
+      },
+      "id": 4,
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres"
+          },
+          "format": "table",
+          "rawSql": "SELECT SPLIT_PART(peer_address, ':', 1) as ip, COUNT(DISTINCT peer_id) as nodes, COUNT(*) as reconnections, string_agg(DISTINCT sensor_id, ', ') as seen_by_sensors, COUNT(DISTINCT sensor_id) as sensor_count, SUBSTRING(string_agg(DISTINCT SUBSTRING(peer_id, 1, 6), ','), 1, 30) as node_ids FROM peer_events WHERE classification = 'private' AND peer_id IS NOT NULL GROUP BY SPLIT_PART(peer_address, ':', 1) ORDER BY reconnections DESC LIMIT 15",
+          "refId": "A"
+        }
+      ],
+      "title": "Most Active Private IPs - Multi-Sensor View",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "barAlignment": 0,
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "axisPlacement": "auto"
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 14
+      },
+      "id": 5,
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres"
+          },
+          "format": "time_series",
+          "rawSql": "SELECT DATE_TRUNC('hour', created_at) AS time, sensor_id, COUNT(DISTINCT peer_id) FILTER (WHERE classification = 'private' AND peer_id IS NOT NULL) as value FROM peer_events WHERE created_at >= NOW() - INTERVAL '24 hours' GROUP BY time, sensor_id ORDER BY time",
+          "refId": "A"
+        }
+      ],
+      "title": "Private Node Discovery Rate by Sensor (24h)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 22
+      },
+      "id": 6,
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres"
+          },
+          "format": "table",
+          "rawSql": "SELECT SPLIT_PART(peer_address, ':', 1) as ip, SUBSTRING(peer_id, 1, 12) as node_id, MAX(sensor_id) as only_visible_to, COUNT(*) as connections FROM peer_events WHERE classification = 'private' AND peer_id IS NOT NULL GROUP BY SPLIT_PART(peer_address, ':', 1), peer_id HAVING COUNT(DISTINCT sensor_id) = 1 ORDER BY connections DESC LIMIT 15",
+          "refId": "A"
+        }
+      ],
+      "title": "Nodes Visible to Only One Sensor (ASN-Specific)",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 22
+      },
+      "id": 7,
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres"
+          },
+          "format": "table",
+          "rawSql": "SELECT metadata->>'user_agent' as user_agent, COUNT(DISTINCT peer_id) as unique_nodes, COUNT(DISTINCT SPLIT_PART(peer_address, ':', 1)) as unique_ips, string_agg(DISTINCT sensor_id, ', ') as discovered_by_sensors, COUNT(*) as total_connections FROM peer_events WHERE classification = 'private' AND peer_id IS NOT NULL GROUP BY metadata->>'user_agent' ORDER BY unique_nodes DESC LIMIT 15",
+          "refId": "A"
+        }
+      ],
+      "title": "Private Node Software Versions - Multi-Sensor",
+      "type": "table"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "tags": [
+    "kaspa",
+    "sensor",
+    "network",
+    "multi-sensor"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Kaspa Network Sensor - Multi-Sensor Analysis",
+  "uid": "kaspa-multi-sensor",
+  "version": 0,
+  "weekStart": ""
+}
