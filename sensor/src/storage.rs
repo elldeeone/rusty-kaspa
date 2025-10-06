@@ -6,7 +6,6 @@ use log::{debug, error, info, warn};
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{params, OptionalExtension, Result as SqliteResult};
-use std::path::PathBuf;
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -113,6 +112,7 @@ impl EventStorage {
                 peer_port INTEGER NOT NULL,
                 protocol_version INTEGER NOT NULL,
                 user_agent TEXT NOT NULL,
+                peer_id TEXT,
                 network TEXT NOT NULL,
                 direction TEXT NOT NULL,
                 classification TEXT NOT NULL,
@@ -127,6 +127,7 @@ impl EventStorage {
             CREATE INDEX IF NOT EXISTS idx_exported ON peer_events(exported);
             CREATE INDEX IF NOT EXISTS idx_classification ON peer_events(classification);
             CREATE INDEX IF NOT EXISTS idx_peer_ip ON peer_events(peer_ip);
+            CREATE INDEX IF NOT EXISTS idx_peer_id ON peer_events(peer_id);
 
             CREATE TABLE IF NOT EXISTS export_queue (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -156,9 +157,9 @@ impl EventStorage {
         conn.execute(
             "INSERT INTO peer_events (
                 event_id, timestamp, sensor_id, peer_ip, peer_port,
-                protocol_version, user_agent, network, direction, classification,
+                protocol_version, user_agent, peer_id, network, direction, classification,
                 probe_duration_ms, probe_error
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 &event.event_id,
                 event.timestamp.to_rfc3339(),
@@ -167,6 +168,7 @@ impl EventStorage {
                 event.peer_port as i64,
                 event.protocol_version as i64,
                 &event.user_agent,
+                &event.peer_id,
                 &event.network,
                 direction_str,
                 classification_str,
@@ -191,6 +193,7 @@ impl EventStorage {
             let metadata = serde_json::json!({
                 "protocol_version": event.protocol_version,
                 "user_agent": event.user_agent,
+                "peer_id": event.peer_id,
                 "network": event.network,
                 "direction": event.direction,
                 "probe_duration_ms": event.probe_duration_ms,
@@ -242,11 +245,11 @@ impl EventStorage {
                 let peer_ip = peer_ip_str.parse()
                     .map_err(|_| rusqlite::Error::InvalidQuery)?;
 
-                let direction_str: String = row.get(8)?;
+                let direction_str: String = row.get(9)?;
                 let direction = serde_json::from_str(&direction_str)
                     .map_err(|_| rusqlite::Error::InvalidQuery)?;
 
-                let classification_str: String = row.get(9)?;
+                let classification_str: String = row.get(10)?;
                 let classification = serde_json::from_str(&classification_str)
                     .map_err(|_| rusqlite::Error::InvalidQuery)?;
 
@@ -258,11 +261,12 @@ impl EventStorage {
                     peer_port: row.get::<_, i64>(4)? as u16,
                     protocol_version: row.get::<_, i64>(5)? as u32,
                     user_agent: row.get(6)?,
-                    network: row.get(7)?,
+                    peer_id: row.get(7)?,
+                    network: row.get(8)?,
                     direction,
                     classification,
-                    probe_duration_ms: row.get::<_, Option<i64>>(10)?.map(|d| d as u64),
-                    probe_error: row.get(11)?,
+                    probe_duration_ms: row.get::<_, Option<i64>>(11)?.map(|d| d as u64),
+                    probe_error: row.get(12)?,
                 })
             })?
             .collect::<SqliteResult<Vec<_>>>()?;

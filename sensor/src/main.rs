@@ -390,12 +390,20 @@ impl ConnectionInitializer for SensorConnectionInitializer {
         };
 
         // Create connection event
+        // Convert peer ID from bytes to hex string
+        let peer_id = if !peer_version.id.is_empty() {
+            Some(hex::encode(&peer_version.id))
+        } else {
+            None
+        };
+
         let event = PeerConnectionEvent::new(
             self.config.sensor.sensor_id.clone(),
             peer_ip,
             peer_port,
             peer_version.protocol_version as u32,
             peer_version.user_agent.clone(),
+            peer_id,
             self.consensus_config.network_name().to_string(),
             if is_outbound { ConnectionDirection::Outbound } else { ConnectionDirection::Inbound },
         );

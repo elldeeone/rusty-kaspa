@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS peer_events (
     id BIGSERIAL PRIMARY KEY,
     sensor_id TEXT NOT NULL,
     peer_address TEXT NOT NULL,
+    peer_id TEXT,
     event_type TEXT NOT NULL,
     classification TEXT,
     timestamp BIGINT NOT NULL,
@@ -19,6 +20,7 @@ CREATE INDEX IF NOT EXISTS idx_peer_events_timestamp ON peer_events(timestamp DE
 CREATE INDEX IF NOT EXISTS idx_peer_events_classification ON peer_events(classification) WHERE classification IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_peer_events_created_at ON peer_events(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_peer_events_peer_address ON peer_events(peer_address);
+CREATE INDEX IF NOT EXISTS idx_peer_events_peer_id ON peer_events(peer_id) WHERE peer_id IS NOT NULL;
 
 -- Table for sensor metadata (tracks all sensors writing to this database)
 CREATE TABLE IF NOT EXISTS sensor_metadata (
@@ -63,6 +65,8 @@ $$ LANGUAGE plpgsql;
 CREATE MATERIALIZED VIEW IF NOT EXISTS peer_persistence AS
 SELECT
     peer_address,
+    array_agg(DISTINCT peer_id) FILTER (WHERE peer_id IS NOT NULL) as peer_ids,
+    COUNT(DISTINCT peer_id) FILTER (WHERE peer_id IS NOT NULL) as unique_peer_ids,
     MIN(created_at) as first_seen,
     MAX(created_at) as last_seen,
     COUNT(*) as total_connections,

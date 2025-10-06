@@ -3212,7 +3212,7 @@ dependencies = [
 
 [[package]]
 name = "kaspa-sensor"
-version = "0.1.0"
+version = "0.2.5"
 dependencies = [
  "async-trait",
  "chrono",
@@ -3220,6 +3220,7 @@ dependencies = [
  "deadpool-postgres",
  "env_logger 0.11.6",
  "futures",
+ "hex",
  "itertools 0.13.0",
  "kaspa-addressmanager",
  "kaspa-connectionmanager",

@@ -1,11 +1,11 @@
 use crate::config::{PostgresConfig, SensorIdentity};
-use deadpool_postgres::{Config, Manager, ManagerConfig, Pool, RecyclingMethod, Runtime};
+use deadpool_postgres::{Config, ManagerConfig, Pool, RecyclingMethod, Runtime};
 use log::{debug, error, info, warn};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::time::sleep;
-use tokio_postgres::{NoTls, Row};
+use tokio_postgres::NoTls;
 
 #[derive(Debug, Clone)]
 pub struct PeerEvent {
@@ -231,21 +231,22 @@ impl PostgresWriter {
         let conn = self.pool.get().await?;
 
         // Build bulk insert query
-        let mut query = String::from("INSERT INTO peer_events (sensor_id, peer_address, event_type, classification, timestamp, metadata) VALUES ");
+        let mut query = String::from("INSERT INTO peer_events (sensor_id, peer_address, peer_id, event_type, classification, timestamp, metadata) VALUES ");
 
         let mut params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = Vec::new();
         let mut param_groups = Vec::new();
 
-        for (i, event) in batch.iter().enumerate() {
-            let offset = i * 6;
+        for (i, _event) in batch.iter().enumerate() {
+            let offset = i * 7;
             param_groups.push(format!(
-                "(${}, ${}, ${}, ${}, ${}, ${}::jsonb)",
+                "(${}, ${}, ${}, ${}, ${}, ${}, ${}::jsonb)",
                 offset + 1,
                 offset + 2,
                 offset + 3,
                 offset + 4,
                 offset + 5,
-                offset + 6
+                offset + 6,
+                offset + 7
             ));
         }
 
@@ -255,6 +256,7 @@ impl PostgresWriter {
         // We need to build this carefully to maintain lifetimes
         let mut sensor_ids = Vec::new();
         let mut peer_addresses = Vec::new();
+        let mut peer_ids: Vec<Option<String>> = Vec::new();
         let mut event_types = Vec::new();
         let mut classifications = Vec::new();
         let mut timestamps = Vec::new();
@@ -267,24 +269,32 @@ impl PostgresWriter {
             classifications.push(&event.classification);
             timestamps.push(&event.timestamp);
 
-            // Parse metadata String into JSON Value for PostgreSQL JSONB
-            let metadata_json = match &event.metadata {
-                Some(s) => match serde_json::from_str(s) {
-                    Ok(v) => v,
+            // Parse metadata String into JSON Value for PostgreSQL JSONB and extract peer_id
+            let (metadata_json, peer_id_value) = match &event.metadata {
+                Some(s) => match serde_json::from_str::<serde_json::Value>(s) {
+                    Ok(v) => {
+                        // Extract peer_id from metadata
+                        let peer_id = v.get("peer_id")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
+                        (v, peer_id)
+                    }
                     Err(e) => {
                         warn!("Failed to parse metadata JSON for {}: {}", event.peer_address, e);
-                        serde_json::Value::Null
+                        (serde_json::Value::Null, None)
                     }
                 },
-                None => serde_json::Value::Null,
+                None => (serde_json::Value::Null, None),
             };
             metadatas.push(metadata_json);
+            peer_ids.push(peer_id_value);
         }
 
         // Build params vector
         for i in 0..batch.len() {
             params.push(&sensor_ids[i] as &(dyn tokio_postgres::types::ToSql + Sync));
             params.push(&peer_addresses[i] as &(dyn tokio_postgres::types::ToSql + Sync));
+            params.push(&peer_ids[i] as &(dyn tokio_postgres::types::ToSql + Sync));
             params.push(&event_types[i] as &(dyn tokio_postgres::types::ToSql + Sync));
             params.push(&classifications[i] as &(dyn tokio_postgres::types::ToSql + Sync));
             params.push(&timestamps[i] as &(dyn tokio_postgres::types::ToSql + Sync));

@@ -38,6 +38,9 @@ pub struct PeerConnectionEvent {
     /// Peer's user agent string
     pub user_agent: String,
 
+    /// Peer's unique ID (from handshake, hex-encoded)
+    pub peer_id: Option<String>,
+
     /// Peer's advertised network
     pub network: String,
 
@@ -107,6 +110,7 @@ impl PeerConnectionEvent {
         peer_port: u16,
         protocol_version: u32,
         user_agent: String,
+        peer_id: Option<String>,
         network: String,
         direction: ConnectionDirection,
     ) -> Self {
@@ -118,6 +122,7 @@ impl PeerConnectionEvent {
             peer_port,
             protocol_version,
             user_agent,
+            peer_id,
             network,
             direction,
             classification: PeerClassification::Unknown,
@@ -166,6 +171,7 @@ mod tests {
             16111,
             7,
             "kaspad:0.14.0".to_string(),
+            None,
             "kaspa-mainnet".to_string(),
             ConnectionDirection::Inbound,
         );
@@ -184,6 +190,7 @@ mod tests {
             16111,
             7,
             "kaspad:0.14.0".to_string(),
+            None,
             "kaspa-mainnet".to_string(),
             ConnectionDirection::Inbound,
         );
@@ -204,6 +211,7 @@ mod tests {
                 16111,
                 7,
                 "kaspad:0.14.0".to_string(),
+                None,
                 "kaspa-mainnet".to_string(),
                 ConnectionDirection::Inbound,
             ),
@@ -222,6 +230,7 @@ mod tests {
             16111,
             7,
             "kaspad:0.14.0".to_string(),
+            None,
             "kaspa-mainnet".to_string(),
             ConnectionDirection::Inbound,
         );
