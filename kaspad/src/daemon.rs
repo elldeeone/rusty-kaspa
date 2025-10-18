@@ -1,6 +1,14 @@
-use std::{fs, path::PathBuf, process::exit, sync::Arc, time::Duration};
+use std::{
+    fs,
+    net::SocketAddr,
+    path::{Path, PathBuf},
+    process::exit,
+    sync::Arc,
+    time::Duration,
+};
 
 use async_channel::unbounded;
+use kaspa_consensus_core::network::NetworkId;
 use kaspa_consensus_core::{
     config::ConfigBuilder,
     constants::TRANSIENT_BYTE_TO_MASS_FACTOR,
@@ -8,7 +16,7 @@ use kaspa_consensus_core::{
     mining_rules::MiningRules,
 };
 use kaspa_consensus_notify::{root::ConsensusNotificationRoot, service::NotifyService};
-use kaspa_core::{core::Core, debug, info, trace};
+use kaspa_core::{core::Core, debug, info, trace, warn};
 use kaspa_core::{kaspad_env::version, task::tick::TickService};
 use kaspa_database::{
     prelude::{CachePolicy, DbWriter, DirectDbWriter},
@@ -21,7 +29,7 @@ use kaspa_p2p_mining::rule_engine::MiningRuleEngine;
 use kaspa_rpc_service::service::RpcCoreService;
 use kaspa_txscript::caches::TxScriptCacheCounters;
 use kaspa_utils::git;
-use kaspa_utils::networking::ContextualNetAddress;
+use kaspa_utils::networking::{ContextualNetAddress, NetAddress};
 use kaspa_utils::sysinfo::SystemInfo;
 use kaspa_utils_tower::counters::TowerConnectionCounters;
 
@@ -63,7 +71,11 @@ pub const MINIMUM_DAEMON_SOFT_FD_LIMIT: u64 = 4 * 1024;
 const MINIMUM_RETENTION_PERIOD_DAYS: f64 = 2.0;
 const ONE_GIGABYTE: f64 = 1_000_000_000.0;
 
-use crate::args::Args;
+use crate::{
+    args::Args,
+    tor_manager::{TorManager, TorManagerError, TorSystemConfig},
+};
+use tor_interface::tor_crypto::{Ed25519PrivateKey, V3OnionServiceId};
 
 const DEFAULT_DATA_DIR: &str = "datadir";
 const CONSENSUS_DB: &str = "consensus";
@@ -137,6 +149,105 @@ fn get_user_approval_or_exit(message: &str, approve: bool) {
         Err(error) => {
             println!("Error reading from console: {error}, exiting..");
             exit(1);
+        }
+    }
+}
+
+fn validate_tor_args(args: &Args) {
+    if args.listen_onion && args.tor_control.is_none() {
+        println!("--listen-onion requires specifying --tor-control");
+        exit(1);
+    }
+
+    if args.tor_cookie.is_some() && args.tor_password.is_some() {
+        println!("Specify only one of --tor-cookie or --tor-password");
+        exit(1);
+    }
+
+    if args.listen_onion && args.tor_proxy.is_none() {
+        println!("--listen-onion requires a Tor SOCKS proxy (--tor-proxy or implicit default 127.0.0.1:9050)");
+        exit(1);
+    }
+}
+
+fn compute_tor_system_config(args: &Args) -> Option<TorSystemConfig> {
+    use tor_interface::legacy_tor_client::TorAuth;
+
+    let control = args.tor_control?;
+    let control_addr = contextual_to_socket(control, 9051);
+
+    let socks_addr = contextual_to_socket(args.tor_proxy.unwrap_or_else(|| ContextualNetAddress::loopback().with_port(9050)), 9050);
+
+    let auth = if let Some(cookie) = args.tor_cookie.as_ref() {
+        TorAuth::CookieFile(cookie.clone())
+    } else if let Some(password) = args.tor_password.as_ref() {
+        TorAuth::Password(password.clone())
+    } else {
+        TorAuth::Null
+    };
+
+    Some(TorSystemConfig { control_addr, socks_addr, auth, bootstrap_timeout: Duration::from_secs(args.tor_bootstrap_timeout_sec) })
+}
+
+fn contextual_to_socket(addr: ContextualNetAddress, default_port: u16) -> SocketAddr {
+    let net_addr: NetAddress = addr.normalize(default_port);
+    SocketAddr::from(net_addr)
+}
+
+fn report_tor_init_error(err: &TorManagerError) {
+    match err {
+        TorManagerError::BootstrapTimeout(timeout) => {
+            println!(
+                "Tor bootstrap timed out after {:?}. Ensure the Tor daemon is running and reachable, or disable Tor integration.",
+                timeout
+            );
+        }
+        _ => {
+            println!("Failed to initialise Tor integration: {err}");
+        }
+    }
+}
+
+fn setup_tor_onion_service(
+    tor_manager: &TorManager,
+    args: &Args,
+    app_dir: &Path,
+    network: &NetworkId,
+    p2p_addr: SocketAddr,
+) -> Option<V3OnionServiceId> {
+    let key_path = args.tor_onion_key.clone().unwrap_or_else(|| {
+        let mut path = app_dir.join(network.to_prefixed()).join("tor");
+        path.push("p2p_onion.key");
+        path
+    });
+
+    let key = if key_path.exists() {
+        match TorManager::load_onion_key(&key_path) {
+            Ok(key) => key,
+            Err(err) => {
+                warn!("Failed to load Tor onion key from {}: {err}", key_path.display());
+                return None;
+            }
+        }
+    } else {
+        let key = Ed25519PrivateKey::generate();
+        if let Err(err) = TorManager::save_onion_key(&key, &key_path) {
+            warn!("Failed to persist Tor onion key to {}: {err}", key_path.display());
+        } else {
+            info!("Generated Tor onion key at {}", key_path.display());
+        }
+        key
+    };
+
+    let virt_port = args.tor_onion_port.unwrap_or(p2p_addr.port());
+    match tor_manager.publish_hidden_service(&key, virt_port, p2p_addr) {
+        Ok(service_id) => {
+            info!("Tor hidden service published at {}.onion:{}", service_id, virt_port);
+            Some(service_id)
+        }
+        Err(err) => {
+            warn!("Failed to publish Tor hidden service: {err}");
+            None
         }
     }
 }
@@ -238,6 +349,20 @@ pub fn create_core_with_runtime(runtime: &Runtime, args: &Args, fd_total_budget:
         println!("{}", err);
         exit(1);
     }
+    validate_tor_args(args);
+
+    let tor_manager = if let Some(config) = compute_tor_system_config(args) {
+        info!("Tor integration enabled (control {} / SOCKS {})", config.control_addr, config.socks_addr);
+        match TorManager::connect_system(config) {
+            Ok(manager) => Some(Arc::new(manager)),
+            Err(err) => {
+                report_tor_init_error(&err);
+                None
+            }
+        }
+    } else {
+        None
+    };
 
     let params = {
         let params: Params = network.into();
@@ -608,6 +733,20 @@ do you confirm? (answer y/n or pass --yes to the Kaspad command line to confirm 
         hub.clone(),
         mining_rules,
     ));
+    let onion_service_id = if args.listen_onion {
+        match tor_manager.as_ref() {
+            Some(manager) => {
+                setup_tor_onion_service(manager.as_ref(), args, app_dir.as_path(), &network, SocketAddr::from(p2p_server_addr))
+            }
+            None => {
+                warn!("--listen-onion requested but Tor initialisation failed; skipping hidden service setup");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     let flow_context = Arc::new(FlowContext::new(
         consensus_manager.clone(),
         address_manager,
@@ -617,6 +756,8 @@ do you confirm? (answer y/n or pass --yes to the Kaspad command line to confirm 
         notification_root,
         hub.clone(),
         mining_rule_engine.clone(),
+        tor_manager.as_ref().map(|mgr| mgr.socks_addr()),
+        onion_service_id.clone(),
     ));
     let p2p_service = Arc::new(P2pService::new(
         flow_context.clone(),

@@ -9,7 +9,7 @@ use kaspa_utils::networking::ContextualNetAddress;
 use kaspa_wrpc_server::address::WrpcNetAddress;
 use serde::Deserialize;
 use serde_with::{serde_as, DisplayFromStr};
-use std::{ffi::OsString, fs};
+use std::{ffi::OsString, fs, path::PathBuf};
 use toml::from_str;
 
 #[cfg(feature = "devnet-prealloc")]
@@ -50,6 +50,16 @@ pub struct Args {
     pub add_peers: Vec<ContextualNetAddress>,
     #[serde_as(as = "Option<DisplayFromStr>")]
     pub listen: Option<ContextualNetAddress>,
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    pub tor_proxy: Option<ContextualNetAddress>,
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    pub tor_control: Option<ContextualNetAddress>,
+    pub tor_password: Option<String>,
+    pub tor_cookie: Option<PathBuf>,
+    pub tor_bootstrap_timeout_sec: u64,
+    pub listen_onion: bool,
+    pub tor_onion_port: Option<u16>,
+    pub tor_onion_key: Option<PathBuf>,
     #[serde(rename = "uacomment")]
     pub user_agent_comments: Vec<String>,
     pub utxoindex: bool,
@@ -125,6 +135,14 @@ impl Default for Args {
             connect_peers: vec![],
             add_peers: vec![],
             listen: None,
+            tor_proxy: None,
+            tor_control: None,
+            tor_password: None,
+            tor_cookie: None,
+            tor_bootstrap_timeout_sec: 60,
+            listen_onion: false,
+            tor_onion_port: None,
+            tor_onion_key: None,
             user_agent_comments: vec![],
             yes: false,
             perf_metrics: false,
@@ -282,6 +300,66 @@ pub fn cli() -> Command {
                 .require_equals(true)
                 .value_parser(clap::value_parser!(ContextualNetAddress))
                 .help("Add an interface:port to listen for connections (default all interfaces port: 16111, testnet: 16211)."),
+        )
+        .arg(
+            Arg::new("tor-proxy")
+                .long("tor-proxy")
+                .value_name("IP[:PORT]")
+                .require_equals(true)
+                .value_parser(clap::value_parser!(ContextualNetAddress))
+                .help("Route outbound P2P connections through the provided SOCKS5 proxy (default port: 9050)."),
+        )
+        .arg(
+            Arg::new("tor-control")
+                .long("tor-control")
+                .value_name("IP[:PORT]")
+                .require_equals(true)
+                .value_parser(clap::value_parser!(ContextualNetAddress))
+                .help("Tor control host:port used for hidden-service management (default port: 9051)."),
+        )
+        .arg(
+            Arg::new("tor-password")
+                .long("tor-password")
+                .value_name("PASSWORD")
+                .require_equals(true)
+                .value_parser(clap::value_parser!(String))
+                .help("Authenticate to the Tor control port using the provided password."),
+        )
+        .arg(
+            Arg::new("tor-cookie")
+                .long("tor-cookie")
+                .value_name("PATH")
+                .require_equals(true)
+                .value_parser(clap::value_parser!(PathBuf))
+                .help("Authenticate to the Tor control port using the cookie file at PATH."),
+        )
+        .arg(
+            Arg::new("tor-bootstrap-timeout-sec")
+                .long("tor-bootstrap-timeout-sec")
+                .require_equals(true)
+                .value_parser(clap::value_parser!(u64))
+                .help("Seconds to wait for Tor bootstrap completion before aborting (default: 60)."),
+        )
+        .arg(
+            Arg::new("listen-onion")
+                .long("listen-onion")
+                .action(ArgAction::SetTrue)
+                .help("Publish a Tor hidden service for the P2P listener (requires --tor-control)."),
+        )
+        .arg(
+            Arg::new("tor-onion-port")
+                .long("tor-onion-port")
+                .require_equals(true)
+                .value_parser(clap::value_parser!(u16))
+                .help("Virtual port to expose via the Tor hidden service (defaults to the P2P port)."),
+        )
+        .arg(
+            Arg::new("tor-onion-key")
+                .long("tor-onion-key")
+                .value_name("PATH")
+                .require_equals(true)
+                .value_parser(clap::value_parser!(PathBuf))
+                .help("Path to a persistent v3 onion private key (will be created if missing)."),
         )
         .arg(
             Arg::new("outpeers")
@@ -443,6 +521,14 @@ impl Args {
             connect_peers: arg_match_many_unwrap_or::<ContextualNetAddress>(&m, "connect-peers", defaults.connect_peers),
             add_peers: arg_match_many_unwrap_or::<ContextualNetAddress>(&m, "add-peers", defaults.add_peers),
             listen: m.get_one::<ContextualNetAddress>("listen").cloned().or(defaults.listen),
+            tor_proxy: m.get_one::<ContextualNetAddress>("tor-proxy").cloned().or(defaults.tor_proxy),
+            tor_control: m.get_one::<ContextualNetAddress>("tor-control").cloned().or(defaults.tor_control),
+            tor_password: m.get_one::<String>("tor-password").cloned().or(defaults.tor_password),
+            tor_cookie: m.get_one::<PathBuf>("tor-cookie").cloned().or(defaults.tor_cookie),
+            tor_bootstrap_timeout_sec: arg_match_unwrap_or::<u64>(&m, "tor-bootstrap-timeout-sec", defaults.tor_bootstrap_timeout_sec),
+            listen_onion: arg_match_unwrap_or::<bool>(&m, "listen-onion", defaults.listen_onion),
+            tor_onion_port: m.get_one::<u16>("tor-onion-port").cloned().or(defaults.tor_onion_port),
+            tor_onion_key: m.get_one::<PathBuf>("tor-onion-key").cloned().or(defaults.tor_onion_key),
             outbound_target: arg_match_unwrap_or::<usize>(&m, "outpeers", defaults.outbound_target),
             inbound_limit: arg_match_unwrap_or::<usize>(&m, "maxinpeers", defaults.inbound_limit),
             rpc_max_clients: arg_match_unwrap_or::<usize>(&m, "rpcmaxclients", defaults.rpc_max_clients),

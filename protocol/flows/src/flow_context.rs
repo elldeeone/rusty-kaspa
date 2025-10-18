@@ -43,6 +43,7 @@ use kaspa_utils::iter::IterExtensions;
 use kaspa_utils::networking::PeerId;
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::time::Instant;
 use std::{collections::hash_map::Entry, fmt::Display};
 use std::{
@@ -59,6 +60,7 @@ use tokio::sync::{
     RwLock as AsyncRwLock,
 };
 use tokio_stream::{wrappers::UnboundedReceiverStream, StreamExt};
+use tor_interface::tor_crypto::V3OnionServiceId;
 use uuid::Uuid;
 
 /// The P2P protocol version.
@@ -241,6 +243,8 @@ pub struct FlowContextInner {
 
     // Mining rule engine
     mining_rule_engine: Arc<MiningRuleEngine>,
+    tor_proxy: Option<SocketAddr>,
+    onion_service_id: Option<V3OnionServiceId>,
 }
 
 #[derive(Clone)]
@@ -315,6 +319,8 @@ impl FlowContext {
         notification_root: Arc<ConsensusNotificationRoot>,
         hub: Hub,
         mining_rule_engine: Arc<MiningRuleEngine>,
+        tor_proxy: Option<SocketAddr>,
+        onion_service_id: Option<V3OnionServiceId>,
     ) -> Self {
         let bps_upper_bound = config.bps().upper_bound() as usize;
         let orphan_resolution_range = BASELINE_ORPHAN_RESOLUTION_RANGE + (bps_upper_bound as f64).log2().ceil() as u32;
@@ -345,6 +351,8 @@ impl FlowContext {
                 max_orphans,
                 config,
                 mining_rule_engine,
+                tor_proxy,
+                onion_service_id,
             }),
         }
     }
@@ -355,6 +363,14 @@ impl FlowContext {
 
     pub fn orphan_resolution_range(&self) -> u32 {
         self.orphan_resolution_range
+    }
+
+    pub fn tor_proxy(&self) -> Option<SocketAddr> {
+        self.tor_proxy
+    }
+
+    pub fn onion_service_id(&self) -> Option<V3OnionServiceId> {
+        self.onion_service_id.clone()
     }
 
     pub fn max_orphans(&self) -> usize {

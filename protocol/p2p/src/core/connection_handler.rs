@@ -5,23 +5,27 @@ use crate::pb::{
 };
 use crate::{ConnectionInitializer, Router};
 use futures::FutureExt;
+use hyper_util::rt::TokioIo;
 use kaspa_core::{debug, info};
 use kaspa_utils::networking::NetAddress;
 use kaspa_utils_tower::{
     counters::TowerConnectionCounters,
     middleware::{BodyExt, CountBytesBody, MapRequestBodyLayer, MapResponseBodyLayer, ServiceBuilder},
 };
-use std::net::ToSocketAddrs;
+use std::io;
+use std::net::{SocketAddr, ToSocketAddrs};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
 use tokio::sync::mpsc::{channel as mpsc_channel, Sender as MpscSender};
 use tokio::sync::oneshot::{channel as oneshot_channel, Sender as OneshotSender};
+use tokio_socks::tcp::socks5::Socks5Stream;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
-use tonic::transport::{Error as TonicError, Server as TonicServer};
+use tonic::transport::{Error as TonicError, Server as TonicServer, Uri};
 use tonic::{Request, Response, Status as TonicStatus, Streaming};
+use tower::service_fn;
 
 #[derive(Error, Debug)]
 pub enum ConnectionError {
@@ -51,6 +55,12 @@ pub struct ConnectionHandler {
     hub_sender: MpscSender<HubEvent>,
     initializer: Arc<dyn ConnectionInitializer>,
     counters: Arc<TowerConnectionCounters>,
+    socks_proxy: Option<SocksProxyConfig>,
+}
+
+#[derive(Clone, Copy)]
+pub struct SocksProxyConfig {
+    pub proxy_addr: SocketAddr,
 }
 
 impl ConnectionHandler {
@@ -58,8 +68,9 @@ impl ConnectionHandler {
         hub_sender: MpscSender<HubEvent>,
         initializer: Arc<dyn ConnectionInitializer>,
         counters: Arc<TowerConnectionCounters>,
+        socks_proxy: Option<SocksProxyConfig>,
     ) -> Self {
-        Self { hub_sender, initializer, counters }
+        Self { hub_sender, initializer, counters, socks_proxy }
     }
 
     /// Launches a P2P server listener loop
@@ -100,12 +111,29 @@ impl ConnectionHandler {
         };
         let peer_address = format!("http://{}", peer_address); // Add scheme prefix as required by Tonic
 
-        let channel = tonic::transport::Endpoint::new(peer_address)?
+        let endpoint = tonic::transport::Endpoint::new(peer_address)?
             .timeout(Duration::from_millis(Self::communication_timeout()))
             .connect_timeout(Duration::from_millis(Self::connect_timeout()))
-            .tcp_keepalive(Some(Duration::from_millis(Self::keep_alive())))
-            .connect()
-            .await?;
+            .tcp_keepalive(Some(Duration::from_millis(Self::keep_alive())));
+
+        let channel = if let Some(proxy) = self.socks_proxy {
+            let proxy_addr = proxy.proxy_addr;
+            let connector = service_fn(move |uri: Uri| {
+                let proxy_addr = proxy_addr;
+                async move {
+                    let host =
+                        uri.host().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "missing host in URI"))?.to_string();
+                    let port = uri.port_u16().unwrap_or(80);
+                    let target = format!("{}:{}", host, port);
+                    let stream =
+                        Socks5Stream::connect(proxy_addr, target).await.map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
+                    Ok::<_, io::Error>(TokioIo::new(stream.into_inner()))
+                }
+            });
+            endpoint.connect_with_connector(connector).await?
+        } else {
+            endpoint.connect().await?
+        };
 
         let channel = ServiceBuilder::new()
             .layer(MapResponseBodyLayer::new(move |body| CountBytesBody::new(body, self.counters.bytes_rx.clone())))

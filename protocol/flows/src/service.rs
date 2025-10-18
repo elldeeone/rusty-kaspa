@@ -6,7 +6,7 @@ use kaspa_core::{
     task::service::{AsyncService, AsyncServiceFuture},
     trace,
 };
-use kaspa_p2p_lib::Adaptor;
+use kaspa_p2p_lib::{Adaptor, SocksProxyConfig};
 use kaspa_utils::triggers::SingleTrigger;
 use kaspa_utils_tower::counters::TowerConnectionCounters;
 
@@ -65,11 +65,19 @@ impl AsyncService for P2pService {
         // Prepare a shutdown signal receiver
         let shutdown_signal = self.shutdown.listener.clone();
 
+        let socks_proxy = self.flow_context.tor_proxy().map(|addr| SocksProxyConfig { proxy_addr: addr });
+
         let p2p_adaptor = if self.inbound_limit == 0 {
-            Adaptor::client_only(self.flow_context.hub().clone(), self.flow_context.clone(), self.counters.clone())
+            Adaptor::client_only(self.flow_context.hub().clone(), self.flow_context.clone(), self.counters.clone(), socks_proxy)
         } else {
-            Adaptor::bidirectional(self.listen, self.flow_context.hub().clone(), self.flow_context.clone(), self.counters.clone())
-                .unwrap()
+            Adaptor::bidirectional(
+                self.listen,
+                self.flow_context.hub().clone(),
+                self.flow_context.clone(),
+                self.counters.clone(),
+                socks_proxy,
+            )
+            .unwrap()
         };
         let connection_manager = ConnectionManager::new(
             p2p_adaptor.clone(),
