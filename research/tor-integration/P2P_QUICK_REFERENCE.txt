@@ -1,0 +1,145 @@
+================================================================================
+RUSTY-KASPA P2P OUTBOUND CONNECTION - QUICK REFERENCE
+================================================================================
+
+PRIMARY INJECTION POINT FOR SOCKS PROXY:
+File: /Users/luke/Documents/GitHub/rusty-kaspa/protocol/p2p/src/core/connection_handler.rs
+Lines: 103-108 (Endpoint::connect() call)
+
+================================================================================
+CALL CHAIN (Top to Bottom)
+================================================================================
+
+1. kaspad/src/main.rs
+   └─> create_core(args, fd_total_budget)
+
+2. kaspad/src/daemon.rs:206-691
+   └─> P2pService::new(...) [Line 597-607]
+
+3. protocol/flows/src/service.rs:62-99  
+   └─> P2pService::start()
+       ├─> Adaptor::client_only() OR Adaptor::bidirectional() [Lines 68-73]
+       └─> ConnectionManager::new() [Lines 74-81]
+
+4. components/connectionmanager/src/lib.rs:116-189
+   └─> handle_connection_requests() / handle_outbound_connections()
+       └─> self.p2p_adaptor.connect_peer(address) [Lines 130, 188]
+
+5. protocol/p2p/src/core/adaptor.rs:72-85
+   └─> Adaptor::connect_peer(peer_address)
+       └─> self.connection_handler.connect_with_retry()
+
+6. protocol/p2p/src/core/connection_handler.rs:145-176
+   └─> ConnectionHandler::connect_with_retry()
+       └─> self.connect(peer_address) [Line 154]
+
+7. protocol/p2p/src/core/connection_handler.rs:96-142  *** PRIMARY LOCATION ***
+   └─> ConnectionHandler::connect(peer_address)
+       └─> tonic::transport::Endpoint::new(peer_address)? [Line 103]
+           .timeout(...)
+           .connect_timeout(...)
+           .tcp_keepalive(...)
+           .connect()  *** TCP CONNECTION HERE (Line 107) ***
+           .await?
+
+================================================================================
+KEY FILE LOCATIONS AND LINE NUMBERS
+================================================================================
+
+FILE                                                    LINES       PURPOSE
+────────────────────────────────────────────────────────────────────────────
+kaspad/src/main.rs                                      19-50       Entry point
+kaspad/src/daemon.rs                                    578-607     P2p setup
+protocol/flows/src/service.rs                          62-99       Service start
+protocol/p2p/src/core/adaptor.rs                       72-85       Connect entry
+protocol/p2p/src/core/connection_handler.rs            96-142      *** PRIMARY ***
+protocol/p2p/src/core/connection_handler.rs            145-176     Retry logic
+components/connectionmanager/src/lib.rs                116-189     Orchestration
+
+================================================================================
+TONIC/TOWER DEPENDENCY VERSIONS
+================================================================================
+
+tonic          = 0.12.3     (with features: ["tls", "gzip"])
+tokio          = 1.33.0     (with features: ["rt-multi-thread", "macros"])
+tower          = 0.5.1
+
+Key Tonic API in use:
+  - tonic::transport::Endpoint
+  - tonic::transport::Channel
+  - Endpoint::new()
+  - Endpoint::connect()
+  - ServiceBuilder from kaspa-utils-tower
+
+================================================================================
+SOCKS PROXY INJECTION OPTIONS
+================================================================================
+
+OPTION 1: RECOMMENDED - Endpoint Connector (Most Clean)
+Location: protocol/p2p/src/core/connection_handler.rs:103-108
+Method:   Implement custom tower::service::Service trait
+          Use Endpoint::connector() to inject custom connector
+
+OPTION 2: ConnectionManager Level
+Location: components/connectionmanager/src/lib.rs:130,188
+Method:   Add SOCKS routing decision before connect_peer() call
+Benefit:  Selective per-address routing possible
+
+OPTION 3: Adaptor Wrapper
+Location: protocol/p2p/src/core/adaptor.rs:72-85
+Method:   Wrap connect_peer() with SOCKS proxy logic
+Benefit:  Centralized control point
+
+================================================================================
+CRITICAL CODE SECTIONS FOR INSPECTION
+================================================================================
+
+Connection Timeout Constants (connection_handler.rs:184-194):
+  - communication_timeout(): 10,000 ms
+  - connect_timeout(): 1,000 ms
+  - keep_alive(): 10,000 ms
+
+Gzip Compression (connection_handler.rs:76-78):
+  - Request: tonic::codec::CompressionEncoding::Gzip
+  - Response: tonic::codec::CompressionEncoding::Gzip
+
+Message Size Limits (connection_handler.rs:45):
+  - P2P_MAX_MESSAGE_SIZE: 1GB (1024 * 1024 * 1024)
+
+gRPC Service (connection_handler.rs:3-5):
+  - Uses protobuf-generated ProtoP2pClient
+  - Bidirectional streaming via message_stream()
+
+================================================================================
+CONNECTION INITIALIZATION SEQUENCE
+================================================================================
+
+1. Endpoint::new(peer_address_string)
+   └─> parses http://peer_ip:port
+
+2. .timeout(10_000ms)
+   └─> overall communication timeout
+
+3. .connect_timeout(1_000ms)
+   └─> TCP handshake timeout
+
+4. .tcp_keepalive(Some(10_000ms))
+   └─> TCP keepalive settings
+
+5. .connect().await
+   └─> *** ACTUAL TCP CONNECTION OCCURS HERE ***
+   └─> Returns tonic::transport::Channel
+
+6. ServiceBuilder wraps channel (lines 110-113)
+   └─> Adds byte counting middleware
+
+7. ProtoP2pClient::new(channel) (lines 115-118)
+   └─> Creates gRPC client
+
+8. client.message_stream() (lines 120-121)
+   └─> Initiates bidirectional streaming
+
+9. Router::new() (line 123)
+   └─> Wraps connection with routing logic
+
+================================================================================

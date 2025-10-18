@@ -1,0 +1,234 @@
+================================================================================
+                    VISUAL INJECTION POINT DIAGRAM
+================================================================================
+
+INCOMING REQUEST
+      |
+      v
+┌──────────────────────────────────────────────────────────────┐
+│ kaspad/src/main.rs                                           │
+│ main() -> create_core(args, fd_total_budget)                 │
+└────────────────────────┬─────────────────────────────────────┘
+                         |
+                         v
+┌──────────────────────────────────────────────────────────────┐
+│ kaspad/src/daemon.rs:206-691                                 │
+│ create_core_with_runtime()                                   │
+│   - Parse config                                             │
+│   - Create P2pService with args.socks_proxy [NEW PARAM]      │
+└────────────────────────┬─────────────────────────────────────┘
+                         |
+                         v
+┌──────────────────────────────────────────────────────────────┐
+│ protocol/flows/src/service.rs:62-99                          │
+│ P2pService::start()                                          │
+│   - Creates Adaptor (passes socks_proxy) [NEW PARAM]         │
+│   - Creates ConnectionManager                               │
+└────────────────────────┬─────────────────────────────────────┘
+                         |
+                         v
+┌──────────────────────────────────────────────────────────────┐
+│ protocol/p2p/src/core/adaptor.rs                             │
+│ Adaptor::bidirectional() or ::client_only()                  │
+│   - Stores socks_proxy in ConnectionHandler [NEW PARAM]      │
+└────────────────────────┬─────────────────────────────────────┘
+                         |
+         ┌───────────────┴───────────────┐
+         |                               |
+    [INBOUND]                        [OUTBOUND]
+    Inbound connections              Outbound connections
+    handled by gRPC                  orchestrated by
+    server directly                  ConnectionManager
+         |
+         |               ┌─────────────────────────────┐
+         |               │ ConnectionManager           │
+         |               │ handle_outbound_connections │
+         |               │ calls:                      │
+         |               │ adaptor.connect_peer()      │
+         |               └──────────────┬──────────────┘
+         |                              |
+         |       ┌──────────────────────┘
+         |       |
+         v       v
+┌──────────────────────────────────────────────────────────────┐
+│ protocol/p2p/src/core/adaptor.rs:73-85                       │
+│ Adaptor::connect_peer(peer_address)                          │
+│   └─> calls connection_handler.connect_with_retry()          │
+└────────────────────────┬─────────────────────────────────────┘
+                         |
+                         v
+┌──────────────────────────────────────────────────────────────┐
+│ protocol/p2p/src/core/connection_handler.rs:145-176          │
+│ ConnectionHandler::connect_with_retry()                      │
+│   └─> calls self.connect()                                   │
+└────────────────────────┬─────────────────────────────────────┘
+                         |
+                         v
+    ╔════════════════════════════════════════════════════════╗
+    ║ protocol/p2p/src/core/connection_handler.rs:96-142     ║
+    ║ ConnectionHandler::connect(peer_address)               ║
+    ║                                                        ║
+    ║ let peer_address = format!("http://{}", peer_address); ║
+    ║                                                        ║
+    ║ *** INJECTION POINT STARTS HERE ***                   ║
+    ║                                                        ║
+    ║ let channel = if let Some(socks_addr) = self.socks... ║
+    ║     tonic::transport::Endpoint::new(peer_address)?     ║
+    ║         .timeout(Duration::from_millis(...))           ║
+    ║         .connect_timeout(Duration::from_millis(...))   ║
+    ║         .tcp_keepalive(Some(...))                      ║
+    ║         .connector(SocksConnector::new(socks_addr))    ║ <-- NEW!
+    ║         .connect()                                     ║
+    ║         .await?  <-- TCP CONNECTION (with SOCKS)      ║
+    ║ } else {                                               ║
+    ║     tonic::transport::Endpoint::new(peer_address)?     ║
+    ║         .timeout(Duration::from_millis(...))           ║
+    ║         .connect_timeout(Duration::from_millis(...))   ║
+    ║         .tcp_keepalive(Some(...))                      ║
+    ║         .connect()                                     ║
+    ║         .await?  <-- TCP CONNECTION (direct)          ║
+    ║ }                                                      ║
+    ║                                                        ║
+    ║ *** INJECTION POINT ENDS HERE ***                     ║
+    ║                                                        ║
+    ║ // Continue with channel setup...                      ║
+    ║ let channel = ServiceBuilder::new()...                ║
+    ║ let mut client = ProtoP2pClient::new(channel)...      ║
+    ║ let incoming_stream = client.message_stream()...      ║
+    ║ let router = Router::new(...)...                      ║
+    ║ self.initializer.initialize_connection(router)...     ║
+    ╚════════════════════════════════════════════════════════╝
+        |                           |
+        | (if Some(socks))          | (if None)
+        v                           v
+    ┌─────────────────┐        ┌──────────────────┐
+    │ SocksConnector  │        │ Direct TCP       │
+    │ (NEW MODULE)    │        │ Connection       │
+    │ tower::Service  │        │ (existing)       │
+    │ <Uri>->TcpStream│        │                  │
+    │                 │        │                  │
+    │ Implements SOCKS│        │ Normal Tonic     │
+    │ 5 handshake     │        │ behavior         │
+    │                 │        │                  │
+    │ 1. Connect to   │        │                  │
+    │    proxy        │        │                  │
+    │ 2. Send SOCKS   │        │                  │
+    │    request      │        │                  │
+    │ 3. Receive      │        │                  │
+    │    response     │        │                  │
+    │ 4. Return stream│        │                  │
+    └────────┬────────┘        └────────┬─────────┘
+             |                         |
+             | returns TcpStream      | returns TcpStream
+             |                         |
+             └────────────┬────────────┘
+                          |
+                          v
+        ┌─────────────────────────────────┐
+        │ tonic::transport::Channel       │
+        │ (wrapping the TcpStream)        │
+        │                                 │
+        │ Either:                         │
+        │ - Through SOCKS proxy, or       │
+        │ - Direct connection             │
+        └────────────┬────────────────────┘
+                     |
+                     v
+        ┌─────────────────────────────────┐
+        │ ProtoP2pClient::new(channel)    │
+        │ gRPC client ready               │
+        └────────────┬────────────────────┘
+                     |
+                     v
+        ┌─────────────────────────────────┐
+        │ client.message_stream()         │
+        │ Establishes bidirectional       │
+        │ gRPC streaming                  │
+        └────────────┬────────────────────┘
+                     |
+                     v
+        ┌─────────────────────────────────┐
+        │ Router::new(socket_address,     │
+        │   is_outbound=true, ...)        │
+        │ Wraps connection with routing   │
+        └────────────┬────────────────────┘
+                     |
+                     v
+        ┌─────────────────────────────────┐
+        │ Hub::NewPeer(router)            │
+        │ Router registered with hub      │
+        │ Peer is now active              │
+        └─────────────────────────────────┘
+
+================================================================================
+KEY INSIGHT
+================================================================================
+
+The SocksConnector implementation is a tower::service::Service<Uri>.
+
+When Tonic calls .connect(), it internally calls the Service::call() method
+with the target URI. This is where we can intercept and:
+
+1. Parse the target host and port from the URI
+2. Connect to the SOCKS proxy
+3. Perform SOCKS5 handshake
+4. Return a TcpStream to the target (through the proxy)
+
+Tonic then uses this TcpStream as if it were a direct connection, completely
+transparent to the rest of the gRPC code.
+
+================================================================================
+CONFIGURATION THREADING
+================================================================================
+
+Command-line flag:
+    --socks5-proxy 127.0.0.1:9050
+
+Parsed in kaspad/src/args.rs:
+    pub socks_proxy: Option<String>
+
+Converted to SocketAddr in kaspad/src/daemon.rs:
+    let socks_proxy = args.socks_proxy.and_then(|addr| addr.parse().ok());
+
+Threaded through P2pService:
+    P2pService::new(..., socks_proxy)
+
+Threaded through Adaptor::bidirectional():
+    Adaptor::bidirectional(..., socks_proxy)
+
+Stored in ConnectionHandler:
+    ConnectionHandler { socks_proxy: Option<SocketAddr> }
+
+Used in connect():
+    .connector(SocksConnector::new(socks_proxy))
+
+================================================================================
+MODIFICATIONS BY FILE (1-line summary each)
+================================================================================
+
+kaspad/src/args.rs
+    + Add: pub socks_proxy: Option<String>
+
+kaspad/src/daemon.rs
+    + Add: Parse args.socks_proxy to SocketAddr
+    + Modify: Pass socks_proxy to P2pService::new()
+
+protocol/flows/src/service.rs
+    + Add: socks_proxy: Option<SocketAddr> field
+    + Modify: Pass socks_proxy to Adaptor::bidirectional/client_only()
+
+protocol/p2p/src/core/adaptor.rs
+    + Modify: Add socks_proxy parameter to bidirectional()
+    + Modify: Add socks_proxy parameter to client_only()
+    + Modify: Pass to ConnectionHandler::new()
+
+protocol/p2p/src/core/connection_handler.rs
+    + Add: socks_proxy: Option<SocketAddr> field
+    + Modify: Conditional .connector() in connect() method
+    + Create: socks_connector.rs module (NEW FILE)
+
+protocol/p2p/src/core/socks_connector.rs (NEW)
+    + New: Implement Service<Uri> -> TcpStream
+    + New: Implement SOCKS5 protocol handshake
+
+================================================================================
