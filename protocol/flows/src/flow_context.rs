@@ -39,8 +39,10 @@ use kaspa_p2p_lib::{
     ConnectionInitializer, Hub, KaspadHandshake, PeerKey, PeerProperties, Router,
 };
 use kaspa_p2p_mining::rule_engine::MiningRuleEngine;
-use kaspa_utils::iter::IterExtensions;
-use kaspa_utils::networking::PeerId;
+use kaspa_utils::{
+    iter::IterExtensions,
+    networking::{NetAddress, OnionAddress, PeerId},
+};
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -244,7 +246,7 @@ pub struct FlowContextInner {
     // Mining rule engine
     mining_rule_engine: Arc<MiningRuleEngine>,
     tor_proxy: Option<SocketAddr>,
-    onion_service_id: Option<V3OnionServiceId>,
+    onion_service: Option<(V3OnionServiceId, NetAddress)>,
 }
 
 #[derive(Clone)]
@@ -320,10 +322,25 @@ impl FlowContext {
         hub: Hub,
         mining_rule_engine: Arc<MiningRuleEngine>,
         tor_proxy: Option<SocketAddr>,
-        onion_service_id: Option<V3OnionServiceId>,
+        onion_service: Option<(V3OnionServiceId, u16)>,
     ) -> Self {
         let bps_upper_bound = config.bps().upper_bound() as usize;
         let orphan_resolution_range = BASELINE_ORPHAN_RESOLUTION_RANGE + (bps_upper_bound as f64).log2().ceil() as u32;
+
+        let onion_service = onion_service.and_then(|(id, port)| {
+            let onion_host = format!("{}.onion", id);
+            match OnionAddress::try_from(onion_host.as_str()) {
+                Ok(onion) => Some((id, NetAddress::new_onion(onion, port))),
+                Err(err) => {
+                    warn!("Failed to construct onion address {}: {}", onion_host, err);
+                    None
+                }
+            }
+        });
+
+        if let Some((_, address)) = onion_service.as_ref() {
+            address_manager.lock().add_address(*address);
+        }
 
         // The maximum amount of orphans allowed in the orphans pool. This number is an approximation
         // of how many orphans there can possibly be on average bounded by an upper bound.
@@ -352,7 +369,7 @@ impl FlowContext {
                 config,
                 mining_rule_engine,
                 tor_proxy,
-                onion_service_id,
+                onion_service,
             }),
         }
     }
@@ -370,7 +387,11 @@ impl FlowContext {
     }
 
     pub fn onion_service_id(&self) -> Option<V3OnionServiceId> {
-        self.onion_service_id.clone()
+        self.onion_service.as_ref().map(|(id, _)| id.clone())
+    }
+
+    pub fn onion_service_address(&self) -> Option<NetAddress> {
+        self.onion_service.as_ref().map(|(_, addr)| *addr)
     }
 
     pub fn max_orphans(&self) -> usize {
@@ -767,6 +788,8 @@ impl ConnectionInitializer for FlowContext {
 
         // Build the local version message
         // Subnets are not currently supported
+        // NOTE: We currently avoid advertising onion addresses in the handshake since legacy peers
+        // do not understand them. When Tor-only, we intentionally fall back to `None`.
         let mut self_version_message = Version::new(local_address, self.node_id, network_name.clone(), None, PROTOCOL_VERSION);
         self_version_message.add_user_agent(name(), version(), &self.config.user_agent_comments);
         // TODO: get number of live services
@@ -838,7 +861,7 @@ impl ConnectionInitializer for FlowContext {
             let mut address_manager = self.address_manager.lock();
 
             if router.is_outbound() {
-                address_manager.add_address(router.net_address().into());
+                address_manager.add_address(router.net_address());
             }
 
             if let Some(peer_ip_address) = peer_version.address {
