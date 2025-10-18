@@ -31,7 +31,7 @@ pub struct ConnectionManager {
     dns_seeders: &'static [&'static str],
     default_port: u16,
     address_manager: Arc<ParkingLotMutex<AddressManager>>,
-    connection_requests: TokioMutex<HashMap<SocketAddr, ConnectionRequest>>,
+    connection_requests: TokioMutex<HashMap<NetAddress, ConnectionRequest>>,
     force_next_iteration: UnboundedSender<()>,
     shutdown_signal: SingleTrigger,
 }
@@ -96,14 +96,14 @@ impl ConnectionManager {
     async fn handle_event(self: Arc<Self>) {
         debug!("Starting connection loop iteration");
         let peers = self.p2p_adaptor.active_peers();
-        let peer_by_address: HashMap<SocketAddr, Peer> = peers.into_iter().map(|peer| (peer.net_address(), peer)).collect();
+        let peer_by_address: HashMap<NetAddress, Peer> = peers.into_iter().map(|peer| (peer.net_address(), peer)).collect();
 
         self.handle_connection_requests(&peer_by_address).await;
         self.handle_outbound_connections(&peer_by_address).await;
         self.handle_inbound_connections(&peer_by_address).await;
     }
 
-    pub async fn add_connection_request(&self, address: SocketAddr, is_permanent: bool) {
+    pub async fn add_connection_request(&self, address: NetAddress, is_permanent: bool) {
         // If the request already exists, it resets the attempts count and overrides the `is_permanent` setting.
         self.connection_requests.lock().await.insert(address, ConnectionRequest::new(is_permanent));
         self.force_next_iteration.send(()).unwrap(); // We force the next iteration of the connection loop.
@@ -113,7 +113,7 @@ impl ConnectionManager {
         self.shutdown_signal.trigger.trigger()
     }
 
-    async fn handle_connection_requests(self: &Arc<Self>, peer_by_address: &HashMap<SocketAddr, Peer>) {
+    async fn handle_connection_requests(self: &Arc<Self>, peer_by_address: &HashMap<NetAddress, Peer>) {
         let mut requests = self.connection_requests.lock().await;
         let mut new_requests = HashMap::with_capacity(requests.len());
         for (address, request) in requests.iter() {
@@ -159,9 +159,9 @@ impl ConnectionManager {
         *requests = new_requests;
     }
 
-    async fn handle_outbound_connections(self: &Arc<Self>, peer_by_address: &HashMap<SocketAddr, Peer>) {
+    async fn handle_outbound_connections(self: &Arc<Self>, peer_by_address: &HashMap<NetAddress, Peer>) {
         let active_outbound: HashSet<kaspa_addressmanager::NetAddress> =
-            peer_by_address.values().filter(|peer| peer.is_outbound()).map(|peer| peer.net_address().into()).collect();
+            peer_by_address.values().filter(|peer| peer.is_outbound()).map(|peer| peer.net_address()).collect();
         if active_outbound.len() >= self.outbound_target {
             return;
         }
@@ -182,10 +182,10 @@ impl ConnectionManager {
                     connecting = false;
                     break;
                 };
-                let socket_addr = SocketAddr::new(net_addr.ip.into(), net_addr.port).to_string();
-                debug!("Connecting to {}", &socket_addr);
+                let target = net_addr.to_string();
+                debug!("Connecting to {}", &target);
                 addrs_to_connect.push(net_addr);
-                jobs.push(self.p2p_adaptor.connect_peer(socket_addr.clone()));
+                jobs.push(self.p2p_adaptor.connect_peer(target));
             }
 
             if progressing && !jobs.is_empty() {
@@ -238,7 +238,7 @@ impl ConnectionManager {
         }
     }
 
-    async fn handle_inbound_connections(self: &Arc<Self>, peer_by_address: &HashMap<SocketAddr, Peer>) {
+    async fn handle_inbound_connections(self: &Arc<Self>, peer_by_address: &HashMap<NetAddress, Peer>) {
         let active_inbound = peer_by_address.values().filter(|peer| !peer.is_outbound()).collect_vec();
         let active_inbound_len = active_inbound.len();
         if self.inbound_limit >= active_inbound_len {
@@ -316,8 +316,10 @@ impl ConnectionManager {
             return;
         }
         for peer in self.p2p_adaptor.active_peers() {
-            if peer.net_address().ip() == ip {
-                self.p2p_adaptor.terminate(peer.key()).await;
+            if let Some(peer_ip) = peer.net_address().as_ip() {
+                if IpAddr::from(peer_ip) == ip {
+                    self.p2p_adaptor.terminate(peer.key()).await;
+                }
             }
         }
         self.address_manager.lock().ban(ip.into());
@@ -330,11 +332,16 @@ impl ConnectionManager {
 
     /// Returns whether the given address is a permanent request.
     pub async fn is_permanent(&self, address: &SocketAddr) -> bool {
-        self.connection_requests.lock().await.contains_key(address)
+        let net_address: NetAddress = (*address).into();
+        self.connection_requests.lock().await.contains_key(&net_address)
     }
 
     /// Returns whether the given IP has some permanent request.
     pub async fn ip_has_permanent_connection(&self, ip: IpAddr) -> bool {
-        self.connection_requests.lock().await.iter().any(|(address, request)| request.is_permanent && address.ip() == ip)
+        self.connection_requests
+            .lock()
+            .await
+            .iter()
+            .any(|(address, request)| request.is_permanent && address.as_ip().map_or(false, |addr_ip| IpAddr::from(addr_ip) == ip))
     }
 }

@@ -191,7 +191,7 @@ fn compute_tor_system_config(args: &Args) -> Option<TorSystemConfig> {
 
 fn contextual_to_socket(addr: ContextualNetAddress, default_port: u16) -> SocketAddr {
     let net_addr: NetAddress = addr.normalize(default_port);
-    SocketAddr::from(net_addr)
+    net_addr.to_socket_addr().expect("expected IP address")
 }
 
 fn report_tor_init_error(err: &TorManagerError) {
@@ -214,7 +214,7 @@ fn setup_tor_onion_service(
     app_dir: &Path,
     network: &NetworkId,
     p2p_addr: SocketAddr,
-) -> Option<V3OnionServiceId> {
+) -> Option<(V3OnionServiceId, u16)> {
     let key_path = args.tor_onion_key.clone().unwrap_or_else(|| {
         let mut path = app_dir.join(network.to_prefixed()).join("tor");
         path.push("p2p_onion.key");
@@ -243,7 +243,7 @@ fn setup_tor_onion_service(
     match tor_manager.publish_hidden_service(&key, virt_port, p2p_addr) {
         Ok(service_id) => {
             info!("Tor hidden service published at {}.onion:{}", service_id, virt_port);
-            Some(service_id)
+            Some((service_id, virt_port))
         }
         Err(err) => {
             warn!("Failed to publish Tor hidden service: {err}");
@@ -733,11 +733,15 @@ do you confirm? (answer y/n or pass --yes to the Kaspad command line to confirm 
         hub.clone(),
         mining_rules,
     ));
-    let onion_service_id = if args.listen_onion {
+    let onion_service = if args.listen_onion {
         match tor_manager.as_ref() {
-            Some(manager) => {
-                setup_tor_onion_service(manager.as_ref(), args, app_dir.as_path(), &network, SocketAddr::from(p2p_server_addr))
-            }
+            Some(manager) => setup_tor_onion_service(
+                manager.as_ref(),
+                args,
+                app_dir.as_path(),
+                &network,
+                p2p_server_addr.to_socket_addr().expect("P2P server address must be IP when binding local listener"),
+            ),
             None => {
                 warn!("--listen-onion requested but Tor initialisation failed; skipping hidden service setup");
                 None
@@ -757,7 +761,7 @@ do you confirm? (answer y/n or pass --yes to the Kaspad command line to confirm 
         hub.clone(),
         mining_rule_engine.clone(),
         tor_manager.as_ref().map(|mgr| mgr.socks_addr()),
-        onion_service_id.clone(),
+        onion_service.clone(),
     ));
     let p2p_service = Arc::new(P2pService::new(
         flow_context.clone(),

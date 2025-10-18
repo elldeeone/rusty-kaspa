@@ -7,14 +7,15 @@ use crate::{ConnectionInitializer, Router};
 use futures::FutureExt;
 use hyper_util::rt::TokioIo;
 use kaspa_core::{debug, info};
-use kaspa_utils::networking::NetAddress;
+use kaspa_utils::networking::{NetAddress, NetAddressError};
 use kaspa_utils_tower::{
     counters::TowerConnectionCounters,
     middleware::{BodyExt, CountBytesBody, MapRequestBodyLayer, MapResponseBodyLayer, ServiceBuilder},
 };
 use std::io;
-use std::net::{SocketAddr, ToSocketAddrs};
+use std::net::SocketAddr;
 use std::pin::Pin;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
@@ -29,9 +30,6 @@ use tower::service_fn;
 
 #[derive(Error, Debug)]
 pub enum ConnectionError {
-    #[error("missing socket address")]
-    NoAddress,
-
     #[error("{0}")]
     IoError(#[from] std::io::Error),
 
@@ -43,6 +41,9 @@ pub enum ConnectionError {
 
     #[error("{0}")]
     ProtocolError(#[from] ProtocolError),
+
+    #[error(transparent)]
+    AddressParsingError(#[from] NetAddressError),
 }
 
 /// Maximum P2P decoded gRPC message size to send and receive
@@ -81,6 +82,7 @@ impl ConnectionHandler {
 
         let bytes_tx = self.counters.bytes_tx.clone();
         let bytes_rx = self.counters.bytes_rx.clone();
+        let serve_socket = serve_address.to_socket_addr().expect("server must bind to an IP address");
 
         tokio::spawn(async move {
             let proto_server = ProtoP2pServer::new(connection_handler)
@@ -93,7 +95,7 @@ impl ConnectionHandler {
                 .layer(MapRequestBodyLayer::new(move |body| CountBytesBody::new(body, bytes_rx.clone()).boxed_unsync()))
                 .layer(MapResponseBodyLayer::new(move |body| CountBytesBody::new(body, bytes_tx.clone())))
                 .add_service(proto_server)
-                .serve_with_shutdown(serve_address.into(), termination_receiver.map(drop))
+                .serve_with_shutdown(serve_socket, termination_receiver.map(drop))
                 .await;
 
             match serve_result {
@@ -106,9 +108,7 @@ impl ConnectionHandler {
 
     /// Connect to a new peer
     pub(crate) async fn connect(&self, peer_address: String) -> Result<Arc<Router>, ConnectionError> {
-        let Some(socket_address) = peer_address.to_socket_addrs()?.next() else {
-            return Err(ConnectionError::NoAddress);
-        };
+        let peer_net_address = NetAddress::from_str(&peer_address)?;
         let peer_address = format!("http://{}", peer_address); // Add scheme prefix as required by Tonic
 
         let endpoint = tonic::transport::Endpoint::new(peer_address)?
@@ -148,7 +148,7 @@ impl ConnectionHandler {
         let (outgoing_route, outgoing_receiver) = mpsc_channel(Self::outgoing_network_channel_size());
         let incoming_stream = client.message_stream(ReceiverStream::new(outgoing_receiver)).await?.into_inner();
 
-        let router = Router::new(socket_address, true, self.hub_sender.clone(), incoming_stream, outgoing_route).await;
+        let router = Router::new(peer_net_address, true, self.hub_sender.clone(), incoming_stream, outgoing_route).await;
 
         // For outbound peers, we perform the initialization as part of the connect logic
         match self.initializer.initialize_connection(router.clone()).await {
@@ -240,7 +240,7 @@ impl ProtoP2p for ConnectionHandler {
         let incoming_stream = request.into_inner();
 
         // Build the router object
-        let router = Router::new(remote_address, false, self.hub_sender.clone(), incoming_stream, outgoing_route).await;
+        let router = Router::new(remote_address.into(), false, self.hub_sender.clone(), incoming_stream, outgoing_route).await;
 
         // Notify the central Hub about the new peer
         self.hub_sender.send(HubEvent::NewPeer(router)).await.expect("hub receiver should never drop before senders");
