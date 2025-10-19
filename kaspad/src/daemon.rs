@@ -45,8 +45,9 @@ use kaspa_utils::{
 use kaspa_utils_tower::counters::TowerConnectionCounters;
 use tokio::sync::watch;
 
-use crate::args::AllowedNetworksChoice;
+use crate::args::{AllowedNetworksChoice, Args};
 use kaspa_addressmanager::AddressManager;
+use kaspa_connectionmanager::AllowedNetworks;
 use kaspa_consensus::{
     consensus::factory::Factory as ConsensusFactory,
     params::{OverrideParams, Params},
@@ -84,10 +85,7 @@ pub const MINIMUM_DAEMON_SOFT_FD_LIMIT: u64 = 4 * 1024;
 const MINIMUM_RETENTION_PERIOD_DAYS: f64 = 2.0;
 const ONE_GIGABYTE: f64 = 1_000_000_000.0;
 
-use crate::{
-    args::Args,
-    tor_manager::{TorManager, TorManagerError, TorSystemConfig},
-};
+use crate::tor_manager::{TorManager, TorManagerError, TorSystemConfig};
 use tor_interface::{
     tor_crypto::{Ed25519PrivateKey, V3OnionServiceId},
     tor_provider::TorEvent,
@@ -889,23 +887,23 @@ do you confirm? (answer y/n or pass --yes to the Kaspad command line to confirm 
 
     let tor_enabled = effective_tor_proxy.is_some();
     let allowed_networks_choice = args.allowed_networks();
-    let allow_ipv4;
-    let allow_ipv6;
-    let allow_onion;
+    let mut allow_ipv4 = true;
+    let mut allow_ipv6 = true;
+    let mut allow_onion = true;
     match allowed_networks_choice {
-        AllowedNetworksChoice::All => {
-            allow_ipv4 = true;
-            allow_ipv6 = true;
-            allow_onion = true;
-        }
+        AllowedNetworksChoice::All => {}
         AllowedNetworksChoice::Custom { allow_ipv4: v4, allow_ipv6: v6, allow_onion: onion } => {
             allow_ipv4 = v4;
             allow_ipv6 = v6;
             allow_onion = onion;
         }
     }
+
+    if !tor_enabled {
+        allow_onion = false;
+    }
     let (address_manager, port_mapping_extender_svc) =
-        AddressManager::new(config.clone(), meta_db, tick_service.clone(), tor_enabled, allow_ipv4, allow_ipv6, allow_onion);
+        AddressManager::new(config.clone(), meta_db, tick_service.clone(), allow_ipv4, allow_ipv6, allow_onion);
 
     let mining_manager = MiningManagerProxy::new(Arc::new(MiningManager::new_with_extended_config(
         config.target_time_per_block(),
@@ -981,7 +979,7 @@ do you confirm? (answer y/n or pass --yes to the Kaspad command line to confirm 
             tor_bootstrap_tx.clone(),
         ))
     });
-    let allowed_networks = allowed_networks_choice.to_connection_manager();
+    let allowed_networks = AllowedNetworks::new(allow_ipv4, allow_ipv6, allow_onion);
     let p2p_service = Arc::new(P2pService::new(
         flow_context.clone(),
         connect_peers,

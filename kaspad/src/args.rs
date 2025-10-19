@@ -1,5 +1,4 @@
 use clap::{arg, Arg, ArgAction, Command};
-use kaspa_connectionmanager::AllowedNetworks;
 use kaspa_consensus_core::{
     config::Config,
     network::{NetworkId, NetworkType},
@@ -199,12 +198,17 @@ impl Args {
     }
 
     pub fn allowed_networks(&self) -> AllowedNetworksChoice {
+        let mut allow_ipv4 = false;
+        let mut allow_ipv6 = false;
+        let mut allow_onion = false;
+
         if self.onlynet.is_empty() {
-            AllowedNetworksChoice::All
+            if self.tor_only {
+                allow_onion = true;
+            } else {
+                return AllowedNetworksChoice::All;
+            }
         } else {
-            let mut allow_ipv4 = false;
-            let mut allow_ipv6 = false;
-            let mut allow_onion = false;
             for net in &self.onlynet {
                 match net {
                     OnlyNet::Ipv4 => allow_ipv4 = true,
@@ -212,8 +216,9 @@ impl Args {
                     OnlyNet::Onion => allow_onion = true,
                 }
             }
-            AllowedNetworksChoice::Custom { allow_ipv4, allow_ipv6, allow_onion }
         }
+
+        AllowedNetworksChoice::Custom { allow_ipv4, allow_ipv6, allow_onion }
     }
 
     pub fn apply_to_config(&self, config: &mut Config) {
@@ -899,17 +904,6 @@ pub struct ResolvedProxySettings {
 pub enum AllowedNetworksChoice {
     All,
     Custom { allow_ipv4: bool, allow_ipv6: bool, allow_onion: bool },
-}
-
-impl AllowedNetworksChoice {
-    pub fn to_connection_manager(&self) -> AllowedNetworks {
-        match self {
-            AllowedNetworksChoice::All => AllowedNetworks::allow_all(),
-            AllowedNetworksChoice::Custom { allow_ipv4, allow_ipv6, allow_onion } => {
-                AllowedNetworks::new(*allow_ipv4, *allow_ipv6, *allow_onion)
-            }
-        }
-    }
 }
 
 impl ProxySettings {

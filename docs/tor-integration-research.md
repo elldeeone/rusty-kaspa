@@ -78,18 +78,37 @@ This stack gives us gRPC over SOCKS5 while keeping tonic unchanged. We still gen
 ### Tor-Only Workflow & Key Backup
 1. Start a Tor daemon exposing SOCKS (default `127.0.0.1:9050`) and control (`127.0.0.1:9051`) endpoints; ensure cookie permissions allow kaspad to read the auth file.
 2. Launch kaspad with Tor flags, for example:
-   ```bash
-   cargo run -p kaspad -- \
-     --tor-proxy=127.0.0.1:9050 \
-     --tor-control=127.0.0.1:9051 \
-     --tor-cookie="$HOME/Library/Application Support/Tor/control_auth_cookie" \
-     --listen-onion \
-     --tor-only
-   ```
-   The daemon blocks until Tor reports 100 % bootstrap. If bootstrap fails (timeout, auth error, etc.) kaspad now aborts instead of enabling a partially configured P2P stack.
+```bash
+cargo run -p kaspad -- \
+  --tor-proxy=127.0.0.1:9050 \
+  --tor-control=127.0.0.1:9051 \
+  --tor-cookie="$HOME/Library/Application Support/Tor/control_auth_cookie" \
+  --listen-onion \
+  --tor-only
+```
+The daemon blocks until Tor reports 100 % bootstrap. If bootstrap fails (timeout, auth error, etc.) kaspad now aborts instead of enabling a partially configured P2P stack.
 3. After the hidden service is published, the log prints `Onion service key stored at …/p2p_onion.key`. Back up this file to persist your `.onion` name across redeployments. Restoring the file before startup re-publishes the same address.
 4. On shutdown (Ctrl‑C or RPC stop), the new async `tor-service` calls `DEL_ONION <service id>`, preventing detached services from lingering when operators disable `--listen-onion`. The saved key still lets you recreate the address later by re-running with the same file.
 5. P2P networking now waits on the Tor bootstrap signal before dialing peers, so the node never leaks clearnet traffic while Tor is still coming online.
+
+#### Config-file snippet
+```toml
+# ~/.rusty-kaspa/kaspad.toml
+tor-control = "127.0.0.1:9051"
+tor-cookie = "/var/run/tor/control.authcookie"
+listen-onion = true
+tor-proxy = "127.0.0.1:9050"
+
+# Route specific networks via distinct proxies (overrides the default above).
+proxy-net = [
+  "ipv4=127.0.0.1:9052",
+  "onion=127.0.0.1:9050"
+]
+
+# Restrict connectivity to onion peers only (same as passing --onlynet=onion).
+onlynet = ["onion"]
+```
+The TOML keys mirror the CLI flags introduced above. Multiple `proxy-net`/`onlynet` entries are expressed as arrays, matching Bitcoin Core’s configuration syntax.
 
 ### Bitcoin Core Tor Integration Architecture (Reference)
 Bitcoin Core provides battle-tested Tor support that we can learn from. Key implementation details:
