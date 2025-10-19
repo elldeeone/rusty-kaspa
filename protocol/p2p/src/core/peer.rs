@@ -5,12 +5,13 @@ use std::{fmt::Display, sync::Arc, time::Instant};
 #[derive(Debug, Clone, Default)]
 pub struct PeerProperties {
     pub user_agent: String,
-    // TODO: add services
+    pub services: u64,
     pub advertised_protocol_version: u32,
     pub protocol_version: u32,
     pub disable_relay_tx: bool,
     pub subnetwork_id: Option<SubnetworkId>,
     pub time_offset: i64,
+    pub supports_addrv2: bool,
 }
 
 #[derive(Debug)]

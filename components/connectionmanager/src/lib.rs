@@ -35,6 +35,7 @@ pub struct ConnectionManager {
     force_next_iteration: UnboundedSender<()>,
     shutdown_signal: SingleTrigger,
     allow_onion: bool,
+    only_onion: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -59,6 +60,7 @@ impl ConnectionManager {
         default_port: u16,
         address_manager: Arc<ParkingLotMutex<AddressManager>>,
         allow_onion: bool,
+        only_onion: bool,
     ) -> Arc<Self> {
         let (tx, rx) = unbounded_channel::<()>();
         let manager = Arc::new(Self {
@@ -72,6 +74,7 @@ impl ConnectionManager {
             dns_seeders,
             default_port,
             allow_onion,
+            only_onion,
         });
         manager.clone().start_event_loop(rx);
         manager.force_next_iteration.send(()).unwrap();
@@ -107,8 +110,8 @@ impl ConnectionManager {
     }
 
     pub async fn add_connection_request(&self, address: NetAddress, is_permanent: bool) {
-        if !self.allow_onion && address.as_onion().is_some() {
-            debug!("Ignoring onion connection request {} while Tor is disabled", address);
+        if (!self.allow_onion && address.as_onion().is_some()) || (self.only_onion && address.as_onion().is_none()) {
+            debug!("Ignoring connection request {} due to network policy", address);
             return;
         }
         // If the request already exists, it resets the attempts count and overrides the `is_permanent` setting.
@@ -134,8 +137,8 @@ impl ConnectionManager {
 
             if !is_connected && request.next_attempt <= SystemTime::now() {
                 debug!("Connecting to peer request {}", address);
-                if !self.allow_onion && address.as_onion().is_some() {
-                    debug!("Skipping onion peer request {} while Tor is disabled", address);
+                if (!self.allow_onion && address.as_onion().is_some()) || (self.only_onion && address.as_onion().is_none()) {
+                    debug!("Skipping peer request {} due to network policy", address);
                     continue;
                 }
                 match self.p2p_adaptor.connect_peer(address.to_string()).await {
@@ -193,7 +196,7 @@ impl ConnectionManager {
                     connecting = false;
                     break;
                 };
-                if !self.allow_onion && net_addr.as_onion().is_some() {
+                if (!self.allow_onion && net_addr.as_onion().is_some()) || (self.only_onion && net_addr.as_onion().is_none()) {
                     continue;
                 }
                 let target = net_addr.to_string();
@@ -240,7 +243,7 @@ impl ConnectionManager {
             }
         }
 
-        if missing_connections > 0 && !self.dns_seeders.is_empty() {
+        if !self.only_onion && missing_connections > 0 && !self.dns_seeders.is_empty() {
             if missing_connections > self.outbound_target / 2 {
                 // If we are missing more than half of our target, query all in parallel.
                 // This will always be the case on new node start-up and is the most resilient strategy in such a case.

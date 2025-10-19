@@ -3,7 +3,7 @@ use crate::{
     core::adaptor::ConnectionInitializer,
     handshake::KaspadHandshake,
     pb::{self, VersionMessage},
-    IncomingRoute, KaspadMessagePayloadType, Router,
+    service_flags, IncomingRoute, KaspadMessagePayloadType, Router,
 };
 use kaspa_core::{debug, time::unix_now, trace, warn};
 use std::sync::Arc;
@@ -93,7 +93,7 @@ pub struct EchoFlowInitializer {}
 fn build_dummy_version_message() -> VersionMessage {
     pb::VersionMessage {
         protocol_version: 5,
-        services: 0,
+        services: service_flags::ADDR_V2,
         timestamp: unix_now() as i64,
         address: None,
         id: Vec::from(Uuid::new_v4().as_bytes()),

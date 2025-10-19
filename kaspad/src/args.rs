@@ -51,6 +51,8 @@ pub struct Args {
     #[serde_as(as = "Option<DisplayFromStr>")]
     pub listen: Option<ContextualNetAddress>,
     #[serde_as(as = "Option<DisplayFromStr>")]
+    pub proxy: Option<ContextualNetAddress>,
+    #[serde_as(as = "Option<DisplayFromStr>")]
     pub tor_proxy: Option<ContextualNetAddress>,
     #[serde_as(as = "Option<DisplayFromStr>")]
     pub tor_control: Option<ContextualNetAddress>,
@@ -60,6 +62,7 @@ pub struct Args {
     pub listen_onion: bool,
     pub tor_onion_port: Option<u16>,
     pub tor_onion_key: Option<PathBuf>,
+    pub tor_only: bool,
     #[serde(rename = "uacomment")]
     pub user_agent_comments: Vec<String>,
     pub utxoindex: bool,
@@ -135,6 +138,7 @@ impl Default for Args {
             connect_peers: vec![],
             add_peers: vec![],
             listen: None,
+            proxy: None,
             tor_proxy: None,
             tor_control: None,
             tor_password: None,
@@ -143,6 +147,7 @@ impl Default for Args {
             listen_onion: false,
             tor_onion_port: None,
             tor_onion_key: None,
+            tor_only: false,
             user_agent_comments: vec![],
             yes: false,
             perf_metrics: false,
@@ -170,7 +175,7 @@ impl Default for Args {
 impl Args {
     pub fn apply_to_config(&self, config: &mut Config) {
         config.utxoindex = self.utxoindex;
-        config.disable_upnp = self.disable_upnp;
+        config.disable_upnp = self.disable_upnp || self.tor_only;
         config.unsafe_rpc = self.unsafe_rpc;
         config.enable_unsynced_mining = self.enable_unsynced_mining;
         config.enable_mainnet_mining = self.enable_mainnet_mining;
@@ -179,8 +184,19 @@ impl Args {
         config.enable_sanity_checks = true;
         config.user_agent_comments.clone_from(&self.user_agent_comments);
         config.block_template_cache_lifetime = self.block_template_cache_lifetime;
-        config.p2p_listen_address = self.listen.unwrap_or(ContextualNetAddress::unspecified());
-        config.externalip = self.externalip.map(|v| v.normalize(config.default_p2p_port()));
+        let listen_addr = self.listen.unwrap_or_else(|| {
+            if self.tor_only {
+                ContextualNetAddress::loopback()
+            } else {
+                ContextualNetAddress::unspecified()
+            }
+        });
+        config.p2p_listen_address = listen_addr;
+        if self.tor_only {
+            config.externalip = None;
+        } else {
+            config.externalip = self.externalip.map(|v| v.normalize(config.default_p2p_port()));
+        }
         config.ram_scale = self.ram_scale;
         config.retention_period_days = self.retention_period_days;
 
@@ -302,6 +318,14 @@ pub fn cli() -> Command {
                 .help("Add an interface:port to listen for connections (default all interfaces port: 16111, testnet: 16211)."),
         )
         .arg(
+            Arg::new("proxy")
+                .long("proxy")
+                .value_name("IP[:PORT]")
+                .require_equals(true)
+                .value_parser(clap::value_parser!(ContextualNetAddress))
+                .help("Route outbound clearnet P2P connections through the provided SOCKS5 proxy (default port: 9050)."),
+        )
+        .arg(
             Arg::new("tor-proxy")
                 .long("tor-proxy")
                 .value_name("IP[:PORT]")
@@ -345,6 +369,12 @@ pub fn cli() -> Command {
                 .long("listen-onion")
                 .action(ArgAction::SetTrue)
                 .help("Publish a Tor hidden service for the P2P listener (requires --tor-control)."),
+        )
+        .arg(
+            Arg::new("tor-only")
+                .long("tor-only")
+                .action(ArgAction::SetTrue)
+                .help("Disable clearnet peers and operate exclusively over Tor."),
         )
         .arg(
             Arg::new("tor-onion-port")
@@ -521,6 +551,7 @@ impl Args {
             connect_peers: arg_match_many_unwrap_or::<ContextualNetAddress>(&m, "connect-peers", defaults.connect_peers),
             add_peers: arg_match_many_unwrap_or::<ContextualNetAddress>(&m, "add-peers", defaults.add_peers),
             listen: m.get_one::<ContextualNetAddress>("listen").cloned().or(defaults.listen),
+            proxy: m.get_one::<ContextualNetAddress>("proxy").cloned().or(defaults.proxy),
             tor_proxy: m.get_one::<ContextualNetAddress>("tor-proxy").cloned().or(defaults.tor_proxy),
             tor_control: m.get_one::<ContextualNetAddress>("tor-control").cloned().or(defaults.tor_control),
             tor_password: m.get_one::<String>("tor-password").cloned().or(defaults.tor_password),
@@ -529,6 +560,7 @@ impl Args {
             listen_onion: arg_match_unwrap_or::<bool>(&m, "listen-onion", defaults.listen_onion),
             tor_onion_port: m.get_one::<u16>("tor-onion-port").cloned().or(defaults.tor_onion_port),
             tor_onion_key: m.get_one::<PathBuf>("tor-onion-key").cloned().or(defaults.tor_onion_key),
+            tor_only: arg_match_unwrap_or::<bool>(&m, "tor-only", defaults.tor_only),
             outbound_target: arg_match_unwrap_or::<usize>(&m, "outpeers", defaults.outbound_target),
             inbound_limit: arg_match_unwrap_or::<usize>(&m, "maxinpeers", defaults.inbound_limit),
             rpc_max_clients: arg_match_unwrap_or::<usize>(&m, "rpcmaxclients", defaults.rpc_max_clients),

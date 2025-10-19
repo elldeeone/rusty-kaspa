@@ -57,6 +57,7 @@ pub struct AddressManager {
     config: Arc<Config>,
     local_net_addresses: Vec<NetAddress>,
     tor_enabled: bool,
+    tor_only: bool,
 }
 
 impl AddressManager {
@@ -65,6 +66,7 @@ impl AddressManager {
         db: Arc<DB>,
         tick_service: Arc<TickService>,
         tor_enabled: bool,
+        tor_only: bool,
     ) -> (Arc<Mutex<Self>>, Option<Extender>) {
         let mut instance = Self {
             banned_address_store: DbBannedAddressesStore::new(db.clone(), CachePolicy::Count(MAX_ADDRESSES)),
@@ -72,6 +74,7 @@ impl AddressManager {
             local_net_addresses: Vec::new(),
             config,
             tor_enabled,
+            tor_only,
         };
 
         let extender = instance.init_local_addresses(tick_service);
@@ -80,10 +83,17 @@ impl AddressManager {
             instance.prune_onion_addresses();
         }
 
+        if instance.tor_only {
+            instance.prune_non_onion_addresses();
+        }
+
         (Arc::new(Mutex::new(instance)), extender)
     }
 
     fn init_local_addresses(&mut self, tick_service: Arc<TickService>) -> Option<Extender> {
+        if self.tor_only {
+            return None;
+        }
         self.local_net_addresses = self.local_addresses().collect();
 
         let extender = if self.local_net_addresses.is_empty() && !self.config.disable_upnp {
@@ -263,6 +273,10 @@ impl AddressManager {
     }
 
     pub fn add_address(&mut self, address: NetAddress) {
+        if self.tor_only && address.as_onion().is_none() {
+            debug!("[Address manager] skipping clearnet address {} (tor-only mode)", address);
+            return;
+        }
         if address.as_onion().is_some() && !self.tor_enabled {
             debug!("[Address manager] skipping onion address {} (tor disabled)", address);
             return;
@@ -304,6 +318,13 @@ impl AddressManager {
 
     fn prune_onion_addresses(&mut self) {
         let to_remove: Vec<_> = self.address_store.iterate_addresses().filter(|addr| addr.as_onion().is_some()).collect();
+        for addr in to_remove {
+            self.address_store.remove(addr);
+        }
+    }
+
+    fn prune_non_onion_addresses(&mut self) {
+        let to_remove: Vec<_> = self.address_store.iterate_addresses().filter(|addr| addr.as_onion().is_none()).collect();
         for addr in to_remove {
             self.address_store.remove(addr);
         }
@@ -579,7 +600,7 @@ mod address_store_with_cache {
 
             let db = create_temp_db!(ConnBuilder::default().with_files_limit(10));
             let config = Config::new(SIMNET_PARAMS);
-            let (am, _) = AddressManager::new(Arc::new(config), db.1, Arc::new(TickService::default()), false);
+            let (am, _) = AddressManager::new(Arc::new(config), db.1, Arc::new(TickService::default()), false, false);
 
             let mut am_guard = am.lock();
 

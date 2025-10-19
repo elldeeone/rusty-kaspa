@@ -65,7 +65,12 @@ impl AsyncService for P2pService {
         // Prepare a shutdown signal receiver
         let shutdown_signal = self.shutdown.listener.clone();
 
-        let socks_proxy = self.flow_context.tor_proxy().map(|addr| SocksProxyConfig { proxy_addr: addr });
+        let general_proxy = self.flow_context.proxy();
+        let tor_proxy = self.flow_context.tor_proxy();
+        let socks_proxy = match (general_proxy, tor_proxy) {
+            (None, None) => None,
+            (general, onion) => Some(SocksProxyConfig { general, onion }),
+        };
 
         let p2p_adaptor = if self.inbound_limit == 0 {
             Adaptor::client_only(self.flow_context.hub().clone(), self.flow_context.clone(), self.counters.clone(), socks_proxy)
@@ -87,6 +92,7 @@ impl AsyncService for P2pService {
             self.default_port,
             self.flow_context.address_manager.clone(),
             self.flow_context.tor_proxy().is_some(),
+            self.flow_context.tor_only(),
         );
 
         self.flow_context.set_connection_manager(connection_manager.clone());

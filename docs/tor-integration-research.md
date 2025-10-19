@@ -5,6 +5,26 @@
 - Objective: allow rusty-kaspa nodes to run fully over Tor, including outbound peer discovery via SOCKS5 and optional Tor-hidden-service listening.
 
 ## Tor Connectivity Building Blocks
+
+### Progress Update — 19 Oct 2025
+- ✅ Outbound P2P dials now respect `--tor-proxy` by tunneling gRPC over the configured SOCKS5 endpoint (tested against system Tor 0.4.8.19).
+- ✅ Hidden-service publication via the Tor control port is wired into `kaspad` startup; onion keys persist under `~/.rusty-kaspa/kaspa-mainnet/tor/`.
+- ✅ Address manager filters `.onion` peers when Tor is disabled, restoring clearnet IBD performance while allowing Tor-only operation when requested.
+- ✅ Stream isolation implemented: every outbound peer uses a unique SOCKS5 username/password pair, forcing Tor to create per-peer circuits.
+- ✅ Added CLI options `--proxy` and `--tor-only` to mirror Bitcoin Core’s proxy controls; the node can now operate in Tor-only mode without clearnet peers.
+
+### Progress Update — 22 Oct 2025
+- ✅ Version-handshake now advertises Kaspa-specific `ADDRv2` capability (service bit) and tracks peer support in `PeerProperties`.
+- ✅ Address gossip respects Tor activation: onion addresses are only accepted/advertised when Tor is configured locally *and* the remote peer signalled `ADDRv2`; clearnet remains unchanged.
+- ✅ Added flow-level unit tests around the new onion-gossip helpers to guard regressions; integration tests will follow once the Tor harness is ready.
+- ✅ Hardened operator UX: Tor bootstrap failures now abort `--tor-only/--listen-onion` startups, logs highlight the persistent onion key for backups, and shutdown issues `DEL_ONION` to clean up hidden services.
+
+**Next implementation phases (parity with Bitcoin Core’s Tor stack):**
+1. CLI UX parity – document new flags and expand parity further (per-network proxy selection, config-file toggles).
+2. Address gossip – advertise onion peers only to BIP155-capable/onion peers; add tests to prevent regression.
+3. Operator ergonomics – document restart behaviour, key backup, graceful teardown, optional `--disable-upnp`/loopback binding for Tor-only deployments.
+5. Long-term – evaluate Arti once onion-service support is production ready; consider bundled Tor for desktop builds.
+
 ### SOCKS5 Support for Outbound Traffic
 - Current outbound P2P dials use `tonic::transport::Endpoint::connect()`. We can switch to `connect_with_connector` and supply a Hyper connector that speaks SOCKS5.
 
@@ -51,6 +71,21 @@ This stack gives us gRPC over SOCKS5 while keeping tonic unchanged. We still gen
 - **Address storage**: Extend `NetAddress`/`ContextualNetAddress` to support an enum variant for onion addresses (see design section) to avoid treating them as plain strings.
 - **Daemom CLI plumbing**: `kaspad` now accepts `--tor-proxy`, `--tor-control`, `--tor-password/--tor-cookie`, `--tor-bootstrap-timeout-sec`, `--listen-onion`, `--tor-onion-port`, and `--tor-onion-key`. The daemon instantiates a `TorManager` when these are present, feeds the SOCKS endpoint into the P2P stack, and keeps enforcement guards for invalid combinations.
 - **Hidden service publishing**: When `--listen-onion` is supplied, `kaspad` loads (or generates) an Ed25519 key at `<appdir>/<net>/tor/p2p_onion.key`, authenticates to the control port, and issues `ADD_ONION ED25519-V3:<key>` pointing at the existing P2P port. The resulting `V3OnionServiceId` is retained on the `FlowContext` for future advertising.
+
+### Tor-Only Workflow & Key Backup
+1. Start a Tor daemon exposing SOCKS (default `127.0.0.1:9050`) and control (`127.0.0.1:9051`) endpoints; ensure cookie permissions allow kaspad to read the auth file.
+2. Launch kaspad with Tor flags, for example:
+   ```bash
+   cargo run -p kaspad -- \
+     --tor-proxy=127.0.0.1:9050 \
+     --tor-control=127.0.0.1:9051 \
+     --tor-cookie="$HOME/Library/Application Support/Tor/control_auth_cookie" \
+     --listen-onion \
+     --tor-only
+   ```
+   The daemon blocks until Tor reports 100 % bootstrap. If bootstrap fails (timeout, auth error, etc.) kaspad now aborts instead of enabling a partially configured P2P stack.
+3. After the hidden service is published, the log prints `Onion service key stored at …/p2p_onion.key`. Back up this file to persist your `.onion` name across redeployments. Restoring the file before startup re-publishes the same address.
+4. On shutdown (Ctrl‑C or RPC stop), the new async `tor-service` calls `DEL_ONION <service id>`, preventing detached services from lingering when operators disable `--listen-onion`. The saved key still lets you recreate the address later by re-running with the same file.
 
 ### Bitcoin Core Tor Integration Architecture (Reference)
 Bitcoin Core provides battle-tested Tor support that we can learn from. Key implementation details:
@@ -704,8 +739,9 @@ Follow the phased approach in the "Rusty-Kaspa Tor Integration Design" section.
   - Compare Bitcoin Core Tor CLI flags to our `Args` structure; produce a recommendation mapping (what we mirror verbatim vs. rename).
   - Suggest telemetry/logging hooks to ensure Tor bootstrap and onion publication status surface clearly to users.
 - **Deliverables**
-  - Update this document with findings, links, and TODOs.
-  - Open GitHub issues or Notion tasks for any sizable follow-on work identified during research.
+- Update this document with findings, links, and TODOs.
+- Open GitHub issues or Notion tasks for any sizable follow-on work identified during research.
+
 
 ## Reference Links
 1. `tor-interface` crate 0.6.0 (2025-10-03): <https://crates.io/crates/tor-interface>

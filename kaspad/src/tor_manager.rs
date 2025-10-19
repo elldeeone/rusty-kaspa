@@ -83,6 +83,34 @@ impl TorManager {
         self.control_addr
     }
 
+    pub fn remove_hidden_service(&self, service_id: &V3OnionServiceId) -> Result<(), TorManagerError> {
+        let mut stream = TcpStream::connect(self.control_addr)?;
+        stream.set_read_timeout(Some(Duration::from_secs(10)))?;
+        stream.set_write_timeout(Some(Duration::from_secs(10)))?;
+        let mut reader = BufReader::new(stream.try_clone()?);
+
+        self.authenticate_control(&mut stream, &mut reader)?;
+
+        let command = format!("DEL_ONION {}\r\n", service_id);
+        stream.write_all(command.as_bytes())?;
+
+        loop {
+            let mut line = String::new();
+            let bytes = reader.read_line(&mut line)?;
+            if bytes == 0 {
+                return Err(TorManagerError::Control("unexpected EOF while waiting for DEL_ONION response".into()));
+            }
+            let trimmed = line.trim();
+            if trimmed.starts_with("250 ") {
+                break;
+            } else if trimmed.starts_with('5') {
+                return Err(TorManagerError::Control(trimmed.to_string()));
+            }
+        }
+
+        Ok(())
+    }
+
     /// Poll underlying tor events. Consumers should call this periodically to drain bootstrap/log events.
     pub fn update(&mut self) -> Result<Vec<TorEvent>, TorManagerError> {
         Ok(self.client.update()?)
