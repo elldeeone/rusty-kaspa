@@ -56,18 +56,29 @@ pub struct AddressManager {
     address_store: address_store_with_cache::Store,
     config: Arc<Config>,
     local_net_addresses: Vec<NetAddress>,
+    tor_enabled: bool,
 }
 
 impl AddressManager {
-    pub fn new(config: Arc<Config>, db: Arc<DB>, tick_service: Arc<TickService>) -> (Arc<Mutex<Self>>, Option<Extender>) {
+    pub fn new(
+        config: Arc<Config>,
+        db: Arc<DB>,
+        tick_service: Arc<TickService>,
+        tor_enabled: bool,
+    ) -> (Arc<Mutex<Self>>, Option<Extender>) {
         let mut instance = Self {
             banned_address_store: DbBannedAddressesStore::new(db.clone(), CachePolicy::Count(MAX_ADDRESSES)),
             address_store: address_store_with_cache::new(db),
             local_net_addresses: Vec::new(),
             config,
+            tor_enabled,
         };
 
         let extender = instance.init_local_addresses(tick_service);
+
+        if !instance.tor_enabled {
+            instance.prune_onion_addresses();
+        }
 
         (Arc::new(Mutex::new(instance)), extender)
     }
@@ -252,6 +263,10 @@ impl AddressManager {
     }
 
     pub fn add_address(&mut self, address: NetAddress) {
+        if address.as_onion().is_some() && !self.tor_enabled {
+            debug!("[Address manager] skipping onion address {} (tor disabled)", address);
+            return;
+        }
         if let Some(ip) = address.as_ip() {
             if ip.is_loopback() || ip.is_unspecified() {
                 debug!("[Address manager] skipping local address {}", address);
@@ -285,6 +300,13 @@ impl AddressManager {
         }
 
         self.address_store.set(address, 0);
+    }
+
+    fn prune_onion_addresses(&mut self) {
+        let to_remove: Vec<_> = self.address_store.iterate_addresses().filter(|addr| addr.as_onion().is_some()).collect();
+        for addr in to_remove {
+            self.address_store.remove(addr);
+        }
     }
 
     pub fn iterate_addresses(&self) -> impl Iterator<Item = NetAddress> + '_ {
@@ -557,7 +579,7 @@ mod address_store_with_cache {
 
             let db = create_temp_db!(ConnBuilder::default().with_files_limit(10));
             let config = Config::new(SIMNET_PARAMS);
-            let (am, _) = AddressManager::new(Arc::new(config), db.1, Arc::new(TickService::default()));
+            let (am, _) = AddressManager::new(Arc::new(config), db.1, Arc::new(TickService::default()), false);
 
             let mut am_guard = am.lock();
 

@@ -706,7 +706,8 @@ do you confirm? (answer y/n or pass --yes to the Kaspad command line to confirm 
         None
     };
 
-    let (address_manager, port_mapping_extender_svc) = AddressManager::new(config.clone(), meta_db, tick_service.clone());
+    let tor_enabled = tor_manager.is_some();
+    let (address_manager, port_mapping_extender_svc) = AddressManager::new(config.clone(), meta_db, tick_service.clone(), tor_enabled);
 
     let mining_manager = MiningManagerProxy::new(Arc::new(MiningManager::new_with_extended_config(
         config.target_time_per_block(),

@@ -34,6 +34,7 @@ pub struct ConnectionManager {
     connection_requests: TokioMutex<HashMap<NetAddress, ConnectionRequest>>,
     force_next_iteration: UnboundedSender<()>,
     shutdown_signal: SingleTrigger,
+    allow_onion: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -57,6 +58,7 @@ impl ConnectionManager {
         dns_seeders: &'static [&'static str],
         default_port: u16,
         address_manager: Arc<ParkingLotMutex<AddressManager>>,
+        allow_onion: bool,
     ) -> Arc<Self> {
         let (tx, rx) = unbounded_channel::<()>();
         let manager = Arc::new(Self {
@@ -69,6 +71,7 @@ impl ConnectionManager {
             shutdown_signal: SingleTrigger::new(),
             dns_seeders,
             default_port,
+            allow_onion,
         });
         manager.clone().start_event_loop(rx);
         manager.force_next_iteration.send(()).unwrap();
@@ -104,6 +107,10 @@ impl ConnectionManager {
     }
 
     pub async fn add_connection_request(&self, address: NetAddress, is_permanent: bool) {
+        if !self.allow_onion && address.as_onion().is_some() {
+            debug!("Ignoring onion connection request {} while Tor is disabled", address);
+            return;
+        }
         // If the request already exists, it resets the attempts count and overrides the `is_permanent` setting.
         self.connection_requests.lock().await.insert(address, ConnectionRequest::new(is_permanent));
         self.force_next_iteration.send(()).unwrap(); // We force the next iteration of the connection loop.
@@ -127,6 +134,10 @@ impl ConnectionManager {
 
             if !is_connected && request.next_attempt <= SystemTime::now() {
                 debug!("Connecting to peer request {}", address);
+                if !self.allow_onion && address.as_onion().is_some() {
+                    debug!("Skipping onion peer request {} while Tor is disabled", address);
+                    continue;
+                }
                 match self.p2p_adaptor.connect_peer(address.to_string()).await {
                     Err(err) => {
                         debug!("Failed connecting to peer request: {}, {}", address, err);
@@ -177,11 +188,14 @@ impl ConnectionManager {
             }
             let mut addrs_to_connect = Vec::with_capacity(missing_connections);
             let mut jobs = Vec::with_capacity(missing_connections);
-            for _ in 0..missing_connections {
+            while addrs_to_connect.len() < missing_connections {
                 let Some(net_addr) = addr_iter.next() else {
                     connecting = false;
                     break;
                 };
+                if !self.allow_onion && net_addr.as_onion().is_some() {
+                    continue;
+                }
                 let target = net_addr.to_string();
                 debug!("Connecting to {}", &target);
                 addrs_to_connect.push(net_addr);

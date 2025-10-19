@@ -86,6 +86,7 @@ impl AsyncService for P2pService {
             self.dns_seeders,
             self.default_port,
             self.flow_context.address_manager.clone(),
+            self.flow_context.tor_proxy().is_some(),
         );
 
         self.flow_context.set_connection_manager(connection_manager.clone());
