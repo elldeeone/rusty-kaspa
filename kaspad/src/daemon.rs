@@ -558,12 +558,31 @@ pub fn create_core_with_runtime(runtime: &Runtime, args: &Args, fd_total_budget:
 
     let proxy_settings = args.proxy_settings();
     let resolved_proxies = proxy_settings.resolve(9050);
+    let mut proxy_descriptions = Vec::new();
+    if let Some(addr) = resolved_proxies.default {
+        proxy_descriptions.push(format!("default={addr}"));
+    }
+    if let Some(addr) = resolved_proxies.ipv4 {
+        proxy_descriptions.push(format!("ipv4={addr}"));
+    }
+    if let Some(addr) = resolved_proxies.ipv6 {
+        proxy_descriptions.push(format!("ipv6={addr}"));
+    }
+    if let Some(addr) = resolved_proxies.onion {
+        proxy_descriptions.push(format!("onion={addr}"));
+    }
+    if !proxy_descriptions.is_empty() {
+        info!("Configured SOCKS proxies: {}", proxy_descriptions.join(", "));
+    }
     let default_proxy_addr = resolved_proxies.default;
     let proxy_ipv4_addr = resolved_proxies.ipv4;
     let proxy_ipv6_addr = resolved_proxies.ipv6;
     let tor_proxy_override_addr = resolved_proxies.onion;
     let tor_proxy_from_manager = tor_manager.as_ref().map(|mgr| mgr.socks_addr());
     let effective_tor_proxy = tor_proxy_from_manager.or(tor_proxy_override_addr).or(default_proxy_addr);
+    if let Some(proxy) = effective_tor_proxy {
+        info!("Effective Tor proxy: {proxy}");
+    }
 
     let config = Arc::new(
         ConfigBuilder::new(params).adjust_perf_params_to_consensus_params().apply_args(|config| args.apply_to_config(config)).build(),
@@ -901,6 +920,26 @@ do you confirm? (answer y/n or pass --yes to the Kaspad command line to confirm 
 
     if !tor_enabled {
         allow_onion = false;
+    }
+
+    let mut allowed_networks_log = Vec::new();
+    if allow_ipv4 {
+        allowed_networks_log.push("ipv4");
+    }
+    if allow_ipv6 {
+        allowed_networks_log.push("ipv6");
+    }
+    if allow_onion {
+        allowed_networks_log.push("onion");
+    }
+
+    if allowed_networks_log.is_empty() {
+        warn!("No P2P networks enabled via --onlynet; the node will not establish peer connections");
+    } else {
+        info!("Allowed peer networks: {}", allowed_networks_log.join(", "));
+        if args.tor_only && args.onlynet.is_empty() {
+            info!("Tor-only mode active: restricting P2P connections to onion peers");
+        }
     }
     let (address_manager, port_mapping_extender_svc) =
         AddressManager::new(config.clone(), meta_db, tick_service.clone(), allow_ipv4, allow_ipv6, allow_onion);
