@@ -59,7 +59,7 @@ use std::{
 };
 use tokio::sync::{
     mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
-    RwLock as AsyncRwLock,
+    watch, RwLock as AsyncRwLock,
 };
 use tokio_stream::{wrappers::UnboundedReceiverStream, StreamExt};
 use tor_interface::tor_crypto::V3OnionServiceId;
@@ -249,6 +249,7 @@ pub struct FlowContextInner {
     tor_proxy: Option<SocketAddr>,
     tor_only: bool,
     onion_service: Option<(V3OnionServiceId, NetAddress)>,
+    tor_bootstrap_rx: Mutex<Option<watch::Receiver<bool>>>,
 }
 
 #[derive(Clone)]
@@ -327,6 +328,7 @@ impl FlowContext {
         tor_proxy: Option<SocketAddr>,
         tor_only: bool,
         onion_service: Option<(V3OnionServiceId, u16)>,
+        tor_bootstrap_rx: Option<watch::Receiver<bool>>,
     ) -> Self {
         let bps_upper_bound = config.bps().upper_bound() as usize;
         let orphan_resolution_range = BASELINE_ORPHAN_RESOLUTION_RANGE + (bps_upper_bound as f64).log2().ceil() as u32;
@@ -376,6 +378,7 @@ impl FlowContext {
                 tor_proxy,
                 tor_only,
                 onion_service,
+                tor_bootstrap_rx: Mutex::new(tor_bootstrap_rx),
             }),
         }
     }
@@ -406,6 +409,10 @@ impl FlowContext {
 
     pub fn onion_service_address(&self) -> Option<NetAddress> {
         self.onion_service.as_ref().map(|(_, addr)| *addr)
+    }
+
+    pub fn tor_bootstrap_receiver(&self) -> Option<watch::Receiver<bool>> {
+        self.tor_bootstrap_rx.lock().clone()
     }
 
     pub fn max_orphans(&self) -> usize {

@@ -3,8 +3,9 @@ use std::sync::Arc;
 use kaspa_addressmanager::NetAddress;
 use kaspa_connectionmanager::ConnectionManager;
 use kaspa_core::{
+    info,
     task::service::{AsyncService, AsyncServiceFuture},
-    trace,
+    trace, warn,
 };
 use kaspa_p2p_lib::{Adaptor, SocksProxyConfig};
 use kaspa_utils::triggers::SingleTrigger;
@@ -100,6 +101,20 @@ impl AsyncService for P2pService {
 
         // Launch the service and wait for a shutdown signal
         Box::pin(async move {
+            if let Some(mut bootstrap_rx) = self.flow_context.tor_bootstrap_receiver() {
+                if !*bootstrap_rx.borrow() {
+                    info!("P2P service waiting for Tor bootstrap to complete before enabling networking");
+                }
+                while !*bootstrap_rx.borrow() {
+                    if bootstrap_rx.changed().await.is_err() {
+                        warn!("Tor bootstrap signal dropped before completion; continuing with P2P startup");
+                        break;
+                    }
+                }
+                if *bootstrap_rx.borrow() {
+                    trace!("Tor bootstrap complete; starting P2P networking");
+                }
+            }
             for peer_address in self.connect_peers.iter().cloned().chain(self.add_peers.iter().cloned()) {
                 connection_manager.add_connection_request(peer_address, true).await;
             }

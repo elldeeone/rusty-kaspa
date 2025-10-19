@@ -43,6 +43,7 @@ use kaspa_utils::{
     triggers::SingleTrigger,
 };
 use kaspa_utils_tower::counters::TowerConnectionCounters;
+use tokio::sync::watch;
 
 use kaspa_addressmanager::AddressManager;
 use kaspa_consensus::{
@@ -289,6 +290,7 @@ struct TorRuntimeService {
     onion_service_id: Option<V3OnionServiceId>,
     shutdown: SingleTrigger,
     state: Mutex<TorServiceState>,
+    bootstrap_tx: Option<watch::Sender<bool>>,
 }
 
 #[derive(Default)]
@@ -301,8 +303,14 @@ impl TorRuntimeService {
     const IDENT: &'static str = "tor-service";
     const POLL_INTERVAL: Duration = Duration::from_secs(5);
 
-    fn new(manager: Arc<TorManager>, onion_service_id: Option<V3OnionServiceId>) -> Self {
-        Self { manager, onion_service_id, shutdown: SingleTrigger::default(), state: Mutex::new(TorServiceState::default()) }
+    fn new(manager: Arc<TorManager>, onion_service_id: Option<V3OnionServiceId>, bootstrap_tx: Option<watch::Sender<bool>>) -> Self {
+        Self {
+            manager,
+            onion_service_id,
+            shutdown: SingleTrigger::default(),
+            state: Mutex::new(TorServiceState::default()),
+            bootstrap_tx,
+        }
     }
 
     fn poll_events(&self) -> Result<(), TorManagerError> {
@@ -318,6 +326,11 @@ impl TorRuntimeService {
                     if state.last_bootstrap_progress != Some(progress) {
                         info!("Tor bootstrap {progress}% - {tag}: {summary}");
                         state.last_bootstrap_progress = Some(progress);
+                        if progress >= 100 {
+                            if let Some(tx) = &self.bootstrap_tx {
+                                let _ = tx.send(true);
+                            }
+                        }
                     }
                 }
                 TorEvent::BootstrapComplete => {
@@ -325,6 +338,9 @@ impl TorRuntimeService {
                     if !state.bootstrap_complete_logged {
                         info!("Tor bootstrap complete");
                         state.bootstrap_complete_logged = true;
+                        if let Some(tx) = &self.bootstrap_tx {
+                            let _ = tx.send(true);
+                        }
                     }
                 }
                 TorEvent::LogReceived { line } => {
@@ -904,6 +920,13 @@ do you confirm? (answer y/n or pass --yes to the Kaspad command line to confirm 
         None
     };
 
+    let (tor_bootstrap_tx, tor_bootstrap_rx) = if tor_manager.is_some() {
+        let (tx, rx) = watch::channel(true);
+        (Some(tx), Some(rx))
+    } else {
+        (None, None)
+    };
+
     let flow_context = Arc::new(FlowContext::new(
         consensus_manager.clone(),
         address_manager,
@@ -917,10 +940,15 @@ do you confirm? (answer y/n or pass --yes to the Kaspad command line to confirm 
         effective_tor_proxy,
         args.tor_only,
         onion_service_info.as_ref().map(|info| (info.id.clone(), info.virt_port)),
+        tor_bootstrap_rx,
     ));
-    let tor_async_service = tor_manager
-        .as_ref()
-        .map(|manager| Arc::new(TorRuntimeService::new(manager.clone(), onion_service_info.as_ref().map(|info| info.id.clone()))));
+    let tor_async_service = tor_manager.as_ref().map(|manager| {
+        Arc::new(TorRuntimeService::new(
+            manager.clone(),
+            onion_service_info.as_ref().map(|info| info.id.clone()),
+            tor_bootstrap_tx.clone(),
+        ))
+    });
     let p2p_service = Arc::new(P2pService::new(
         flow_context.clone(),
         connect_peers,
