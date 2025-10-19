@@ -558,30 +558,48 @@ pub fn create_core_with_runtime(runtime: &Runtime, args: &Args, fd_total_budget:
 
     let proxy_settings = args.proxy_settings();
     let resolved_proxies = proxy_settings.resolve(9050);
+    let mut default_proxy_addr = resolved_proxies.default;
+    let mut proxy_ipv4_addr = resolved_proxies.ipv4;
+    let mut proxy_ipv6_addr = resolved_proxies.ipv6;
+    let tor_proxy_override_addr = resolved_proxies.onion;
+
     let mut proxy_descriptions = Vec::new();
-    if let Some(addr) = resolved_proxies.default {
+    if let Some(addr) = default_proxy_addr {
         proxy_descriptions.push(format!("default={addr}"));
     }
-    if let Some(addr) = resolved_proxies.ipv4 {
+    if let Some(addr) = proxy_ipv4_addr {
         proxy_descriptions.push(format!("ipv4={addr}"));
     }
-    if let Some(addr) = resolved_proxies.ipv6 {
+    if let Some(addr) = proxy_ipv6_addr {
         proxy_descriptions.push(format!("ipv6={addr}"));
     }
-    if let Some(addr) = resolved_proxies.onion {
+    if let Some(addr) = tor_proxy_override_addr {
         proxy_descriptions.push(format!("onion={addr}"));
     }
     if !proxy_descriptions.is_empty() {
         info!("Configured SOCKS proxies: {}", proxy_descriptions.join(", "));
     }
-    let default_proxy_addr = resolved_proxies.default;
-    let proxy_ipv4_addr = resolved_proxies.ipv4;
-    let proxy_ipv6_addr = resolved_proxies.ipv6;
-    let tor_proxy_override_addr = resolved_proxies.onion;
     let tor_proxy_from_manager = tor_manager.as_ref().map(|mgr| mgr.socks_addr());
     let effective_tor_proxy = tor_proxy_from_manager.or(tor_proxy_override_addr).or(default_proxy_addr);
     if let Some(proxy) = effective_tor_proxy {
         info!("Effective Tor proxy: {proxy}");
+        if default_proxy_addr.is_none() {
+            default_proxy_addr = Some(proxy);
+        }
+        if proxy_ipv4_addr.is_none() {
+            proxy_ipv4_addr = default_proxy_addr;
+        }
+        if proxy_ipv6_addr.is_none() {
+            proxy_ipv6_addr = default_proxy_addr;
+        }
+        let mut effective_descriptions = Vec::new();
+        if let Some(addr) = default_proxy_addr { effective_descriptions.push(format!("default={addr}")); }
+        if let Some(addr) = proxy_ipv4_addr { effective_descriptions.push(format!("ipv4={addr}")); }
+        if let Some(addr) = proxy_ipv6_addr { effective_descriptions.push(format!("ipv6={addr}")); }
+        if let Some(addr) = tor_proxy_override_addr { effective_descriptions.push(format!("onion={addr}")); }
+        if !effective_descriptions.is_empty() {
+            info!("Effective SOCKS routing: {}", effective_descriptions.join(", "));
+        }
     }
 
     let config = Arc::new(
