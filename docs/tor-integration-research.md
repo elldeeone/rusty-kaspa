@@ -18,6 +18,8 @@
 - ✅ Address gossip respects Tor activation: onion addresses are only accepted/advertised when Tor is configured locally *and* the remote peer signalled `ADDRv2`; clearnet remains unchanged.
 - ✅ Added flow-level unit tests around the new onion-gossip helpers to guard regressions; integration tests will follow once the Tor harness is ready.
 - ✅ Hardened operator UX: Tor bootstrap failures now abort `--tor-only/--listen-onion` startups, logs highlight the persistent onion key for backups, shutdown issues `DEL_ONION` to clean up hidden services, and a background `tor-service` continuously surfaces Tor control-port events.
+- ✅ CLI parity in progress: new `--proxy-net=<network=addr>` flag mirrors Bitcoin Core's per-network proxy matrix (ipv4/ipv6/onion), and the runtime routes outbound dials through the most specific SOCKS entry.
+- ✅ Added `--onlynet=<network>` to let operators restrict connectivity (e.g., `--onlynet=onion` for Tor-only) with enforcement across address manager, connection manager, seeding, and outbound proxy selection.
 
 **Next implementation phases (parity with Bitcoin Core’s Tor stack):**
 1. CLI UX parity – document new flags and expand parity further (per-network proxy selection, config-file toggles).
@@ -70,6 +72,7 @@ This stack gives us gRPC over SOCKS5 while keeping tonic unchanged. We still gen
 - **Onion address type**: Represent v3 addresses with a Rust newtype that validates the 56-char base32 payload + `.onion` suffix on construction.
 - **Address storage**: Extend `NetAddress`/`ContextualNetAddress` to support an enum variant for onion addresses (see design section) to avoid treating them as plain strings.
 - **Daemom CLI plumbing**: `kaspad` now accepts `--tor-proxy`, `--tor-control`, `--tor-password/--tor-cookie`, `--tor-bootstrap-timeout-sec`, `--listen-onion`, `--tor-onion-port`, and `--tor-onion-key`. The daemon instantiates a `TorManager` when these are present, feeds the SOCKS endpoint into the P2P stack, and keeps enforcement guards for invalid combinations.
+- **Proxy matrix**: `--proxy` sets a default SOCKS5 proxy for clearnet networks while repeatable `--proxy-net=<network=addr>` overrides IPv4/IPv6/Onion individually (mirroring Bitcoin Core’s proxy map). Onion dials prefer the Tor manager’s autodiscovered SOCKS listener but fall back to the configured `--proxy-net=onion` or default entry.
 - **Hidden service publishing**: When `--listen-onion` is supplied, `kaspad` loads (or generates) an Ed25519 key at `<appdir>/<net>/tor/p2p_onion.key`, authenticates to the control port, and issues `ADD_ONION ED25519-V3:<key>` pointing at the existing P2P port. The resulting `V3OnionServiceId` is retained on the `FlowContext` for future advertising.
 
 ### Tor-Only Workflow & Key Backup

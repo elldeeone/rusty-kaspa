@@ -45,6 +45,7 @@ use kaspa_utils::{
 use kaspa_utils_tower::counters::TowerConnectionCounters;
 use tokio::sync::watch;
 
+use crate::args::AllowedNetworksChoice;
 use kaspa_addressmanager::AddressManager;
 use kaspa_consensus::{
     consensus::factory::Factory as ConsensusFactory,
@@ -179,7 +180,8 @@ fn validate_tor_args(args: &Args) {
         exit(1);
     }
 
-    let tor_proxy_present = args.tor_proxy.is_some() || args.proxy.is_some();
+    let proxy_settings = args.proxy_settings();
+    let tor_proxy_present = proxy_settings.onion.is_some() || proxy_settings.default.is_some();
     if args.listen_onion && !tor_proxy_present {
         println!("--listen-onion requires a Tor SOCKS proxy (--tor-proxy or --proxy)");
         exit(1);
@@ -197,7 +199,12 @@ fn compute_tor_system_config(args: &Args) -> Option<TorSystemConfig> {
     let control = args.tor_control?;
     let control_addr = contextual_to_socket(control, 9051);
 
-    let socks_source = args.tor_proxy.or(args.proxy).unwrap_or_else(|| ContextualNetAddress::loopback().with_port(9050));
+    let proxy_settings = args.proxy_settings();
+    let socks_source = proxy_settings
+        .onion
+        .clone()
+        .or_else(|| proxy_settings.default.clone())
+        .unwrap_or_else(|| ContextualNetAddress::loopback().with_port(9050));
     let socks_addr = contextual_to_socket(socks_source, 9050);
 
     let auth = if let Some(cookie) = args.tor_cookie.as_ref() {
@@ -369,6 +376,9 @@ impl AsyncService for TorRuntimeService {
     fn start(self: Arc<Self>) -> AsyncServiceFuture {
         Box::pin(async move {
             trace!("{} starting event loop", Self::IDENT);
+            if let Some(tx) = &self.bootstrap_tx {
+                let _ = tx.send(true);
+            }
             let shutdown = self.shutdown.listener.clone();
             tokio::pin!(shutdown);
             let mut ticker = tokio::time::interval(Self::POLL_INTERVAL);
@@ -548,10 +558,14 @@ pub fn create_core_with_runtime(runtime: &Runtime, args: &Args, fd_total_budget:
         }
     };
 
-    let general_proxy_addr = args.proxy.map(|addr| contextual_to_socket(addr, 9050));
-    let tor_proxy_override_addr = args.tor_proxy.map(|addr| contextual_to_socket(addr, 9050));
+    let proxy_settings = args.proxy_settings();
+    let resolved_proxies = proxy_settings.resolve(9050);
+    let default_proxy_addr = resolved_proxies.default;
+    let proxy_ipv4_addr = resolved_proxies.ipv4;
+    let proxy_ipv6_addr = resolved_proxies.ipv6;
+    let tor_proxy_override_addr = resolved_proxies.onion;
     let tor_proxy_from_manager = tor_manager.as_ref().map(|mgr| mgr.socks_addr());
-    let effective_tor_proxy = tor_proxy_from_manager.or(tor_proxy_override_addr).or(general_proxy_addr);
+    let effective_tor_proxy = tor_proxy_from_manager.or(tor_proxy_override_addr).or(default_proxy_addr);
 
     let config = Arc::new(
         ConfigBuilder::new(params).adjust_perf_params_to_consensus_params().apply_args(|config| args.apply_to_config(config)).build(),
@@ -874,8 +888,24 @@ do you confirm? (answer y/n or pass --yes to the Kaspad command line to confirm 
     };
 
     let tor_enabled = effective_tor_proxy.is_some();
+    let allowed_networks_choice = args.allowed_networks();
+    let allow_ipv4;
+    let allow_ipv6;
+    let allow_onion;
+    match allowed_networks_choice {
+        AllowedNetworksChoice::All => {
+            allow_ipv4 = true;
+            allow_ipv6 = true;
+            allow_onion = true;
+        }
+        AllowedNetworksChoice::Custom { allow_ipv4: v4, allow_ipv6: v6, allow_onion: onion } => {
+            allow_ipv4 = v4;
+            allow_ipv6 = v6;
+            allow_onion = onion;
+        }
+    }
     let (address_manager, port_mapping_extender_svc) =
-        AddressManager::new(config.clone(), meta_db, tick_service.clone(), tor_enabled, args.tor_only);
+        AddressManager::new(config.clone(), meta_db, tick_service.clone(), tor_enabled, allow_ipv4, allow_ipv6, allow_onion);
 
     let mining_manager = MiningManagerProxy::new(Arc::new(MiningManager::new_with_extended_config(
         config.target_time_per_block(),
@@ -921,7 +951,7 @@ do you confirm? (answer y/n or pass --yes to the Kaspad command line to confirm 
     };
 
     let (tor_bootstrap_tx, tor_bootstrap_rx) = if tor_manager.is_some() {
-        let (tx, rx) = watch::channel(true);
+        let (tx, rx) = watch::channel(false);
         (Some(tx), Some(rx))
     } else {
         (None, None)
@@ -936,7 +966,9 @@ do you confirm? (answer y/n or pass --yes to the Kaspad command line to confirm 
         notification_root,
         hub.clone(),
         mining_rule_engine.clone(),
-        general_proxy_addr,
+        default_proxy_addr,
+        proxy_ipv4_addr,
+        proxy_ipv6_addr,
         effective_tor_proxy,
         args.tor_only,
         onion_service_info.as_ref().map(|info| (info.id.clone(), info.virt_port)),
@@ -949,6 +981,7 @@ do you confirm? (answer y/n or pass --yes to the Kaspad command line to confirm 
             tor_bootstrap_tx.clone(),
         ))
     });
+    let allowed_networks = allowed_networks_choice.to_connection_manager();
     let p2p_service = Arc::new(P2pService::new(
         flow_context.clone(),
         connect_peers,
@@ -959,6 +992,7 @@ do you confirm? (answer y/n or pass --yes to the Kaspad command line to confirm 
         dns_seeders,
         config.default_p2p_port(),
         p2p_tower_counters.clone(),
+        allowed_networks,
     ));
 
     let rpc_core_service = Arc::new(RpcCoreService::new(

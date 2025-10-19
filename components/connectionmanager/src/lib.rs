@@ -24,6 +24,39 @@ use tokio::{
     time::{interval, MissedTickBehavior},
 };
 
+#[derive(Clone, Copy, Debug)]
+pub struct AllowedNetworks {
+    allow_ipv4: bool,
+    allow_ipv6: bool,
+    allow_onion: bool,
+}
+
+impl AllowedNetworks {
+    pub fn new(allow_ipv4: bool, allow_ipv6: bool, allow_onion: bool) -> Self {
+        Self { allow_ipv4, allow_ipv6, allow_onion }
+    }
+
+    pub fn allow_all() -> Self {
+        Self { allow_ipv4: true, allow_ipv6: true, allow_onion: true }
+    }
+
+    pub fn is_allowed(&self, address: &NetAddress) -> bool {
+        if let Some(onion) = address.as_onion() {
+            if !self.allow_onion {
+                debug!("[Connection manager] skipping {} (onion not allowed)", onion);
+            }
+            self.allow_onion
+        } else if let Some(ip) = address.as_ip() {
+            match IpAddr::from(ip) {
+                IpAddr::V4(_) => self.allow_ipv4,
+                IpAddr::V6(_) => self.allow_ipv6,
+            }
+        } else {
+            true
+        }
+    }
+}
+
 pub struct ConnectionManager {
     p2p_adaptor: Arc<kaspa_p2p_lib::Adaptor>,
     outbound_target: usize,
@@ -34,8 +67,7 @@ pub struct ConnectionManager {
     connection_requests: TokioMutex<HashMap<NetAddress, ConnectionRequest>>,
     force_next_iteration: UnboundedSender<()>,
     shutdown_signal: SingleTrigger,
-    allow_onion: bool,
-    only_onion: bool,
+    allowed_networks: AllowedNetworks,
 }
 
 #[derive(Clone, Debug)]
@@ -59,8 +91,7 @@ impl ConnectionManager {
         dns_seeders: &'static [&'static str],
         default_port: u16,
         address_manager: Arc<ParkingLotMutex<AddressManager>>,
-        allow_onion: bool,
-        only_onion: bool,
+        allowed_networks: AllowedNetworks,
     ) -> Arc<Self> {
         let (tx, rx) = unbounded_channel::<()>();
         let manager = Arc::new(Self {
@@ -73,8 +104,7 @@ impl ConnectionManager {
             shutdown_signal: SingleTrigger::new(),
             dns_seeders,
             default_port,
-            allow_onion,
-            only_onion,
+            allowed_networks,
         });
         manager.clone().start_event_loop(rx);
         manager.force_next_iteration.send(()).unwrap();
@@ -110,7 +140,7 @@ impl ConnectionManager {
     }
 
     pub async fn add_connection_request(&self, address: NetAddress, is_permanent: bool) {
-        if (!self.allow_onion && address.as_onion().is_some()) || (self.only_onion && address.as_onion().is_none()) {
+        if !self.allowed_networks.is_allowed(&address) {
             debug!("Ignoring connection request {} due to network policy", address);
             return;
         }
@@ -137,7 +167,7 @@ impl ConnectionManager {
 
             if !is_connected && request.next_attempt <= SystemTime::now() {
                 debug!("Connecting to peer request {}", address);
-                if (!self.allow_onion && address.as_onion().is_some()) || (self.only_onion && address.as_onion().is_none()) {
+                if !self.allowed_networks.is_allowed(&address) {
                     debug!("Skipping peer request {} due to network policy", address);
                     continue;
                 }
@@ -196,7 +226,7 @@ impl ConnectionManager {
                     connecting = false;
                     break;
                 };
-                if (!self.allow_onion && net_addr.as_onion().is_some()) || (self.only_onion && net_addr.as_onion().is_none()) {
+                if !self.allowed_networks.is_allowed(&net_addr) {
                     continue;
                 }
                 let target = net_addr.to_string();
@@ -243,7 +273,7 @@ impl ConnectionManager {
             }
         }
 
-        if !self.only_onion && missing_connections > 0 && !self.dns_seeders.is_empty() {
+        if self.allowed_networks.allow_ipv4 && missing_connections > 0 && !self.dns_seeders.is_empty() {
             if missing_connections > self.outbound_target / 2 {
                 // If we are missing more than half of our target, query all in parallel.
                 // This will always be the case on new node start-up and is the most resilient strategy in such a case.

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use kaspa_addressmanager::NetAddress;
-use kaspa_connectionmanager::ConnectionManager;
+use kaspa_connectionmanager::{AllowedNetworks, ConnectionManager};
 use kaspa_core::{
     info,
     task::service::{AsyncService, AsyncServiceFuture},
@@ -26,6 +26,7 @@ pub struct P2pService {
     default_port: u16,
     shutdown: SingleTrigger,
     counters: Arc<TowerConnectionCounters>,
+    allowed_networks: AllowedNetworks,
 }
 
 impl P2pService {
@@ -39,6 +40,7 @@ impl P2pService {
         dns_seeders: &'static [&'static str],
         default_port: u16,
         counters: Arc<TowerConnectionCounters>,
+        allowed_networks: AllowedNetworks,
     ) -> Self {
         Self {
             flow_context,
@@ -51,6 +53,7 @@ impl P2pService {
             dns_seeders,
             default_port,
             counters,
+            allowed_networks,
         }
     }
 }
@@ -66,11 +69,14 @@ impl AsyncService for P2pService {
         // Prepare a shutdown signal receiver
         let shutdown_signal = self.shutdown.listener.clone();
 
-        let general_proxy = self.flow_context.proxy();
+        let default_proxy = self.flow_context.proxy();
+        let ipv4_proxy = self.flow_context.proxy_ipv4();
+        let ipv6_proxy = self.flow_context.proxy_ipv6();
         let tor_proxy = self.flow_context.tor_proxy();
-        let socks_proxy = match (general_proxy, tor_proxy) {
-            (None, None) => None,
-            (general, onion) => Some(SocksProxyConfig { general, onion }),
+        let socks_proxy = if default_proxy.is_some() || ipv4_proxy.is_some() || ipv6_proxy.is_some() || tor_proxy.is_some() {
+            Some(SocksProxyConfig { default: default_proxy, ipv4: ipv4_proxy, ipv6: ipv6_proxy, onion: tor_proxy })
+        } else {
+            None
         };
 
         let p2p_adaptor = if self.inbound_limit == 0 {
@@ -92,8 +98,7 @@ impl AsyncService for P2pService {
             self.dns_seeders,
             self.default_port,
             self.flow_context.address_manager.clone(),
-            self.flow_context.tor_proxy().is_some(),
-            self.flow_context.tor_only(),
+            self.allowed_networks,
         );
 
         self.flow_context.set_connection_manager(connection_manager.clone());

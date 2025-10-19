@@ -246,6 +246,8 @@ pub struct FlowContextInner {
     // Mining rule engine
     mining_rule_engine: Arc<MiningRuleEngine>,
     proxy: Option<SocketAddr>,
+    proxy_ipv4: Option<SocketAddr>,
+    proxy_ipv6: Option<SocketAddr>,
     tor_proxy: Option<SocketAddr>,
     tor_only: bool,
     onion_service: Option<(V3OnionServiceId, NetAddress)>,
@@ -324,7 +326,9 @@ impl FlowContext {
         notification_root: Arc<ConsensusNotificationRoot>,
         hub: Hub,
         mining_rule_engine: Arc<MiningRuleEngine>,
-        proxy: Option<SocketAddr>,
+        proxy_default: Option<SocketAddr>,
+        proxy_ipv4: Option<SocketAddr>,
+        proxy_ipv6: Option<SocketAddr>,
         tor_proxy: Option<SocketAddr>,
         tor_only: bool,
         onion_service: Option<(V3OnionServiceId, u16)>,
@@ -374,7 +378,9 @@ impl FlowContext {
                 max_orphans,
                 config,
                 mining_rule_engine,
-                proxy,
+                proxy: proxy_default,
+                proxy_ipv4,
+                proxy_ipv6,
                 tor_proxy,
                 tor_only,
                 onion_service,
@@ -397,6 +403,14 @@ impl FlowContext {
 
     pub fn proxy(&self) -> Option<SocketAddr> {
         self.proxy
+    }
+
+    pub fn proxy_ipv4(&self) -> Option<SocketAddr> {
+        self.proxy_ipv4
+    }
+
+    pub fn proxy_ipv6(&self) -> Option<SocketAddr> {
+        self.proxy_ipv6
     }
 
     pub fn tor_only(&self) -> bool {

@@ -14,7 +14,7 @@ use kaspa_utils_tower::{
 };
 use rand::{distributions::Alphanumeric, Rng};
 use std::io;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -60,9 +60,11 @@ pub struct ConnectionHandler {
     socks_proxy: Option<SocksProxyConfig>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub struct SocksProxyConfig {
-    pub general: Option<SocketAddr>,
+    pub default: Option<SocketAddr>,
+    pub ipv4: Option<SocketAddr>,
+    pub ipv6: Option<SocketAddr>,
     pub onion: Option<SocketAddr>,
 }
 
@@ -118,10 +120,18 @@ impl ConnectionHandler {
             .connect_timeout(Duration::from_millis(Self::connect_timeout()))
             .tcp_keepalive(Some(Duration::from_millis(Self::keep_alive())));
 
-        let channel = if let Some(proxy_addr) =
-            self.socks_proxy
-                .and_then(|cfg| if peer_net_address.as_onion().is_some() { cfg.onion.or(cfg.general) } else { cfg.general })
-        {
+        let channel = if let Some(proxy_addr) = self.socks_proxy.and_then(|cfg| {
+            if peer_net_address.as_onion().is_some() {
+                cfg.onion.or(cfg.default)
+            } else if let Some(ip) = peer_net_address.as_ip() {
+                match IpAddr::from(ip) {
+                    IpAddr::V4(_) => cfg.ipv4.or(cfg.default),
+                    IpAddr::V6(_) => cfg.ipv6.or(cfg.default),
+                }
+            } else {
+                cfg.default
+            }
+        }) {
             let connector = service_fn(move |uri: Uri| {
                 let proxy_addr = proxy_addr;
                 async move {

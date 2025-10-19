@@ -57,7 +57,9 @@ pub struct AddressManager {
     config: Arc<Config>,
     local_net_addresses: Vec<NetAddress>,
     tor_enabled: bool,
-    tor_only: bool,
+    allow_ipv4: bool,
+    allow_ipv6: bool,
+    allow_onion: bool,
 }
 
 impl AddressManager {
@@ -66,7 +68,9 @@ impl AddressManager {
         db: Arc<DB>,
         tick_service: Arc<TickService>,
         tor_enabled: bool,
-        tor_only: bool,
+        allow_ipv4: bool,
+        allow_ipv6: bool,
+        allow_onion: bool,
     ) -> (Arc<Mutex<Self>>, Option<Extender>) {
         let mut instance = Self {
             banned_address_store: DbBannedAddressesStore::new(db.clone(), CachePolicy::Count(MAX_ADDRESSES)),
@@ -74,26 +78,27 @@ impl AddressManager {
             local_net_addresses: Vec::new(),
             config,
             tor_enabled,
-            tor_only,
+            allow_ipv4,
+            allow_ipv6,
+            allow_onion,
         };
 
         let extender = instance.init_local_addresses(tick_service);
 
-        if !instance.tor_enabled {
+        if !instance.allow_onion {
             instance.prune_onion_addresses();
         }
-
-        if instance.tor_only {
-            instance.prune_non_onion_addresses();
+        if !instance.allow_ipv4 {
+            instance.prune_ipv4_addresses();
+        }
+        if !instance.allow_ipv6 {
+            instance.prune_ipv6_addresses();
         }
 
         (Arc::new(Mutex::new(instance)), extender)
     }
 
     fn init_local_addresses(&mut self, tick_service: Arc<TickService>) -> Option<Extender> {
-        if self.tor_only {
-            return None;
-        }
         self.local_net_addresses = self.local_addresses().collect();
 
         let extender = if self.local_net_addresses.is_empty() && !self.config.disable_upnp {
@@ -273,12 +278,16 @@ impl AddressManager {
     }
 
     pub fn add_address(&mut self, address: NetAddress) {
-        if self.tor_only && address.as_onion().is_none() {
-            debug!("[Address manager] skipping clearnet address {} (tor-only mode)", address);
+        if !self.allow_onion && address.as_onion().is_some() {
+            debug!("[Address manager] skipping onion address {} (onion disabled)", address);
             return;
         }
-        if address.as_onion().is_some() && !self.tor_enabled {
-            debug!("[Address manager] skipping onion address {} (tor disabled)", address);
+        if !self.allow_ipv4 && address.as_ip().map_or(false, |ip| ip.is_ipv4()) {
+            debug!("[Address manager] skipping IPv4 address {} (ipv4 disabled)", address);
+            return;
+        }
+        if !self.allow_ipv6 && address.as_ip().map_or(false, |ip| ip.is_ipv6()) {
+            debug!("[Address manager] skipping IPv6 address {} (ipv6 disabled)", address);
             return;
         }
         if let Some(ip) = address.as_ip() {
@@ -323,8 +332,17 @@ impl AddressManager {
         }
     }
 
-    fn prune_non_onion_addresses(&mut self) {
-        let to_remove: Vec<_> = self.address_store.iterate_addresses().filter(|addr| addr.as_onion().is_none()).collect();
+    fn prune_ipv4_addresses(&mut self) {
+        let to_remove: Vec<_> =
+            self.address_store.iterate_addresses().filter(|addr| addr.as_ip().map_or(false, |ip| ip.is_ipv4())).collect();
+        for addr in to_remove {
+            self.address_store.remove(addr);
+        }
+    }
+
+    fn prune_ipv6_addresses(&mut self) {
+        let to_remove: Vec<_> =
+            self.address_store.iterate_addresses().filter(|addr| addr.as_ip().map_or(false, |ip| ip.is_ipv6())).collect();
         for addr in to_remove {
             self.address_store.remove(addr);
         }
