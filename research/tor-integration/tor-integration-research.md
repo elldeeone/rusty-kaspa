@@ -12,8 +12,6 @@
 - ✅ Address manager filters `.onion` peers when Tor is disabled, restoring clearnet IBD performance while allowing Tor-only operation when requested.
 - ✅ Stream isolation implemented: every outbound peer uses a unique SOCKS5 username/password pair, forcing Tor to create per-peer circuits.
 - ✅ Added CLI options `--proxy` and `--tor-only` to mirror Bitcoin Core’s proxy controls; the node can now operate in Tor-only mode without clearnet peers.
-
-### Progress Update — 22 Oct 2025
 - ✅ Version-handshake now advertises Kaspa-specific `ADDRv2` capability (service bit) and tracks peer support in `PeerProperties`.
 - ✅ Address gossip respects Tor activation: onion addresses are only accepted/advertised when Tor is configured locally *and* the remote peer signalled `ADDRv2`; clearnet remains unchanged.
 - ✅ Added flow-level unit tests around the new onion-gossip helpers to guard regressions; integration tests will follow once the Tor harness is ready.
@@ -21,11 +19,14 @@
 - ✅ CLI parity in progress: new `--proxy-net=<network=addr>` flag mirrors Bitcoin Core's per-network proxy matrix (ipv4/ipv6/onion), and the runtime routes outbound dials through the most specific SOCKS entry.
 - ✅ Added `--onlynet=<network>` to let operators restrict connectivity (e.g., `--onlynet=onion` for Tor-only) with enforcement across address manager, connection manager, seeding, and outbound proxy selection.
 
-**Next implementation phases (parity with Bitcoin Core’s Tor stack):**
-1. CLI UX parity – document new flags and expand parity further (per-network proxy selection, config-file toggles).
-2. Address gossip – advertise onion peers only to BIP155-capable/onion peers; add tests to prevent regression.
-3. Operator ergonomics – document restart behaviour, key backup, graceful teardown, optional `--disable-upnp`/loopback binding for Tor-only deployments.
-5. Long-term – evaluate Arti once onion-service support is production ready; consider bundled Tor for desktop builds.
+### Progress Update — 20 Oct 2025
+- 📝 Documentation updates: consolidated Tor research notes, moved them under `research/tor-integration/`, and refreshed the write-up to match the final implementation.
+
+**Remaining follow-ups**
+1. Polish CLI/docs parity (surface the new Tor flags in the user guide and config templates).
+2. Extend test coverage around onion gossip + `onlynet` enforcement.
+3. Document operational guidance (Tor key backup, restart expectations, Tor-only + `--disable-upnp` recommendations).
+4. Track long-term Arti readiness for bundled Tor builds.
 
 ### SOCKS5 Support for Outbound Traffic
 - Current outbound P2P dials use `tonic::transport::Endpoint::connect()`. We can switch to `connect_with_connector` and supply a Hyper connector that speaks SOCKS5.
@@ -33,17 +34,16 @@
 **SOCKS5 Library Options** (evaluated Oct 2025):
 | Crate | Latest | Maintainer Activity | Hyper 1.x ready? | Notes |
 | --- | --- | --- | --- | --- |
-| `hyper-socks2` | 0.9.1 (Mar 2024) | Active GH issues, used by tonic clients | ✅ | Built as a Hyper connector; drop-in for `Endpoint::connect_with_connector`. |
-| `tokio-socks` | 0.5.2 (Oct 2025) | Widely adopted | ➖ (needs wrapper) | Great low-level client; requires us to write a Hyper `Service`. |
+| `hyper-socks2` | 0.9.1 (Mar 2024) | Active GH issues, used by tonic clients | ✅ | Drop-in Hyper connector, but less flexible if we need custom auth per dial. |
+| `tokio-socks` | 0.5.2 (Oct 2025) | Widely adopted | ✅ | Low-level client; we wrap it with `tower::service_fn` + `hyper_util::TokioIo` for tonic. |
 | `fast-socks5` | 0.10.0 (Sep 2025) | Performance-focused | ➖ | Includes UDP/BIND; heavier than we need. |
 | `tor-socksproto` | 0.35.0 (Oct 2025) | Tor Project | ➖ | Tor-specific framing + stream isolation helpers; still lower-level. |
 
 **Recommended pattern** (validated with tonic 0.12 / Hyper 1):
-1. Build a `HttpConnector` and call `enforce_http(false)` to allow non-HTTP URIs.
-2. Wrap it with `hyper_socks2::SocksConnector { proxy_addr, auth, connector }`.
-3. Layer TLS (`hyper-rustls` or `hyper-openssl`) and ensure ALPN includes `h2`.
-4. Create a Hyper client with `hyper_util::client::legacy::Client::builder`.
-5. Pass a `tower::service_fn` that forwards requests to the Hyper client into `Endpoint::connect_with_connector`.
+1. Use `tower::service_fn` to expose an async closure that dials `tokio_socks::Socks5Stream::connect_with_password`.
+2. Generate random username/password pairs per connection to force Tor stream isolation (no special prefixes required).
+3. Wrap the resulting stream with `hyper_util::rt::TokioIo` so tonic/Hyper recognise it as an I/O object.
+4. Call `Endpoint::connect_with_connector` with that service.
 
 This stack gives us gRPC over SOCKS5 while keeping tonic unchanged. We still generate a unique SOCKS username/password per peer (see “Tor protocol practices”) to enforce Tor stream isolation.
 
@@ -67,7 +67,7 @@ This stack gives us gRPC over SOCKS5 while keeping tonic unchanged. We still gen
 - **Hybrid approach**: We can still reuse Arti components (e.g., `tor-socksproto`, `arti-client`) for outbound-only functionality if we want an all-Rust stack later.
 
 ### Tor Protocol Practices & Data Model
-- **Stream isolation**: Tor interprets SOCKS usernames starting with `<torS0X>`; format `"<torS0X>0"` + unique password guarantees separate circuits. We should generate a random password per outbound peer.
+- **Stream isolation**: Generate a fresh random username/password per outbound peer (we use the `kaspa-<random>` convention). Tor treats each credential pair as an isolated stream, giving us separate circuits automatically.
 - **Remote DNS**: Always pass hostnames (SOCKS5 `ATYP=0x03`) so Tor performs DNS resolution, eliminating local DNS leaks.
 - **Onion address type**: Represent v3 addresses with a Rust newtype that validates the 56-char base32 payload + `.onion` suffix on construction.
 - **Address storage**: Extend `NetAddress`/`ContextualNetAddress` to support an enum variant for onion addresses (see design section) to avoid treating them as plain strings.
@@ -132,7 +132,7 @@ Bitcoin Core provides battle-tested Tor support that we can learn from. Key impl
 **Stream Isolation**:
 - Bitcoin Core uses Tor stream isolation by default
 - Each connection gets isolated circuit to prevent correlation attacks
-- Implemented via SOCKS5 username/password fields (Tor-specific extension using `<torS0X>` prefix)
+- Implemented via SOCKS5 username/password fields with unique credentials per peer (no prefix required; Tor still isolates the circuits)
 
 **Operational Flow**:
 1. On startup, Bitcoin Core connects to Tor SOCKS proxy (default: 127.0.0.1:9050)
@@ -156,7 +156,7 @@ Bitcoin Core provides battle-tested Tor support that we can learn from. Key impl
    - Extend `kaspad` args to accept Tor settings (enable flag, path to tor binary/control port, SOCKS endpoint, client-auth keys).
    - Thread new options into `Config`, `FlowContext`, and P2P services.
 2. **Outbound Peer Connections**
-   - Create a Tor-aware connector that wraps Tonic’s `Endpoint` with `hyper-socks2`, parameterized by the Tor SOCKS listener from the `TorProvider`.
+   - Create a Tor-aware connector that wraps Tonic’s `Endpoint` with a `tokio-socks` dialer, parameterized by the Tor SOCKS listener from the `TorProvider`, and expose it via `tower::service_fn`.
 3. **Inbound Hidden Service**
    - When Tor mode is enabled, bind the P2P listener locally (e.g., `127.0.0.1`) and publish the `.onion` via `TorProvider::listener`. Update address advertisement logic to include onion addresses and avoid leaking clearnet IPs.
    - Extend `NetAddress`/`ContextualNetAddress` and address-manager storage to support `.onion` peers (possibly with an enum discriminant for onion vs IP).
@@ -258,46 +258,34 @@ Based on the codebase analysis, the Tor integration requires modifications acros
 ### Layer 1: Configuration & CLI
 
 **Files to Modify**:
-- `kaspad/src/args.rs` (lines 27-94: Args struct, 197-391: CLI definition)
-- `consensus/core/src/config/mod.rs` (lines 20-74: Config struct)
+- `kaspad/src/args.rs` (Args struct, CLI flag wiring, proxy resolution)
+- `kaspad/src/args.rs::apply_to_config` (default listen policies, UPnP toggles)
+- `kaspad/src/daemon.rs` (Tor validation + runtime)
 
-**New CLI Flags** (mirroring Bitcoin Core where sensible):
+**Args Excerpt (actual implementation)**:
 ```rust
-// kaspad/src/args.rs - Add to Args struct
 pub struct Args {
-    // ... existing fields ...
-    
-    // Tor SOCKS Proxy Configuration
-    pub tor_proxy: Option<String>,              // --tor-proxy=127.0.0.1:9050
-    
-    // Tor Control Port (for hidden service management)
-    pub tor_control: Option<String>,            // --tor-control=127.0.0.1:9051
-    pub tor_password: Option<String>,           // --tor-password=<password>
-    
-    // Onion Service Configuration
-    pub listen_onion: bool,                     // --listen-onion (default: true if tor_control set)
-    pub onion_address: Option<String>,          // --onion-address=<addr>.onion (manual override)
-    
-    // Privacy/Routing Options
-    pub onlynet: Option<String>,                // --onlynet=onion (tor-only mode)
-    pub tor_stream_isolation: bool,             // --tor-stream-isolation (default: true)
+    // ...
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    pub tor_proxy: Option<ContextualNetAddress>,
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    pub tor_control: Option<ContextualNetAddress>,
+    pub tor_password: Option<String>,
+    pub tor_cookie: Option<PathBuf>,
+    pub tor_bootstrap_timeout_sec: u64,
+    pub listen_onion: bool,
+    pub tor_onion_port: Option<u16>,
+    pub tor_onion_key: Option<PathBuf>,
+    pub tor_only: bool,
+    #[serde_as(as = "Vec<DisplayFromStr>")]
+    pub proxy_net: Vec<ProxyRule>,
+    #[serde_as(as = "Vec<DisplayFromStr>")]
+    pub onlynet: Vec<OnlyNet>,
+    // ...
 }
 ```
 
-**Config Struct Updates**:
-```rust
-// consensus/core/src/config/mod.rs
-pub struct Config {
-    // ... existing fields ...
-    pub tor_proxy: Option<String>,
-    pub tor_control: Option<String>,
-    pub tor_password: Option<String>,
-    pub listen_onion: bool,
-    pub onion_address: Option<OnionAddress>,  // New type
-    pub onlynet: Option<NetworkType>,         // enum: Clearnet, Onion
-    pub tor_stream_isolation: bool,
-}
-```
+`Args::proxy_settings` merges these flags (default/proxy-net/onion) into a `ProxySettings` structure, while `Args::allowed_networks` honors `--onlynet`/`--tor-only`. `apply_to_config` ensures Tor-only nodes listen on loopback, drop `externalip`, and disable UPnP automatically.
 
 **Config Flow**:
 ```
@@ -326,93 +314,50 @@ async fn connect(&self, peer_address: String) -> Result<KaspadMessageStream> {
 }
 ```
 
-**Modified Implementation Strategy**:
+**Implemented Connector**
 
-**Option A: Hyper Custom Connector (Recommended)**
 ```rust
-// NEW FILE: protocol/p2p/src/core/socks_connector.rs
-use tokio_socks::tcp::Socks5Stream;
-use tower::service_fn;
-use hyper::Uri;
-
-pub struct SocksConnector {
-    proxy_addr: String,
-    stream_isolation: bool,
-}
-
-impl tower::Service<Uri> for SocksConnector {
-    type Response = tokio::net::TcpStream;
-    type Error = Box<dyn std::error::Error + Send + Sync>;
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
-    
-    fn call(&mut self, uri: Uri) -> Self::Future {
-        let proxy = self.proxy_addr.clone();
-        let isolation = self.stream_isolation;
-        
-        Box::pin(async move {
-            let target = format!("{}:{}", uri.host().unwrap(), uri.port_u16().unwrap());
-            
-            // Tor stream isolation via SOCKS username (random per connection)
-            let auth = if isolation {
-                Some((format!("stream-{}", rand::random::<u64>()), String::new()))
-            } else {
-                None
-            };
-            
-            let stream = if let Some((user, pass)) = auth {
-                Socks5Stream::connect_with_password(proxy, target, &user, &pass).await?
-            } else {
-                Socks5Stream::connect(proxy, target).await?
-            };
-            
-            Ok(stream.into_inner())
-        })
+// protocol/p2p/src/core/connection_handler.rs
+let channel = if let Some(proxy_addr) = self.socks_proxy.and_then(|cfg| {
+    if peer_net_address.as_onion().is_some() {
+        cfg.onion.or(cfg.default)
+    } else if let Some(ip) = peer_net_address.as_ip() {
+        match IpAddr::from(ip) {
+            IpAddr::V4(_) => cfg.ipv4.or(cfg.default),
+            IpAddr::V6(_) => cfg.ipv6.or(cfg.default),
+        }
+    } else {
+        cfg.default
     }
-}
-
-// MODIFIED: protocol/p2p/src/core/connection_handler.rs
-pub struct ConnectionHandler {
-    // ... existing fields ...
-    socks_proxy: Option<SocksConnector>,  // NEW
-}
-
-impl ConnectionHandler {
-    async fn connect(&self, peer_address: String) -> Result<KaspadMessageStream> {
-        let endpoint = tonic::transport::Endpoint::new(peer_address)?;
-        
-        let conn = if let Some(ref socks) = self.socks_proxy {
-            // Use SOCKS connector
-            endpoint.connect_with_connector(socks.clone()).await?
-        } else {
-            // Direct connection (existing behavior)
-            endpoint.connect().await?
-        };
-        
-        // ... rest unchanged
-    }
-}
+}) {
+    let connector = service_fn(move |uri: Uri| {
+        let proxy_addr = proxy_addr;
+        async move {
+            let host = uri.host().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "missing host in URI"))?.to_string();
+            let port = uri.port_u16().unwrap_or(80);
+            let target = format!("{host}:{port}");
+            let (username, password) = generate_socks_credentials();
+            let stream = Socks5Stream::connect_with_password(proxy_addr, target, &username, &password)
+                .await
+                .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
+            Ok::<_, io::Error>(TokioIo::new(stream.into_inner()))
+        }
+    });
+    endpoint.connect_with_connector(connector).await?
+} else {
+    endpoint.connect().await?
+};
 ```
+
+The connector lives entirely inside `connection_handler.rs`, reusing the existing `SocksProxyConfig` plumbing and delivering a Hyper-compatible stream via `hyper_util::rt::TokioIo`.
 
 **Call Chain for SOCKS Injection**:
 ```
-kaspad/src/daemon.rs:597-607 (P2pService creation) ← Pass tor_proxy config
-    ↓
-protocol/flows/src/service.rs:17-114 (P2pService::new) ← Accept socks_proxy param
-    ↓
-protocol/p2p/src/core/adaptor.rs:72-85 (connect_peer) ← Thread through
-    ↓
-protocol/p2p/src/core/connection_handler.rs:145-176 (retry logic) ← Thread through
-    ↓
-protocol/p2p/src/core/connection_handler.rs:96-142 (connect method) ← USE SOCKS HERE
+kaspad/src/daemon.rs → resolve proxies and pass them into P2pService
+protocol/flows/src/service.rs → build SocksProxyConfig and create adaptor
+protocol/p2p/src/core/adaptor.rs → forward config to ConnectionHandler
+protocol/p2p/src/core/connection_handler.rs → dial peers through tokio-socks when configured
 ```
-
-**Files to Modify** (6 total):
-1. `protocol/p2p/src/core/socks_connector.rs` - NEW FILE
-2. `protocol/p2p/src/core/connection_handler.rs` - Add socks_proxy field
-3. `protocol/p2p/src/core/adaptor.rs` - Thread socks_proxy parameter
-4. `protocol/flows/src/service.rs` - Thread socks_proxy parameter
-5. `kaspad/src/daemon.rs` - Parse and pass socks_proxy from Config
-6. `Cargo.toml` for protocol/p2p - Add `tokio-socks` dependency
 
 ### Layer 3: Network Address (.onion Support)
 
@@ -536,161 +481,31 @@ impl NetworkAddress {
 4. Start networking with Tor configured
 ```
 
-**Implementation Approach**:
+**TorManager Highlights**
 
-```rust
-// NEW FILE: kaspad/src/tor_manager.rs
-use tor_interface::{TorProvider, LegacyTorClient, TorEvent};
+- `TorManager::connect_system` (kaspad/src/tor_manager.rs) authenticates against the configured control port (cookie or password), waits for bootstrap completion, and records the Tor-provided SOCKS listener.
+- `TorManager::publish_hidden_service` wraps the `ADD_ONION` control command, persisting Ed25519 keys on disk (creating them if absent) and returning the v3 onion identifier.
+- `TorRuntimeService` polls Tor events asynchronously, forwarding bootstrap status to the P2P layer and issuing `DEL_ONION` on shutdown.
+- `create_core_with_runtime` wires these pieces together: validate CLI flags, connect to Tor if configured, derive the effective proxy map, publish the onion service when `--listen-onion` is set, and delay network bring-up until Tor reports readiness.
 
-pub struct TorManager {
-    client: Box<dyn TorProvider>,
-    socks_addr: String,
-    onion_address: Option<String>,
-}
+## Implementation Summary
 
-impl TorManager {
-    pub async fn new(config: &Config) -> Result<Option<Self>> {
-        if config.tor_control.is_none() && config.tor_proxy.is_none() {
-            return Ok(None);  // Tor not enabled
-        }
-        
-        // Option 1: Use system Tor daemon via control port
-        let client = if let Some(control_addr) = &config.tor_control {
-            let mut tor = LegacyTorClient::new(control_addr)?;
-            
-            // Authenticate (try cookie first, then password)
-            if let Some(password) = &config.tor_password {
-                tor.authenticate_with_password(password).await?;
-            } else {
-                tor.authenticate_with_cookie().await?;
-            }
-            
-            // Wait for bootstrap
-            tor.wait_for_bootstrap().await?;
-            
-            Box::new(tor) as Box<dyn TorProvider>
-        }
-        // Option 2: Use bundled Tor (future work)
-        // Option 3: Use Arti in-process (future work)
-        else {
-            return Err("Tor control port required")?;
-        };
-        
-        // Get SOCKS proxy address
-        let socks_addr = client.socks_addr().await?;
-        
-        // Create onion service if requested
-        let onion_address = if config.listen_onion {
-            let local_addr = config.p2p_listen_address.normalize(config.default_p2p_port());
-            let onion = client.create_onion_service(
-                vec![(config.default_p2p_port(), local_addr.port)],
-                None,  // No client auth
-            ).await?;
-            Some(onion.address)
-        } else {
-            None
-        };
-        
-        Ok(Some(TorManager {
-            client,
-            socks_addr,
-            onion_address,
-        }))
-    }
-    
-    pub fn socks_addr(&self) -> &str {
-        &self.socks_addr
-    }
-    
-    pub fn onion_address(&self) -> Option<&str> {
-        self.onion_address.as_deref()
-    }
-    
-    pub async fn shutdown(self) -> Result<()> {
-        // Cleanup onion service
-        if let Some(onion) = self.onion_address {
-            self.client.delete_onion_service(&onion).await?;
-        }
-        Ok(())
-    }
-}
+- **CLI & Config** – `kaspad/src/args.rs` gained Tor-focused flags (`--tor-proxy`, `--tor-control`, `--tor-only`, `--listen-onion`, onion key paths, bootstrap timeout, per-network proxy matrix) and propagates them through proxy resolution and allowed-network logic.
+- **Daemon Startup** – `kaspad/src/daemon.rs` validates Tor args, instantiates `TorManager`, waits for bootstrap, wires the effective SOCKS map into the P2P service, publishes/removes onion services, and persists onion keys under the network data dir.
+- **Tor Control Wrapper** – `kaspad/src/tor_manager.rs` wraps `tor-interface` (connect, bootstrap, publish/delete hidden services, load/save keys) so the daemon has a single integration point.
+- **Outbound P2P** – `protocol/p2p/src/core/connection_handler.rs` now detects when Tor is active and routes outbound gRPC dials through `tokio-socks`, generating fresh `kaspa-<random>` credentials per peer and wrapping the stream with `hyper_util::rt::TokioIo`.
+- **Address Handling** – `utils/src/networking.rs`, `components/addressmanager`, and associated stores understand the new `OnionAddress` type, store base32 payloads, and enforce Tor/onion policies across gossip and connection attempts.
+- **Flow Context & Gossip** – `protocol/flows/src/flow_context.rs` threads Tor/onion state into handshake logic, advertises ADDRv2 support, and only gossips onion endpoints when both sides are capable. Address flows (`protocol/flows/src/v5/address.rs`) respect the same gating.
+- **RPC & Proto Updates** – `protocol/p2p/proto/p2p.proto` plus converters in `protocol/p2p/src/convert` accept onion addresses, ensuring RPC layers surface the new transport family.
+- **Runtime Services** – `protocol/flows/src/service.rs` passes a `SocksProxyConfig` into the adaptor so both inbound and outbound contexts agree on proxy routing, and waits for Tor bootstrap before opening the network.
+- **Docs & Research** – this document plus the `research/tor-integration/` folder capture the architecture decisions, connector analysis, and operator guidance that informed the implementation.
 
-// MODIFIED: kaspad/src/daemon.rs
-pub fn create_core_with_runtime(...) -> (...) {
-    // ... existing config creation ...
-    
-    // NEW: Initialize Tor if configured
-    let tor_manager = runtime.block_on(async {
-        TorManager::new(&config).await
-    })?;
-    
-    // Extract SOCKS proxy for P2P
-    let socks_proxy = tor_manager.as_ref().map(|tm| tm.socks_addr().to_string());
-    
-    // ... existing core initialization ...
-    
-    // Pass socks_proxy to P2P service creation (line 597-607)
-    let p2p_service = Arc::new(P2pService::new(
-        flow_context.clone(),
-        connect_peers,
-        add_peers,
-        p2p_server_addr,
-        outbound_target,
-        inbound_limit,
-        dns_seeders,
-        config.default_p2p_port(),
-        p2p_tower_counters.clone(),
-        socks_proxy,  // NEW PARAMETER
-    ));
-    
-    // ... rest of initialization ...
-    
-    // Store tor_manager for later shutdown
-}
-```
-
-**Files to Modify** (3 total):
-1. `kaspad/src/tor_manager.rs` - NEW FILE
-2. `kaspad/src/daemon.rs` - Initialize TorManager, pass to P2P
-3. `Cargo.toml` for kaspad - Add `tor-interface` dependency
-
-**Dependencies to Add**:
-```toml
-[dependencies]
-tor-interface = "0.6.0"  # For Tor control protocol
-tokio-socks = "0.5"      # For SOCKS5 client in P2P layer
-```
-
-### Implementation Phases
-
-**Phase 1: Outbound SOCKS Proxy** (Minimum Viable Tor)
-- Add CLI flags for --tor-proxy
-- Implement SocksConnector in connection_handler.rs
-- Thread socks_proxy through P2P stack
-- Test: kaspad --tor-proxy=127.0.0.1:9050 connects to clearnet peers via Tor
-
-**Phase 2: Onion Service Publishing**
-- Add --tor-control and --listen-onion flags
-- Implement TorManager for lifecycle management
-- Test: kaspad creates .onion address, peers can connect to it
-
-**Phase 3: .onion Address Support**
-- Refactor NetworkAddress enum to support .onion
-- Update database storage, protobuf, serialization
-- Update address manager validation
-- Test: kaspad can store, advertise, connect to .onion peers
-
-**Phase 4: Privacy Enhancements**
-- Implement stream isolation (random SOCKS username per connection)
-- Add --onlynet=onion flag for Tor-only mode
-- Prevent clearnet IP leakage in Tor-only mode
-- Test: kaspad --onlynet=onion never connects to clearnet
-
-**Phase 5: Production Hardening**
-- Cross-platform Tor daemon management
-- Bundled Tor binary option
-- Health monitoring and metrics
-- Arti integration (when onion services mature)
+**Dependencies Added**
+- `tor-interface` (Tor control + hidden services)
+- `tokio-socks` (async SOCKS5 client)
+- `hyper-util` (Tokio I/O wrapper for Hyper)
+- `tower` (connector glue via `service_fn`)
+- `data-encoding` (base32 parsing/encoding for `.onion`)
 
 ## Operational Considerations
 - **Tor packaging & distribution**
@@ -709,66 +524,23 @@ tokio-socks = "0.5"      # For SOCKS5 client in P2P layer
   - Add smoke tests for control-port failures, onion publication, and stream isolation (unique username/password per connection).
   - Manual QA: stage at least two Tor-backed nodes and verify full sync/transaction propagation with clearnet peers.
 
-## Next Implementation Steps
+## Follow-up Work
 
-**Research Complete** ✓ - Architecture analysis finished, comprehensive design documented above.
+- Document the new Tor CLI flags and config knobs in the public operator guides, including examples for Tor-only deployments.
+- Extend automated coverage around onion gossip, `--onlynet` enforcement, and Tor bootstrap failure handling.
+- Capture operational runbooks (Tor cookie vs. password auth, onion-key backup, Tor-only + `--disable-upnp` recommendations).
+- Monitor Arti’s onion-service roadmap to reassess bundled/in-process Tor once it can replace legacy c-tor.
 
-### Phase 1: Prototype & Validate (Recommended Next Step)
+## Open Questions
 
-1. **Proof-of-Concept Binary** (standalone validation):
-   - Create `examples/tor_poc.rs` in rusty-kaspa repo
-   - Demonstrate `tor-interface` LegacyTorClient usage:
-     - Connect to local Tor daemon on 127.0.0.1:9051
-     - Try cookie auth, fall back to password
-     - Wait for Tor bootstrap completion
-     - Retrieve SOCKS proxy address
-     - Create ephemeral v3 onion service
-     - Print `.onion` address
-   - Demonstrate `tokio-socks` outbound connection:
-     - Connect to a test clearnet endpoint via SOCKS proxy
-     - Verify stream isolation (multiple connections get different circuits)
-   - **Goal**: Validate all Tor libraries work as expected before touching rusty-kaspa core
-
-2. **SOCKS Connector Implementation**:
-   - Implement `protocol/p2p/src/core/socks_connector.rs` as designed
-   - Write unit tests with mock SOCKS server
-   - Integration test with real Tor daemon
-
-3. **Minimal Integration** (Phase 1 from design):
-   - Add `--tor-proxy` CLI flag only
-   - Thread through to ConnectionHandler
-   - Test: Connect to existing Kaspa testnet peers via Tor
-
-### Phase 2-5: Full Integration (See design section above)
-
-Follow the phased approach in the "Rusty-Kaspa Tor Integration Design" section.
-
-- **Outstanding spikes / validation**
-  - Audit Bitcoin Core sources (`src/torcontrol.cpp`, `src/net.cpp`, `src/netbase.cpp`) for nuanced error handling and stream-isolation behavior.
-  - Prototype `tor-interface::LegacyTorClient` vs. a minimal bespoke control-port client to decide which path we adopt.
-  - Benchmark Tor-backed sync using a Chutney testnet (connection latency, throughput, Tor CPU/memory) to validate assumptions.
-
-## Research Handover Checklist (For Next Engineer)
-- **Validate TorProvider options in practice**
-  - Confirm `LegacyTorClient` works cross-platform (Linux/macOS/Windows) with our deployment assumptions and note required Tor versions.
-  - Evaluate the experimental `arti` modes to confirm onion-service limitations and track upstream milestones for when we could switch.
-- **Prototype & Document**
-  - Build the proposed Tokio proof-of-concept (outbound SOCKS stream + onion listener) and commit the sample under `examples/` or a `research/` folder with usage instructions.
-  - Capture command-line steps for provisioning Tor control auth (cookie vs. hashed password) and any pitfalls (e.g., permissions).
-- **Networking Model Updates**
-  - Draft a proposal (diagram + notes) for extending `NetAddress` and related RPC/serialization flows to support onion URIs without breaking existing peers.
-  - Identify where address advertisement occurs (version message, address flow, RPC) and flag code touchpoints requiring onion-aware logic.
-- **Config & UX Alignment**
-  - Compare Bitcoin Core Tor CLI flags to our `Args` structure; produce a recommendation mapping (what we mirror verbatim vs. rename).
-  - Suggest telemetry/logging hooks to ensure Tor bootstrap and onion publication status surface clearly to users.
-- **Deliverables**
-- Update this document with findings, links, and TODOs.
-- Open GitHub issues or Notion tasks for any sizable follow-on work identified during research.
+- Packaging: do we continue to rely on system Tor, or bundle a managed daemon for desktop builds?
+- Observability: which control-port/metrics hooks should surface in diagnostics or dashboards?
+- Long-term Arti integration: timeline for swapping the control/hidden-service path to Arti once feature-complete.
 
 
 ## Reference Links
 1. `tor-interface` crate 0.6.0 (2025-10-03): <https://crates.io/crates/tor-interface>
-2. `hyper-socks2` crate 0.9.1 (2024-03-08): <https://crates.io/crates/hyper-socks2>
+2. `tokio-socks` crate 0.5.2 (2025-10-01): <https://crates.io/crates/tokio-socks>
 3. Arti Compatibility Notes (2025-10): <https://gitlab.torproject.org/tpo/core/arti/-/raw/main/doc/Compatibility.md>
 4. `tokio-socks` crate: <https://crates.io/crates/tokio-socks>
 5. `fast-socks5` crate: <https://crates.io/crates/fast-socks5>
@@ -782,18 +554,15 @@ Follow the phased approach in the "Rusty-Kaspa Tor Integration Design" section.
 
 ## Auxiliary Research Materials
 
-Detailed technical analysis documents are available in `/research/tor-integration/`:
+Detailed technical analysis documents are available under `research/tor-integration/`:
 
-1. **README_P2P_ANALYSIS.md** - Index and navigation guide
-2. **P2P_CONNECTION_ANALYSIS.md** - Detailed P2P connection flow analysis (289 lines)
-3. **P2P_QUICK_REFERENCE.txt** - Quick lookup table with file paths and line numbers
-4. **P2P_FINDINGS_SUMMARY.txt** - Executive summary of networking architecture
-5. **P2P_INJECTION_VISUAL.txt** - ASCII diagrams of connection flow and injection points
-6. **SOCKS_PROXY_IMPLEMENTATION.md** - Step-by-step SOCKS implementation guide
+1. [`research/tor-integration/README_P2P_ANALYSIS.md`](research/tor-integration/README_P2P_ANALYSIS.md) — index and navigation guide.
+2. [`research/tor-integration/P2P_CONNECTION_ANALYSIS.md`](research/tor-integration/P2P_CONNECTION_ANALYSIS.md) — detailed P2P connection flow analysis.
+3. [`research/tor-integration/P2P_QUICK_REFERENCE.txt`](research/tor-integration/P2P_QUICK_REFERENCE.txt) — quick lookup table with file paths and line numbers.
+4. [`research/tor-integration/P2P_FINDINGS_SUMMARY.txt`](research/tor-integration/P2P_FINDINGS_SUMMARY.txt) — executive summary of the networking architecture.
+5. [`research/tor-integration/P2P_INJECTION_VISUAL.txt`](research/tor-integration/P2P_INJECTION_VISUAL.txt) — ASCII diagrams of connection flow and injection points.
+6. [`research/tor-integration/SOCKS_PROXY_IMPLEMENTATION.md`](research/tor-integration/SOCKS_PROXY_IMPLEMENTATION.md) — step-by-step SOCKS implementation guide (superseded by the final connector code but kept for historical context).
 
-These documents provide granular implementation details and can serve as reference during development.
-
-Additional third-party research dumps (original prompts):  
-- `research/tor-integration/CHATGPT_RESEARCH.MD`  
-- `research/tor-integration/GEMINI_RESEARCH.MD`
-- Implementation progress: `FlowContext` now records an optional SOCKS endpoint and `ConnectionHandler::connect` uses a `tokio-socks`/`tower::Service` bridge (wrapped in `hyper_util::rt::TokioIo`) whenever Tor is enabled. `Adaptor::client_only`/`bidirectional` accept a `SocksProxyConfig` so the runtime toggles proxy behavior without knowledge of Tor internals.
+Additional third-party research dumps:
+- [`research/tor-integration/CHATGPT_RESEARCH.MD`](research/tor-integration/CHATGPT_RESEARCH.MD)
+- [`research/tor-integration/GEMINI_RESEARCH.MD`](research/tor-integration/GEMINI_RESEARCH.MD)
