@@ -17,7 +17,7 @@
 - ✅ Version-handshake now advertises Kaspa-specific `ADDRv2` capability (service bit) and tracks peer support in `PeerProperties`.
 - ✅ Address gossip respects Tor activation: onion addresses are only accepted/advertised when Tor is configured locally *and* the remote peer signalled `ADDRv2`; clearnet remains unchanged.
 - ✅ Added flow-level unit tests around the new onion-gossip helpers to guard regressions; integration tests will follow once the Tor harness is ready.
-- ✅ Hardened operator UX: Tor bootstrap failures now abort `--tor-only/--listen-onion` startups, logs highlight the persistent onion key for backups, and shutdown issues `DEL_ONION` to clean up hidden services.
+- ✅ Hardened operator UX: Tor bootstrap failures now abort `--tor-only/--listen-onion` startups, logs highlight the persistent onion key for backups, shutdown issues `DEL_ONION` to clean up hidden services, and a background `tor-service` continuously surfaces Tor control-port events.
 
 **Next implementation phases (parity with Bitcoin Core’s Tor stack):**
 1. CLI UX parity – document new flags and expand parity further (per-network proxy selection, config-file toggles).

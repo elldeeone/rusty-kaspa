@@ -3,6 +3,7 @@ use std::{
     io::{BufRead, BufReader, Write},
     net::{IpAddr, SocketAddr, TcpStream},
     path::PathBuf,
+    sync::Mutex,
     thread,
     time::{Duration, Instant},
 };
@@ -48,7 +49,7 @@ pub enum TorManagerError {
 /// system-tor integration). Future work will extend this to manage a bundled tor binary when one is not
 /// present on the host.
 pub struct TorManager {
-    client: LegacyTorClient,
+    client: Mutex<LegacyTorClient>,
     socks_addr: SocketAddr,
     control_addr: SocketAddr,
     auth: TorAuth,
@@ -71,7 +72,7 @@ impl TorManager {
         client.bootstrap()?;
         wait_for_bootstrap(&mut client, bootstrap_timeout)?;
 
-        Ok(Self { client, socks_addr, control_addr, auth })
+        Ok(Self { client: Mutex::new(client), socks_addr, control_addr, auth })
     }
 
     /// Return the SOCKS listener address that should be supplied to outbound networking components.
@@ -112,8 +113,8 @@ impl TorManager {
     }
 
     /// Poll underlying tor events. Consumers should call this periodically to drain bootstrap/log events.
-    pub fn update(&mut self) -> Result<Vec<TorEvent>, TorManagerError> {
-        Ok(self.client.update()?)
+    pub fn update(&self) -> Result<Vec<TorEvent>, TorManagerError> {
+        Ok(self.client.lock().unwrap().update()?)
     }
 
     /// Create a persistent onion service bound to the provided virtual port and local target.
@@ -126,18 +127,13 @@ impl TorManager {
         virt_port: u16,
         authorized_clients: Option<&[X25519PublicKey]>,
     ) -> Result<OnionListener, TorManagerError> {
-        let listener = self.client.listener(private_key, virt_port, authorized_clients)?;
+        let listener = self.client.lock().unwrap().listener(private_key, virt_port, authorized_clients)?;
         Ok(listener)
     }
 
     /// Convenience for deriving the v3 onion identifier from a private key.
     pub fn onion_id_for(private_key: &Ed25519PrivateKey) -> V3OnionServiceId {
         V3OnionServiceId::from_private_key(private_key)
-    }
-
-    /// Access the underlying client for advanced operations that are not yet wrapped by the manager.
-    pub fn client_mut(&mut self) -> &mut LegacyTorClient {
-        &mut self.client
     }
 
     /// Load an Ed25519 onion service key from disk (c-tor key-blob format).

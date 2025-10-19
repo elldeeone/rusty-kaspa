@@ -3,7 +3,7 @@ use std::{
     net::SocketAddr,
     path::{Path, PathBuf},
     process::exit,
-    sync::Arc,
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -86,7 +86,10 @@ use crate::{
     args::Args,
     tor_manager::{TorManager, TorManagerError, TorSystemConfig},
 };
-use tor_interface::tor_crypto::{Ed25519PrivateKey, V3OnionServiceId};
+use tor_interface::{
+    tor_crypto::{Ed25519PrivateKey, V3OnionServiceId},
+    tor_provider::TorEvent,
+};
 
 const DEFAULT_DATA_DIR: &str = "datadir";
 const CONSENSUS_DB: &str = "consensus";
@@ -285,13 +288,60 @@ struct TorRuntimeService {
     manager: Arc<TorManager>,
     onion_service_id: Option<V3OnionServiceId>,
     shutdown: SingleTrigger,
+    state: Mutex<TorServiceState>,
+}
+
+#[derive(Default)]
+struct TorServiceState {
+    last_bootstrap_progress: Option<u32>,
+    bootstrap_complete_logged: bool,
 }
 
 impl TorRuntimeService {
     const IDENT: &'static str = "tor-service";
+    const POLL_INTERVAL: Duration = Duration::from_secs(5);
 
     fn new(manager: Arc<TorManager>, onion_service_id: Option<V3OnionServiceId>) -> Self {
-        Self { manager, onion_service_id, shutdown: SingleTrigger::default() }
+        Self { manager, onion_service_id, shutdown: SingleTrigger::default(), state: Mutex::new(TorServiceState::default()) }
+    }
+
+    fn poll_events(&self) -> Result<(), TorManagerError> {
+        let events = self.manager.update()?;
+        if events.is_empty() {
+            return Ok(());
+        }
+
+        for event in events {
+            match event {
+                TorEvent::BootstrapStatus { progress, tag, summary } => {
+                    let mut state = self.state.lock().unwrap();
+                    if state.last_bootstrap_progress != Some(progress) {
+                        info!("Tor bootstrap {progress}% - {tag}: {summary}");
+                        state.last_bootstrap_progress = Some(progress);
+                    }
+                }
+                TorEvent::BootstrapComplete => {
+                    let mut state = self.state.lock().unwrap();
+                    if !state.bootstrap_complete_logged {
+                        info!("Tor bootstrap complete");
+                        state.bootstrap_complete_logged = true;
+                    }
+                }
+                TorEvent::LogReceived { line } => {
+                    debug!("Tor: {line}");
+                }
+                TorEvent::OnionServicePublished { service_id } => {
+                    info!("Tor hidden service {service_id} is now published");
+                }
+                TorEvent::ConnectComplete { .. } => {
+                    trace!("Tor outbound connect completed");
+                }
+                TorEvent::ConnectFailed { error, .. } => {
+                    warn!("Tor outbound connect failed: {error}");
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -301,9 +351,21 @@ impl AsyncService for TorRuntimeService {
     }
 
     fn start(self: Arc<Self>) -> AsyncServiceFuture {
-        let shutdown = self.shutdown.listener.clone();
         Box::pin(async move {
-            shutdown.await;
+            trace!("{} starting event loop", Self::IDENT);
+            let shutdown = self.shutdown.listener.clone();
+            tokio::pin!(shutdown);
+            let mut ticker = tokio::time::interval(Self::POLL_INTERVAL);
+            loop {
+                tokio::select! {
+                    _ = &mut shutdown => break,
+                    _ = ticker.tick() => {
+                        if let Err(err) = self.poll_events() {
+                            warn!("Tor event polling failed: {}", err);
+                        }
+                    }
+                }
+            }
             trace!("{} stopping event loop", Self::IDENT);
             Ok(())
         })
