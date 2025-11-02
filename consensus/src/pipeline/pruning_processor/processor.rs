@@ -43,7 +43,9 @@ use kaspa_utils::iter::IterExtensions;
 use parking_lot::RwLockUpgradableReadGuard;
 use rocksdb::WriteBatch;
 use std::{
+    collections::BTreeMap,
     collections::{hash_map::Entry::Vacant, VecDeque},
+    mem,
     ops::Deref,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -55,6 +57,156 @@ use std::{
 pub enum PruningProcessingMessage {
     Exit,
     Process { sink_ghostdag_data: CompactGhostdagData },
+}
+
+#[derive(Default)]
+struct CommitStats {
+    commits: usize,
+    total_ops: usize,
+    max_ops: usize,
+    total_bytes: usize,
+    max_bytes: usize,
+    total_duration: Duration,
+    max_duration: Duration,
+}
+
+impl CommitStats {
+    fn record(&mut self, ops: usize, bytes: usize, duration: Duration) {
+        self.commits += 1;
+        self.total_ops += ops;
+        self.max_ops = self.max_ops.max(ops);
+        self.total_bytes += bytes;
+        self.max_bytes = self.max_bytes.max(bytes);
+        self.total_duration += duration;
+        self.max_duration = self.max_duration.max(duration);
+    }
+}
+
+struct PruningPhaseMetrics {
+    started: Instant,
+    commit_stats: BTreeMap<&'static str, CommitStats>,
+    total_traversed: usize,
+    total_pruned: usize,
+    total_lock_hold: Duration,
+    lock_yield_count: usize,
+    lock_reacquire_count: usize,
+}
+
+impl PruningPhaseMetrics {
+    fn new() -> Self {
+        Self {
+            started: Instant::now(),
+            commit_stats: BTreeMap::new(),
+            total_traversed: 0,
+            total_pruned: 0,
+            total_lock_hold: Duration::ZERO,
+            lock_yield_count: 0,
+            lock_reacquire_count: 0,
+        }
+    }
+
+    fn record_commit(&mut self, context: &'static str, ops: usize, bytes: usize, duration: Duration) {
+        self.commit_stats.entry(context).or_default().record(ops, bytes, duration);
+    }
+
+    fn record_lock_yield(&mut self, held: Duration) {
+        self.total_lock_hold += held;
+        self.lock_yield_count += 1;
+    }
+
+    fn finalize_lock_hold(&mut self, held: Duration) {
+        self.total_lock_hold += held;
+    }
+
+    fn record_lock_reacquire(&mut self) {
+        self.lock_reacquire_count += 1;
+    }
+
+    fn set_traversed(&mut self, traversed: usize, pruned: usize) {
+        self.total_traversed = traversed;
+        self.total_pruned = pruned;
+    }
+
+    fn log_summary(&self) {
+        let elapsed_ms = self.started.elapsed().as_millis();
+        info!(
+            "[PRUNING METRICS] duration_ms={} traversed={} pruned={} lock_hold_ms={} lock_yields={} lock_reacquires={}",
+            elapsed_ms,
+            self.total_traversed,
+            self.total_pruned,
+            self.total_lock_hold.as_millis(),
+            self.lock_yield_count,
+            self.lock_reacquire_count
+        );
+        for (context, stats) in &self.commit_stats {
+            let avg_ops = if stats.commits == 0 { 0.0 } else { stats.total_ops as f64 / stats.commits as f64 };
+            let avg_bytes = if stats.commits == 0 { 0.0 } else { stats.total_bytes as f64 / stats.commits as f64 };
+            let avg_duration_ms =
+                if stats.commits == 0 { 0.0 } else { stats.total_duration.as_secs_f64() * 1000.0 / stats.commits as f64 };
+            info!(
+                "[PRUNING METRICS] commit_type={} count={} avg_ops={:.2} max_ops={} avg_bytes={:.2} max_bytes={} avg_commit_ms={:.3} max_commit_ms={:.3}",
+                context,
+                stats.commits,
+                avg_ops,
+                stats.max_ops,
+                avg_bytes,
+                stats.max_bytes,
+                avg_duration_ms,
+                stats.max_duration.as_secs_f64() * 1000.0
+            );
+        }
+    }
+}
+
+const PRUNE_BATCH_MAX_BLOCKS: usize = usize::MAX;
+const PRUNE_BATCH_MAX_OPS: usize = usize::MAX;
+const PRUNE_BATCH_MAX_BYTES: usize = usize::MAX;
+const PRUNE_BATCH_MAX_DURATION_MS: u64 = u64::MAX;
+const PRUNE_LOCK_MAX_DURATION_MS: u64 = u64::MAX;
+
+struct PruneBatch {
+    batch: WriteBatch,
+    block_count: usize,
+    started: Option<Instant>,
+}
+
+impl PruneBatch {
+    fn new() -> Self {
+        Self { batch: WriteBatch::default(), block_count: 0, started: None }
+    }
+
+    fn on_block_staged(&mut self) {
+        if self.block_count == 0 {
+            self.started = Some(Instant::now());
+        }
+        self.block_count += 1;
+    }
+
+    fn len(&self) -> usize {
+        self.batch.len()
+    }
+
+    fn size_in_bytes(&self) -> usize {
+        self.batch.size_in_bytes()
+    }
+
+    fn blocks(&self) -> usize {
+        self.block_count
+    }
+
+    fn elapsed(&self) -> Duration {
+        self.started.map(|t| t.elapsed()).unwrap_or_default()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.batch.len() == 0
+    }
+
+    fn take(&mut self) -> WriteBatch {
+        self.block_count = 0;
+        self.started = None;
+        mem::take(&mut self.batch)
+    }
 }
 
 /// A processor dedicated for moving the pruning point and pruning any possible data in its past
@@ -260,6 +412,7 @@ impl PruningProcessor {
         }
 
         info!("Header and Block pruning: preparing proof and anticone data...");
+        let mut metrics = PruningPhaseMetrics::new();
 
         let proof = self.pruning_proof_manager.get_pruning_point_proof();
         let data = self
@@ -312,7 +465,11 @@ impl PruningProcessor {
                     self.ghostdag_store.update_batch(&mut batch, kept, &Arc::new(mutable_ghostdag.into())).unwrap();
                 }
             }
+            let ops = batch.len();
+            let bytes = batch.size_in_bytes();
+            let commit_start = Instant::now();
             self.db.write(batch).unwrap();
+            metrics.record_commit("ghostdag_adjust", ops, bytes, commit_start.elapsed());
             info!("Header and Block pruning: updated ghostdag data for {} blocks", counter);
         }
 
@@ -354,6 +511,7 @@ impl PruningProcessor {
         prune_guard = self.pruning_lock.blocking_write();
         let mut lock_acquire_time = Instant::now();
         let mut reachability_read = self.reachability_store.upgradable_read();
+        metrics.record_lock_reacquire();
 
         {
             // Start with a batch for pruning body tips and selected chain stores
@@ -393,7 +551,11 @@ impl PruningProcessor {
             }
 
             // Flush the batch to the DB
+            let ops = batch.len();
+            let bytes = batch.size_in_bytes();
+            let commit_start = Instant::now();
             self.db.write(batch).unwrap();
+            metrics.record_commit("tips_and_selected_chain", ops, bytes, commit_start.elapsed());
 
             // Calling the drops explicitly after the batch is written in order to avoid possible errors.
             drop(selected_chain_write);
@@ -402,6 +564,7 @@ impl PruningProcessor {
 
         // Now we traverse the anti-future of the new pruning point starting from origin and going up.
         // The most efficient way to traverse the entire DAG from the bottom-up is via the reachability tree
+        let mut prune_batch = PruneBatch::new();
         let mut queue = VecDeque::<Hash>::from_iter(reachability_read.get_children(ORIGIN).unwrap().iter().copied());
         let (mut counter, mut traversed) = (0, 0);
         info!("Header and Block pruning: starting traversal from: {} (genesis: {})", queue.iter().reusable_format(", "), genesis);
@@ -413,20 +576,6 @@ impl PruningProcessor {
             // Obtain the tree children of `current` and push them to the queue before possibly being deleted below
             queue.extend(reachability_read.get_children(current).unwrap().iter());
 
-            // If we have the lock for more than a few milliseconds, release and recapture to allow consensus progress during pruning
-            if lock_acquire_time.elapsed() > Duration::from_millis(5) {
-                drop(reachability_read);
-                // An exit signal was received. Exit from this long running process.
-                if self.is_consensus_exiting.load(Ordering::Relaxed) {
-                    drop(prune_guard);
-                    info!("Header and Block pruning interrupted: Process is exiting");
-                    return;
-                }
-                prune_guard.blocking_yield();
-                lock_acquire_time = Instant::now();
-                reachability_read = self.reachability_store.upgradable_read();
-            }
-
             if traversed % 1000 == 0 {
                 info!("Header and Block pruning: traversed: {}, pruned {}...", traversed, counter);
             }
@@ -436,7 +585,6 @@ impl PruningProcessor {
             self.block_window_cache_for_past_median_time.remove(&current);
 
             if !keep_blocks.contains(&current) {
-                let mut batch = WriteBatch::default();
                 let mut level_relations_write = self.relations_stores.write();
                 let mut reachability_relations_write = self.reachability_relations_store.write();
                 let mut staging_relations = StagingRelationsStore::new(&mut reachability_relations_write);
@@ -444,10 +592,10 @@ impl PruningProcessor {
                 let mut statuses_write = self.statuses_store.write();
 
                 // Prune data related to block bodies and UTXO state
-                self.utxo_multisets_store.delete_batch(&mut batch, current).unwrap();
-                self.utxo_diffs_store.delete_batch(&mut batch, current).unwrap();
-                self.acceptance_data_store.delete_batch(&mut batch, current).unwrap();
-                self.block_transactions_store.delete_batch(&mut batch, current).unwrap();
+                self.utxo_multisets_store.delete_batch(&mut prune_batch.batch, current).unwrap();
+                self.utxo_diffs_store.delete_batch(&mut prune_batch.batch, current).unwrap();
+                self.acceptance_data_store.delete_batch(&mut prune_batch.batch, current).unwrap();
+                self.block_transactions_store.delete_batch(&mut prune_batch.batch, current).unwrap();
 
                 if let Some(&affiliated_proof_level) = keep_relations.get(&current) {
                     if statuses_write.get(current).unwrap_option().is_some_and(|s| s.is_valid()) {
@@ -455,7 +603,7 @@ impl PruningProcessor {
                         // status. This is important since some proof headers might not have their status set
                         // and we would like to preserve this semantic (having a valid status implies that
                         // other parts of the code assume the existence of GD data etc.)
-                        statuses_write.set_batch(&mut batch, current, StatusHeaderOnly).unwrap();
+                        statuses_write.set_batch(&mut prune_batch.batch, current, StatusHeaderOnly).unwrap();
                     }
 
                     // Delete level-x relations for blocks which only belong to higher-than-x proof levels.
@@ -463,10 +611,10 @@ impl PruningProcessor {
                     for lower_level in 0..affiliated_proof_level as usize {
                         let mut staging_level_relations = StagingRelationsStore::new(&mut level_relations_write[lower_level]);
                         relations::delete_level_relations(MemoryWriter, &mut staging_level_relations, current).unwrap_option();
-                        staging_level_relations.commit(&mut batch).unwrap();
+                        staging_level_relations.commit(&mut prune_batch.batch).unwrap();
 
                         if lower_level == 0 {
-                            self.ghostdag_store.delete_batch(&mut batch, current).unwrap_option();
+                            self.ghostdag_store.delete_batch(&mut prune_batch.batch, current).unwrap_option();
                         }
                     }
                 } else {
@@ -485,45 +633,71 @@ impl PruningProcessor {
                     (0..=block_level as usize).for_each(|level| {
                         let mut staging_level_relations = StagingRelationsStore::new(&mut level_relations_write[level]);
                         relations::delete_level_relations(MemoryWriter, &mut staging_level_relations, current).unwrap_option();
-                        staging_level_relations.commit(&mut batch).unwrap();
+                        staging_level_relations.commit(&mut prune_batch.batch).unwrap();
                     });
 
-                    self.ghostdag_store.delete_batch(&mut batch, current).unwrap_option();
+                    self.ghostdag_store.delete_batch(&mut prune_batch.batch, current).unwrap_option();
 
                     // Remove additional header related data
-                    self.daa_excluded_store.delete_batch(&mut batch, current).unwrap();
-                    self.depth_store.delete_batch(&mut batch, current).unwrap();
+                    self.daa_excluded_store.delete_batch(&mut prune_batch.batch, current).unwrap();
+                    self.depth_store.delete_batch(&mut prune_batch.batch, current).unwrap();
                     // Remove status completely
-                    statuses_write.delete_batch(&mut batch, current).unwrap();
+                    statuses_write.delete_batch(&mut prune_batch.batch, current).unwrap();
 
                     if !keep_headers.contains(&current) {
                         // Prune the actual headers
-                        self.headers_store.delete_batch(&mut batch, current).unwrap();
+                        self.headers_store.delete_batch(&mut prune_batch.batch, current).unwrap();
 
                         // We want to keep the pruning sample from POV for past pruning points
                         // so that pruning point queries keep working for blocks right after the current
                         // pruning point (keep_headers contains the past pruning points)
-                        self.pruning_samples_store.delete_batch(&mut batch, current).unwrap();
+                        self.pruning_samples_store.delete_batch(&mut prune_batch.batch, current).unwrap();
                     }
                 }
 
-                let reachability_write = staging_reachability.commit(&mut batch).unwrap();
-                staging_relations.commit(&mut batch).unwrap();
+                let reachability_write = staging_reachability.commit(&mut prune_batch.batch).unwrap();
+                staging_relations.commit(&mut prune_batch.batch).unwrap();
 
-                // Flush the batch to the DB
-                self.db.write(batch).unwrap();
-
-                // Calling the drops explicitly after the batch is written in order to avoid possible errors.
+                // Calling the drops explicitly after the staging data is written to the batch in order to avoid possible errors.
                 drop(reachability_write);
                 drop(statuses_write);
                 drop(reachability_relations_write);
                 drop(level_relations_write);
 
-                reachability_read = self.reachability_store.upgradable_read();
+                prune_batch.on_block_staged();
+
+                let lock_elapsed = lock_acquire_time.elapsed();
+                let should_flush = self.should_flush_prune_batch(&prune_batch, lock_elapsed);
+                if should_flush {
+                    if self.is_consensus_exiting.load(Ordering::Relaxed) {
+                        drop(prune_guard);
+                        info!("Header and Block pruning interrupted: Process is exiting");
+                        return;
+                    }
+                    self.flush_prune_batch(&mut prune_batch, &mut metrics);
+                    metrics.record_lock_yield(lock_elapsed);
+                    prune_guard.blocking_yield();
+                    lock_acquire_time = Instant::now();
+                    reachability_read = self.reachability_store.upgradable_read();
+                    metrics.record_lock_reacquire();
+                } else {
+                    reachability_read = self.reachability_store.upgradable_read();
+                    metrics.record_lock_reacquire();
+                }
             }
         }
 
         drop(reachability_read);
+
+        {
+            let mut pruning_point_write = self.pruning_point_store.write();
+            pruning_point_write.set_retention_checkpoint(&mut prune_batch.batch, retention_period_root).unwrap();
+            drop(pruning_point_write);
+        }
+
+        self.flush_prune_batch(&mut prune_batch, &mut metrics);
+
+        metrics.finalize_lock_hold(lock_acquire_time.elapsed());
         drop(prune_guard);
 
         info!("Header and Block pruning completed: traversed: {}, pruned {}", traversed, counter);
@@ -540,14 +714,33 @@ impl PruningProcessor {
             self.assert_data_rebuilding(data, new_pruning_point);
         }
 
-        {
-            // Set the retention checkpoint to the new retention root only after we successfully pruned its past
-            let mut pruning_point_write = self.pruning_point_store.write();
-            let mut batch = WriteBatch::default();
-            pruning_point_write.set_retention_checkpoint(&mut batch, retention_period_root).unwrap();
-            self.db.write(batch).unwrap();
-            drop(pruning_point_write);
+        metrics.set_traversed(traversed, counter);
+        metrics.log_summary();
+    }
+
+    fn should_flush_prune_batch(&self, batch: &PruneBatch, lock_elapsed: Duration) -> bool {
+        if batch.is_empty() {
+            return false;
         }
+
+        batch.blocks() >= PRUNE_BATCH_MAX_BLOCKS
+            || batch.len() >= PRUNE_BATCH_MAX_OPS
+            || batch.size_in_bytes() >= PRUNE_BATCH_MAX_BYTES
+            || batch.elapsed() >= Duration::from_millis(PRUNE_BATCH_MAX_DURATION_MS)
+            || lock_elapsed >= Duration::from_millis(PRUNE_LOCK_MAX_DURATION_MS)
+    }
+
+    fn flush_prune_batch(&self, batch: &mut PruneBatch, metrics: &mut PruningPhaseMetrics) {
+        if batch.is_empty() {
+            return;
+        }
+
+        let ops = batch.len();
+        let bytes = batch.size_in_bytes();
+        let commit_start = Instant::now();
+        let write_batch = batch.take();
+        self.db.write(write_batch).unwrap();
+        metrics.record_commit("batched", ops, bytes, commit_start.elapsed());
     }
 
     /// Adjusts the retention period root to latest pruning point sample that covers the retention period.
