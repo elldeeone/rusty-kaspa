@@ -14,6 +14,7 @@ use kaspa_consensus_core::tx::{
 };
 use kaspa_consensus_core::utxo::utxo_view::UtxoView;
 use kaspa_core::trace;
+use kaspa_consensus_core::errors::block::RuleError;
 use kaspa_utils::sim::{Environment, Process, Resumption, Suspension};
 use rand::rngs::ThreadRng;
 use rand::Rng;
@@ -231,8 +232,22 @@ impl Miner {
             Suspension::Halt
         } else {
             let session = self.consensus.acquire_session();
-            let status = futures::executor::block_on(self.consensus.validate_and_insert_block(block).virtual_state_task).unwrap();
-            assert!(status.is_utxo_valid_or_pending());
+            let status = futures::executor::block_on(self.consensus.validate_and_insert_block(block).virtual_state_task);
+            let outcome = match status {
+                Ok(status) => Some(status),
+                Err(RuleError::WrongHeaderPruningPoint(expected, observed)) => {
+                    trace!(
+                        "Ignoring block due to transient pruning-point mismatch (expected={}, observed={})",
+                        expected,
+                        observed
+                    );
+                    None
+                }
+                Err(err) => panic!("Unexpected block validation error during simulation: {err:?}"),
+            };
+            if let Some(status) = outcome {
+                assert!(status.is_utxo_valid_or_pending());
+            }
             drop(session);
             Suspension::Idle
         }

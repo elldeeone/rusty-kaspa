@@ -35,6 +35,29 @@ Gather reproducible measurements for the current pruning workflow before making 
 
 4. **Optional profiling hooks.** With the same build, you can attach `cargo flamegraph --root --bin kaspad ...` during pruning to corroborate database hot spots without further code changes.
 
+## Fast Iteration via Simpa Harness
+
+For rapid local testing, the Simpa simulator can generate a deterministic DAG and rerun pruning in a few minutes. A helper script is now available:
+
+```bash
+./pruning-optimisation/run-simpa-pruning.sh
+```
+
+Behaviour:
+
+- On the first run it generates a synthetic history (`cargo run --bin simpa`) and stores the RocksDB under `pruning-optimisation/baseline/experiments/simpa-db`.
+- Subsequent runs reuse the DB and only execute the pruning/validation phase, so each test cycle completes quickly.
+- Logs are written to `pruning-optimisation/baseline/experiments/simpa-prune-<timestamp>.log`.
+- `[PRUNING METRICS]` entries are automatically exported to `*.csv` via `scripts/collect_pruning_metrics.py`.
+
+Environment overrides allow further tuning without editing the script, for example:
+
+```bash
+SIMPA_BPS=4 SIMPA_TARGET_BLOCKS=4000 ./pruning-optimisation/run-simpa-pruning.sh --long-payload
+```
+
+Any additional arguments after the script name are forwarded directly to Simpa, enabling experimentation with RocksDB stats, logging, etc.
+
 ## Output Handling
 
 Persist extracted metrics (CSV or spreadsheet) alongside environment details:
