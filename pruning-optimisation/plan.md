@@ -1,9 +1,11 @@
 # Pruning Optimisation Plan
 
 ## Phase 0 – Confirm Baseline via Simpa
-1. Run `./pruning-optimisation/run-simpa-pruning.sh` with tuned params (`SIMPA_TARGET_BLOCKS=8000`, `SIMPA_RETENTION_DAYS=0.2`).
-2. Archive `simpa-prune-*.log/csv` as baseline reference (`baseline/experiments/simpa-baseline.csv`).
-3. Extract key metrics (commit counts, avg ops/bytes, lock stats) into a short summary table.
+1. Capture two harness runs:
+   - `SIMPA_BPS=2 SIMPA_TARGET_BLOCKS=2000 SIMPA_RETENTION_DAYS=0.05`
+   - `SIMPA_BPS=10 SIMPA_TARGET_BLOCKS=6000 SIMPA_RETENTION_DAYS=0.05`
+2. Archive the logs/CSVs under `pruning-optimisation/baseline/experiments/` (`simpa-phase0-baseline-{2bps,10bps}.{log,csv}`).
+3. Summarise commit/lock metrics so every future pruning change can be compared against these references.
 
 ## Phase 1 – Implement Batched Pruning
 1. Add `PruneBatchContext` to `consensus/src/pipeline/pruning_processor/processor.rs` per design doc.
