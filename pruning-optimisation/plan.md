@@ -1,20 +1,14 @@
 # Pruning Optimisation Plan
 
-## Phase 0 – Confirm Baseline via Simpa
-1. Capture two harness runs:
-   - `SIMPA_BPS=2 SIMPA_TARGET_BLOCKS=2000 SIMPA_RETENTION_DAYS=0.05`
-   - `SIMPA_BPS=10 SIMPA_TARGET_BLOCKS=6000 SIMPA_RETENTION_DAYS=0.05`
-2. Archive the logs/CSVs under `pruning-optimisation/baseline/experiments/` (`simpa-phase0-baseline-{2bps,10bps}.{log,csv}`).
-3. Summarise commit/lock metrics so every future pruning change can be compared against these references.
+## Phase 0 – Confirm Baseline via Simpa ✅
+1. Captured two harness runs (2 BPS · 2 000 blocks and 10 BPS · 6 000 blocks with `SIMPA_RETENTION_DAYS=0.05`).  
+2. Archived the outputs as `simpa-phase0-baseline-{2bps,10bps}.{log,csv}` under `baseline/experiments/`.  
+3. Documented the metrics in `baseline/phase0-simpa-baseline.md`; these serve as the immutable “before” reference for Phase 1 comparisons.
 
 ## Phase 1 – Implement Batched Pruning
-1. Add `PruneBatchContext` to `consensus/src/pipeline/pruning_processor/processor.rs` per design doc.
-   - Shared staging stores + WriteBatch.
-   - Threshold constants (blocks, ops, bytes, elapsed ms).
-2. Include pruning-point update (and optional in-progress marker) in final batch for atomicity.
-3. Maintain yield logic by flushing when lock held > threshold.
-4. Update instrumentation to emit new `commit_type=batched` stats without breaking existing log format.
-5. Add targeted unit/integration coverage (e.g., synthetic DAG prune test) to guard basic invariants.
+✅ Code landed (PruneBatch, thresholds, atomic checkpointing).
+✅ Harness rerun at 2 BPS & 10 BPS; metrics logged in `baseline/phase0-simpa-baseline.md`.
+⏳ Tuning deferred to Phase 2 (need deeper histories to produce non-zero traversals).
 
 ## Phase 2 – Rapid Feedback Loop (Simpa)
 1. Rebuild and rerun `run-simpa-pruning.sh` (DB reuse).

@@ -114,3 +114,20 @@ These metrics will confirm batching effectiveness and help tune thresholds.
 1. Prototype `PruneBatchContext` and restructure the per-block loop (Phase 2 implementation).
 2. Run the same testnet baseline with new code, collect `[PRUNING METRICS]`, and compare commit counts/latency.
 3. Iterate on thresholds and lock timing; document tuning results.
+
+## 7. Phase 1 Implementation Status (2025-11-05)
+
+Phase 1 refactoring is in place. The pruning processor now stages all deletions in a long-lived `PruneBatch`, flushes using configurable thresholds, and records every RocksDB write through the existing `[PRUNING METRICS]` path. Simpa harness runs confirm the new flow works for both the low- and high-BPS scenarios (none of the sanity checks fired).
+
+| Profile | `commit_type` | Baseline count / avg bytes | Batched count / avg bytes | Notes |
+| --- | --- | --- | --- | --- |
+| 2 BPS · 2 000 blocks | `ghostdag_adjust` | 2 commits · 12 B | 2 commits · 12 B | No change – per-block staging doesn’t touch these writes |
+| 2 BPS · 2 000 blocks | `tips_and_selected_chain` | 2 commits · 117 B | 2 commits · 99 B | Slight drop (fewer tips pruned) |
+| 2 BPS · 2 000 blocks | `retention_checkpoint` | 2 commits · 48 B | **0** (folded into batched flush) | Retention checkpoint now rides the main batch |
+| 2 BPS · 2 000 blocks | `batched` | – | 2 commits · 48 B | Each prune cycle emits a single `batched` write (still tiny because no traversal occurs) |
+| 10 BPS · 6 000 blocks | `ghostdag_adjust` | 2 commits · 12 B | 4 commits · 12 B | Extra pruning cycles due to higher throughput |
+| 10 BPS · 6 000 blocks | `tips_and_selected_chain` | 2 commits · 362 B | 4 commits · 336 B | More cycles, slightly smaller payloads |
+| 10 BPS · 6 000 blocks | `retention_checkpoint` | 2 commits · 48 B | **0** (included in `batched`) | Same change as 2 BPS |
+| 10 BPS · 6 000 blocks | `batched` | – | 4 commits · 48 B | Flushes happen once per prune cycle |
+
+**Key observation:** the retention window used for Phase 0 is so shallow that the traversal loop never stages more than a handful of blocks; consequently each `batched` commit still contains ≈48 B (retention checkpoint only) and there is no measurable throughput gain yet. To quantify batching benefits we will need larger histories (or a smaller retention target) so that `per_block` deletions actually accumulate before a flush. That tuning is scheduled for Phase 2.
