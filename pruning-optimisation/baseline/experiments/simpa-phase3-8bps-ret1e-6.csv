@@ -1,0 +1,9 @@
+source,kind,commit_type,count,avg_ops,max_ops,avg_bytes,max_bytes,avg_commit_ms,max_commit_ms,duration_ms,traversed,pruned,lock_hold_ms,lock_yields,lock_reacquires
+pruning-optimisation/baseline/experiments/simpa-prune-20251105-215329.log,summary,,,,,,,,,15,33,15,0,1,24
+pruning-optimisation/baseline/experiments/simpa-prune-20251105-215329.log,commit,batched,1,367.00,367,29911.00,29911,0.161,0.161,,,,,,
+pruning-optimisation/baseline/experiments/simpa-prune-20251105-215329.log,commit,ghostdag_adjust,1,0.00,0,12.00,12,0.004,0.004,,,,,,
+pruning-optimisation/baseline/experiments/simpa-prune-20251105-215329.log,commit,tips_and_selected_chain,1,8.00,8,244.00,244,0.009,0.009,,,,,,
+pruning-optimisation/baseline/experiments/simpa-prune-20251105-215329.log,summary,,,,,,,,,14,48,14,0,1,41
+pruning-optimisation/baseline/experiments/simpa-prune-20251105-215329.log,commit,batched,1,657.00,657,37458.00,37458,0.278,0.278,,,,,,
+pruning-optimisation/baseline/experiments/simpa-prune-20251105-215329.log,commit,ghostdag_adjust,1,0.00,0,12.00,12,0.005,0.005,,,,,,
+pruning-optimisation/baseline/experiments/simpa-prune-20251105-215329.log,commit,tips_and_selected_chain,1,12.00,12,384.00,384,0.009,0.009,,,,,,

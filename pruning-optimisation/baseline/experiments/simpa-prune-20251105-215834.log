@@ -1,0 +1,14 @@
+2025-11-05 21:58:35.725+11:00 [INFO ] simpa v1.0.1
+2025-11-05 21:58:35.725+11:00 [INFO ] Simpa configuration: target_blocks=None, retention_days=Some(5e-6), bps=10, delay=2, output_dir=None, input_dir=Some("/tmp/simpa-phase3-crash2")
+2025-11-05 21:58:35.725+11:00 [INFO ] 2Dλ=40, GHOSTDAG K=124, DAA window size=661
+2025-11-05 21:58:35.725+11:00 [INFO ] Setting pruning depth to ForkedParam { pre: 10, post: 10, activation: ForkActivation(900) }
+2025-11-05 21:58:35.841+11:00 [DEBUG] Memory configuration: UTXO changed events wil be tracked for at most 1835007 addresses
+2025-11-05 21:58:35.841+11:00 [DEBUG] Creating an address tracker with a capacity of 0
+2025-11-05 21:58:35.841+11:00 [TRACE] UtxosChangedSubscription: 1 in total (new all)
+2025-11-05 21:58:35.841+11:00 [TRACE] UtxosChangedSubscription: 2 in total (new none)
+2025-11-05 21:58:35.843+11:00 [INFO ] [DELAY=2, BPS=10, GHOSTDAG K=6]
+2025-11-05 21:58:35.843+11:00 [INFO ] [Average stats of generated DAG] blues: 2.989130434782609, reds: 1.684782608695652, parents: 3.8369565217391304, txs: 1
+2025-11-05 21:58:35.843+11:00 [INFO ] There are 92 blocks with 92 transactions overall above the current pruning point
+2025-11-05 21:58:35.843+11:00 [INFO ] There are 92 blocks above the retention period root
+2025-11-05 21:58:35.844+11:00 [TRACE] UtxosChangedSubscription: 1 in total (drop none)
+2025-11-05 21:58:35.844+11:00 [TRACE] UtxosChangedSubscription: 0 in total (drop all)

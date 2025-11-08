@@ -10,7 +10,12 @@ set -euo pipefail
 #   SIMPA_TARGET_BLOCKS - number of blocks to generate when no DB exists (default: 2000)
 #   SIMPA_TPB      - target txs per block (default: 64)
 #   SIMPA_RETENTION_DAYS - pruning retention window in days (default: 0.05 ~= 72 minutes)
-#   SIMPA_LOGLEVEL - log level passed to Simpa/kaspad (default: info,consensus=trace,pruning_processor=trace,simpa=info)
+#   SIMPA_LOGLEVEL - log level passed to Simpa/kaspad (default: info,consensus=trace,pruning_processor=trace,kaspa_consensus::pipeline::pruning_processor::processor=trace,simpa=info)
+#   SIMPA_MINERS - number of miners to simulate (default: 1)
+#   SIMPA_LONG_PAYLOAD - set to 1 to enable --long-payload (stress larger blocks)
+#   SIMPA_ROCKSDB_STATS - set to 1 to enable RocksDB statistics logging
+#   SIMPA_ROCKSDB_STATS_PERIOD_SEC - optional period (seconds) for RocksDB stats sampling when SIMPA_ROCKSDB_STATS=1
+#   SIMPA_ROCKSDB_PIPELINED - set to 1 to enable RocksDB pipelined writes during the run
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 EXPERIMENT_DIR="${ROOT_DIR}/pruning-optimisation/baseline/experiments"
@@ -22,7 +27,13 @@ SIMPA_DELAY="${SIMPA_DELAY:-2.0}"
 SIMPA_TARGET_BLOCKS="${SIMPA_TARGET_BLOCKS:-2000}"
 SIMPA_TPB="${SIMPA_TPB:-64}"
 SIMPA_RETENTION_DAYS="${SIMPA_RETENTION_DAYS:-0.05}"
-SIMPA_LOGLEVEL="${SIMPA_LOGLEVEL:-info,consensus=trace,pruning_processor=trace,simpa=info}"
+SIMPA_LOGLEVEL="${SIMPA_LOGLEVEL:-info,consensus=trace,pruning_processor=trace,kaspa_consensus::pipeline::pruning_processor::processor=trace,simpa=info}"
+SIMPA_FORCE_REBUILD="${SIMPA_FORCE_REBUILD:-0}"
+SIMPA_MINERS="${SIMPA_MINERS:-1}"
+SIMPA_LONG_PAYLOAD="${SIMPA_LONG_PAYLOAD:-0}"
+SIMPA_ROCKSDB_STATS="${SIMPA_ROCKSDB_STATS:-0}"
+SIMPA_ROCKSDB_STATS_PERIOD_SEC="${SIMPA_ROCKSDB_STATS_PERIOD_SEC:-}"
+SIMPA_ROCKSDB_PIPELINED="${SIMPA_ROCKSDB_PIPELINED:-0}"
 
 timestamp() {
     date +"%Y%m%d-%H%M%S"
@@ -39,9 +50,30 @@ COMMON_ARGS=(
     --tpb "${SIMPA_TPB}"
     --retention-period-days "${SIMPA_RETENTION_DAYS}"
     --loglevel "${SIMPA_LOGLEVEL}"
+    --miners "${SIMPA_MINERS}"
 )
 
+if [[ "${SIMPA_ROCKSDB_STATS}" == "1" ]]; then
+    COMMON_ARGS+=(--rocksdb-stats)
+    if [[ -n "${SIMPA_ROCKSDB_STATS_PERIOD_SEC}" ]]; then
+        COMMON_ARGS+=(--rocksdb-stats-period-sec "${SIMPA_ROCKSDB_STATS_PERIOD_SEC}")
+    fi
+fi
+
+if [[ "${SIMPA_LONG_PAYLOAD}" == "1" ]]; then
+    COMMON_ARGS+=(--long-payload)
+fi
+
+if [[ "${SIMPA_ROCKSDB_PIPELINED}" == "1" ]]; then
+    COMMON_ARGS+=(--rocksdb-pipelined-write)
+fi
+
 SIMPA_DB_CURRENT="${SIMPA_DB_DIR}/CURRENT"
+if [[ "${SIMPA_FORCE_REBUILD}" == "1" ]]; then
+    echo ">> SIMPA_FORCE_REBUILD=1 — removing existing DB at ${SIMPA_DB_DIR}"
+    rm -rf "${SIMPA_DB_DIR}"
+fi
+
 if [[ -f "${SIMPA_DB_CURRENT}" ]]; then
     echo ">> Reusing existing Simpa DB at ${SIMPA_DB_DIR}"
     IO_ARGS=(--input-dir "${SIMPA_DB_DIR}")

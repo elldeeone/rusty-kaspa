@@ -1,0 +1,424 @@
+2025-11-05 22:04:47.534+11:00 [INFO ] simpa v1.0.1
+2025-11-05 22:04:47.534+11:00 [INFO ] Simpa configuration: target_blocks=Some(120000), retention_days=Some(5e-6), bps=10, delay=2, output_dir=Some("/tmp/simpa-phase3-crash3"), input_dir=None
+2025-11-05 22:04:47.534+11:00 [INFO ] 2Dλ=40, GHOSTDAG K=124, DAA window size=661
+2025-11-05 22:04:47.534+11:00 [INFO ] Setting pruning depth to ForkedParam { pre: 10, post: 10, activation: ForkActivation(1250) }
+2025-11-05 22:04:47.539+11:00 [DEBUG] Memory configuration: UTXO changed events wil be tracked for at most 1835007 addresses
+2025-11-05 22:04:47.539+11:00 [DEBUG] Creating an address tracker with a capacity of 0
+2025-11-05 22:04:47.539+11:00 [TRACE] UtxosChangedSubscription: 1 in total (new all)
+2025-11-05 22:04:47.539+11:00 [TRACE] UtxosChangedSubscription: 2 in total (new none)
+2025-11-05 22:04:47.543+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.543+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2
+2025-11-05 22:04:47.544+11:00 [TRACE] correct commitment: 9a969d9c6f9b5ee47e4d2ba10f04f83d1c28d5f641690f685d07a68aa1e82f52, 544eb3142c000f0ad2c76ac41f4222abbababed830eeafee4b6dc56b52d5cac0
+2025-11-05 22:04:47.544+11:00 [DEBUG] VIRTUAL PROCESSOR, UTXO validated for 9a969d9c6f9b5ee47e4d2ba10f04f83d1c28d5f641690f685d07a68aa1e82f52
+2025-11-05 22:04:47.544+11:00 [DEBUG] [PRUNING PROCESSOR] recovery check: current pruning point: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2, retention checkpoint: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2, pruning utxoset position: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2
+2025-11-05 22:04:47.544+11:00 [TRACE] retention_checkpoint: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2 | retention_period_root: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2 | pruning_point: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2
+2025-11-05 22:04:47.544+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.544+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: 9a969d9c6f9b5ee47e4d2ba10f04f83d1c28d5f641690f685d07a68aa1e82f52
+2025-11-05 22:04:47.544+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.544+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2
+2025-11-05 22:04:47.544+11:00 [TRACE] correct commitment: a616fe150addea9945e5304623211b9e1446475ab0ec3429a8d75ca0ea4aee5d, 544eb3142c000f0ad2c76ac41f4222abbababed830eeafee4b6dc56b52d5cac0
+2025-11-05 22:04:47.545+11:00 [DEBUG] VIRTUAL PROCESSOR, UTXO validated for a616fe150addea9945e5304623211b9e1446475ab0ec3429a8d75ca0ea4aee5d
+2025-11-05 22:04:47.545+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.545+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: a616fe150addea9945e5304623211b9e1446475ab0ec3429a8d75ca0ea4aee5d
+2025-11-05 22:04:47.545+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.545+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: a616fe150addea9945e5304623211b9e1446475ab0ec3429a8d75ca0ea4aee5d
+2025-11-05 22:04:47.545+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.545+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2
+2025-11-05 22:04:47.545+11:00 [TRACE] correct commitment: d3e9d009ce14cdb0cc68b3f1646bff0b76dcb9e4cf4db9eb24120ae73b5e6cee, 544eb3142c000f0ad2c76ac41f4222abbababed830eeafee4b6dc56b52d5cac0
+2025-11-05 22:04:47.545+11:00 [DEBUG] VIRTUAL PROCESSOR, UTXO validated for d3e9d009ce14cdb0cc68b3f1646bff0b76dcb9e4cf4db9eb24120ae73b5e6cee
+2025-11-05 22:04:47.546+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.546+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: d3e9d009ce14cdb0cc68b3f1646bff0b76dcb9e4cf4db9eb24120ae73b5e6cee
+2025-11-05 22:04:47.546+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.546+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2
+2025-11-05 22:04:47.546+11:00 [TRACE] correct commitment: d82606afa6f28d601384e46d2c47064dbbcdae32efb8faa0b71d3355cad97bfa, 544eb3142c000f0ad2c76ac41f4222abbababed830eeafee4b6dc56b52d5cac0
+2025-11-05 22:04:47.546+11:00 [DEBUG] VIRTUAL PROCESSOR, UTXO validated for d82606afa6f28d601384e46d2c47064dbbcdae32efb8faa0b71d3355cad97bfa
+2025-11-05 22:04:47.547+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.547+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: d82606afa6f28d601384e46d2c47064dbbcdae32efb8faa0b71d3355cad97bfa
+2025-11-05 22:04:47.547+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.547+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: d82606afa6f28d601384e46d2c47064dbbcdae32efb8faa0b71d3355cad97bfa
+2025-11-05 22:04:47.547+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.547+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: d82606afa6f28d601384e46d2c47064dbbcdae32efb8faa0b71d3355cad97bfa
+2025-11-05 22:04:47.547+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.547+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: d82606afa6f28d601384e46d2c47064dbbcdae32efb8faa0b71d3355cad97bfa
+2025-11-05 22:04:47.548+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.548+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: d82606afa6f28d601384e46d2c47064dbbcdae32efb8faa0b71d3355cad97bfa
+2025-11-05 22:04:47.548+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.548+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2
+2025-11-05 22:04:47.548+11:00 [TRACE] correct commitment: e888bd96e76ead36d59474c88d50515e0b1fed272cd267d0c6d00e5ca17e9d5b, 544eb3142c000f0ad2c76ac41f4222abbababed830eeafee4b6dc56b52d5cac0
+2025-11-05 22:04:47.548+11:00 [DEBUG] VIRTUAL PROCESSOR, UTXO validated for e888bd96e76ead36d59474c88d50515e0b1fed272cd267d0c6d00e5ca17e9d5b
+2025-11-05 22:04:47.548+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.548+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: e888bd96e76ead36d59474c88d50515e0b1fed272cd267d0c6d00e5ca17e9d5b
+2025-11-05 22:04:47.549+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.549+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: e888bd96e76ead36d59474c88d50515e0b1fed272cd267d0c6d00e5ca17e9d5b
+2025-11-05 22:04:47.549+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.549+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: e888bd96e76ead36d59474c88d50515e0b1fed272cd267d0c6d00e5ca17e9d5b
+2025-11-05 22:04:47.549+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.549+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: e888bd96e76ead36d59474c88d50515e0b1fed272cd267d0c6d00e5ca17e9d5b
+2025-11-05 22:04:47.549+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.549+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: e888bd96e76ead36d59474c88d50515e0b1fed272cd267d0c6d00e5ca17e9d5b
+2025-11-05 22:04:47.550+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.550+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: e888bd96e76ead36d59474c88d50515e0b1fed272cd267d0c6d00e5ca17e9d5b
+2025-11-05 22:04:47.550+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.550+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: e888bd96e76ead36d59474c88d50515e0b1fed272cd267d0c6d00e5ca17e9d5b
+2025-11-05 22:04:47.550+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.550+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2
+2025-11-05 22:04:47.550+11:00 [TRACE] correct commitment: f07106c4c5404e63fa32a0db58065c4b69e023452b7634fb38ace7e8c6a238ac, 544eb3142c000f0ad2c76ac41f4222abbababed830eeafee4b6dc56b52d5cac0
+2025-11-05 22:04:47.550+11:00 [DEBUG] VIRTUAL PROCESSOR, UTXO validated for f07106c4c5404e63fa32a0db58065c4b69e023452b7634fb38ace7e8c6a238ac
+2025-11-05 22:04:47.551+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.551+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: f07106c4c5404e63fa32a0db58065c4b69e023452b7634fb38ace7e8c6a238ac
+2025-11-05 22:04:47.551+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.551+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: f07106c4c5404e63fa32a0db58065c4b69e023452b7634fb38ace7e8c6a238ac
+2025-11-05 22:04:47.552+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.552+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: f07106c4c5404e63fa32a0db58065c4b69e023452b7634fb38ace7e8c6a238ac
+2025-11-05 22:04:47.552+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.552+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2
+2025-11-05 22:04:47.552+11:00 [TRACE] correct commitment: c04f168385f075f4fa29c88e736b2d5a030d32fca2565002d713868b7046584a, 544eb3142c000f0ad2c76ac41f4222abbababed830eeafee4b6dc56b52d5cac0
+2025-11-05 22:04:47.552+11:00 [DEBUG] VIRTUAL PROCESSOR, UTXO validated for c04f168385f075f4fa29c88e736b2d5a030d32fca2565002d713868b7046584a
+2025-11-05 22:04:47.553+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.553+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c04f168385f075f4fa29c88e736b2d5a030d32fca2565002d713868b7046584a
+2025-11-05 22:04:47.553+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.553+11:00 [WARN ] Finality Violation Detected. Block 2e14a1ba75be3deb372dfda26714ca28dba991c9d209e2623ea410eb7c2239df violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.553+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c04f168385f075f4fa29c88e736b2d5a030d32fca2565002d713868b7046584a
+2025-11-05 22:04:47.553+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.553+11:00 [WARN ] Finality Violation Detected. Block 2e14a1ba75be3deb372dfda26714ca28dba991c9d209e2623ea410eb7c2239df violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.553+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c04f168385f075f4fa29c88e736b2d5a030d32fca2565002d713868b7046584a
+2025-11-05 22:04:47.554+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.554+11:00 [WARN ] Finality Violation Detected. Block c27f1411e733083cbe3993a498717b94e9bf6a23d1b6e68961ddc76e93810c97 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.554+11:00 [WARN ] Finality Violation Detected. Block 2e14a1ba75be3deb372dfda26714ca28dba991c9d209e2623ea410eb7c2239df violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.554+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c04f168385f075f4fa29c88e736b2d5a030d32fca2565002d713868b7046584a
+2025-11-05 22:04:47.554+11:00 [TRACE] Simulation time: 5.051	Generated 31 blocks
+2025-11-05 22:04:47.554+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.554+11:00 [WARN ] Finality Violation Detected. Block c27f1411e733083cbe3993a498717b94e9bf6a23d1b6e68961ddc76e93810c97 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.554+11:00 [WARN ] Finality Violation Detected. Block 37dba956e933a622db8a06d6149d3cbc9169f3d62bb778703e0713be7c0b5fd5 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.554+11:00 [WARN ] Finality Violation Detected. Block 2e14a1ba75be3deb372dfda26714ca28dba991c9d209e2623ea410eb7c2239df violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.554+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c04f168385f075f4fa29c88e736b2d5a030d32fca2565002d713868b7046584a
+2025-11-05 22:04:47.555+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.555+11:00 [WARN ] Finality Violation Detected. Block c27f1411e733083cbe3993a498717b94e9bf6a23d1b6e68961ddc76e93810c97 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.555+11:00 [WARN ] Finality Violation Detected. Block 37dba956e933a622db8a06d6149d3cbc9169f3d62bb778703e0713be7c0b5fd5 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.555+11:00 [WARN ] Finality Violation Detected. Block 2e14a1ba75be3deb372dfda26714ca28dba991c9d209e2623ea410eb7c2239df violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.555+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c04f168385f075f4fa29c88e736b2d5a030d32fca2565002d713868b7046584a
+2025-11-05 22:04:47.556+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.556+11:00 [WARN ] Finality Violation Detected. Block c27f1411e733083cbe3993a498717b94e9bf6a23d1b6e68961ddc76e93810c97 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.556+11:00 [WARN ] Finality Violation Detected. Block 37dba956e933a622db8a06d6149d3cbc9169f3d62bb778703e0713be7c0b5fd5 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.556+11:00 [WARN ] Finality Violation Detected. Block 2e14a1ba75be3deb372dfda26714ca28dba991c9d209e2623ea410eb7c2239df violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.556+11:00 [WARN ] Finality Violation Detected. Block 29671b215ef931d5db0c11f2b0a14adf148e602af1a16201932b22a4e2fa71c0 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.556+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c04f168385f075f4fa29c88e736b2d5a030d32fca2565002d713868b7046584a
+2025-11-05 22:04:47.556+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.556+11:00 [WARN ] Finality Violation Detected. Block c27f1411e733083cbe3993a498717b94e9bf6a23d1b6e68961ddc76e93810c97 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.556+11:00 [WARN ] Finality Violation Detected. Block 37dba956e933a622db8a06d6149d3cbc9169f3d62bb778703e0713be7c0b5fd5 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.556+11:00 [WARN ] Finality Violation Detected. Block 2e14a1ba75be3deb372dfda26714ca28dba991c9d209e2623ea410eb7c2239df violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.556+11:00 [WARN ] Finality Violation Detected. Block 29671b215ef931d5db0c11f2b0a14adf148e602af1a16201932b22a4e2fa71c0 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.556+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c04f168385f075f4fa29c88e736b2d5a030d32fca2565002d713868b7046584a
+2025-11-05 22:04:47.557+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.557+11:00 [WARN ] Finality Violation Detected. Block c27f1411e733083cbe3993a498717b94e9bf6a23d1b6e68961ddc76e93810c97 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.557+11:00 [WARN ] Finality Violation Detected. Block 37dba956e933a622db8a06d6149d3cbc9169f3d62bb778703e0713be7c0b5fd5 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.557+11:00 [WARN ] Finality Violation Detected. Block 2e14a1ba75be3deb372dfda26714ca28dba991c9d209e2623ea410eb7c2239df violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.557+11:00 [WARN ] Finality Violation Detected. Block 29671b215ef931d5db0c11f2b0a14adf148e602af1a16201932b22a4e2fa71c0 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.557+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c04f168385f075f4fa29c88e736b2d5a030d32fca2565002d713868b7046584a
+2025-11-05 22:04:47.557+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.557+11:00 [WARN ] Finality Violation Detected. Block ecc8515eef16b85224127fd70cffb2b9e6e8c14f692d30ba779daf76ad90c0b8 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.557+11:00 [WARN ] Finality Violation Detected. Block c27f1411e733083cbe3993a498717b94e9bf6a23d1b6e68961ddc76e93810c97 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.557+11:00 [WARN ] Finality Violation Detected. Block 37dba956e933a622db8a06d6149d3cbc9169f3d62bb778703e0713be7c0b5fd5 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.557+11:00 [WARN ] Finality Violation Detected. Block 2e14a1ba75be3deb372dfda26714ca28dba991c9d209e2623ea410eb7c2239df violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.557+11:00 [WARN ] Finality Violation Detected. Block 29671b215ef931d5db0c11f2b0a14adf148e602af1a16201932b22a4e2fa71c0 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.557+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c04f168385f075f4fa29c88e736b2d5a030d32fca2565002d713868b7046584a
+2025-11-05 22:04:47.558+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.558+11:00 [WARN ] Finality Violation Detected. Block ecc8515eef16b85224127fd70cffb2b9e6e8c14f692d30ba779daf76ad90c0b8 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.558+11:00 [WARN ] Finality Violation Detected. Block c27f1411e733083cbe3993a498717b94e9bf6a23d1b6e68961ddc76e93810c97 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.558+11:00 [WARN ] Finality Violation Detected. Block 96c4b548cc5ab61ac6a78f76fcc1cf393d942cbbaa7f4d3407940594f854958f violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.558+11:00 [WARN ] Finality Violation Detected. Block 37dba956e933a622db8a06d6149d3cbc9169f3d62bb778703e0713be7c0b5fd5 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.558+11:00 [WARN ] Finality Violation Detected. Block 2e14a1ba75be3deb372dfda26714ca28dba991c9d209e2623ea410eb7c2239df violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.558+11:00 [WARN ] Finality Violation Detected. Block 29671b215ef931d5db0c11f2b0a14adf148e602af1a16201932b22a4e2fa71c0 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.558+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c04f168385f075f4fa29c88e736b2d5a030d32fca2565002d713868b7046584a
+2025-11-05 22:04:47.558+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.558+11:00 [WARN ] Finality Violation Detected. Block ecc8515eef16b85224127fd70cffb2b9e6e8c14f692d30ba779daf76ad90c0b8 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.558+11:00 [WARN ] Finality Violation Detected. Block c27f1411e733083cbe3993a498717b94e9bf6a23d1b6e68961ddc76e93810c97 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.558+11:00 [WARN ] Finality Violation Detected. Block 96c4b548cc5ab61ac6a78f76fcc1cf393d942cbbaa7f4d3407940594f854958f violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.558+11:00 [WARN ] Finality Violation Detected. Block 37dba956e933a622db8a06d6149d3cbc9169f3d62bb778703e0713be7c0b5fd5 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.558+11:00 [WARN ] Finality Violation Detected. Block 2e14a1ba75be3deb372dfda26714ca28dba991c9d209e2623ea410eb7c2239df violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.558+11:00 [WARN ] Finality Violation Detected. Block 29671b215ef931d5db0c11f2b0a14adf148e602af1a16201932b22a4e2fa71c0 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.558+11:00 [WARN ] Finality Violation Detected. Block 1a6e7fce0eb6cd1ca4885ae63a2fae033d275cefa55af1c97274a046fd2666d6 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.558+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c04f168385f075f4fa29c88e736b2d5a030d32fca2565002d713868b7046584a
+2025-11-05 22:04:47.559+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.559+11:00 [WARN ] Finality Violation Detected. Block ecc8515eef16b85224127fd70cffb2b9e6e8c14f692d30ba779daf76ad90c0b8 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.559+11:00 [WARN ] Finality Violation Detected. Block c27f1411e733083cbe3993a498717b94e9bf6a23d1b6e68961ddc76e93810c97 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.559+11:00 [WARN ] Finality Violation Detected. Block 96c4b548cc5ab61ac6a78f76fcc1cf393d942cbbaa7f4d3407940594f854958f violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.559+11:00 [WARN ] Finality Violation Detected. Block 37dba956e933a622db8a06d6149d3cbc9169f3d62bb778703e0713be7c0b5fd5 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.559+11:00 [WARN ] Finality Violation Detected. Block 2e14a1ba75be3deb372dfda26714ca28dba991c9d209e2623ea410eb7c2239df violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.559+11:00 [WARN ] Finality Violation Detected. Block 29671b215ef931d5db0c11f2b0a14adf148e602af1a16201932b22a4e2fa71c0 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.559+11:00 [WARN ] Finality Violation Detected. Block 1a6e7fce0eb6cd1ca4885ae63a2fae033d275cefa55af1c97274a046fd2666d6 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.559+11:00 [WARN ] Finality Violation Detected. Block 0a43e1e83eeecb075aa21dd7d494f9f2b3cfca2e47a68f97a2ea20378ad77844 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.559+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c04f168385f075f4fa29c88e736b2d5a030d32fca2565002d713868b7046584a
+2025-11-05 22:04:47.559+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.559+11:00 [WARN ] Finality Violation Detected. Block ecc8515eef16b85224127fd70cffb2b9e6e8c14f692d30ba779daf76ad90c0b8 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.559+11:00 [WARN ] Finality Violation Detected. Block c27f1411e733083cbe3993a498717b94e9bf6a23d1b6e68961ddc76e93810c97 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.559+11:00 [WARN ] Finality Violation Detected. Block b27145aa222b03980762581afbc369dbfed6e1f776f262cefb3e16466b983eb5 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.560+11:00 [WARN ] Finality Violation Detected. Block 96c4b548cc5ab61ac6a78f76fcc1cf393d942cbbaa7f4d3407940594f854958f violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.560+11:00 [WARN ] Finality Violation Detected. Block 37dba956e933a622db8a06d6149d3cbc9169f3d62bb778703e0713be7c0b5fd5 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.560+11:00 [WARN ] Finality Violation Detected. Block 2e14a1ba75be3deb372dfda26714ca28dba991c9d209e2623ea410eb7c2239df violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.560+11:00 [WARN ] Finality Violation Detected. Block 29671b215ef931d5db0c11f2b0a14adf148e602af1a16201932b22a4e2fa71c0 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.560+11:00 [WARN ] Finality Violation Detected. Block 1a6e7fce0eb6cd1ca4885ae63a2fae033d275cefa55af1c97274a046fd2666d6 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.560+11:00 [WARN ] Finality Violation Detected. Block 0a43e1e83eeecb075aa21dd7d494f9f2b3cfca2e47a68f97a2ea20378ad77844 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.560+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c04f168385f075f4fa29c88e736b2d5a030d32fca2565002d713868b7046584a
+2025-11-05 22:04:47.560+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.560+11:00 [WARN ] Finality Violation Detected. Block ecc8515eef16b85224127fd70cffb2b9e6e8c14f692d30ba779daf76ad90c0b8 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.560+11:00 [WARN ] Finality Violation Detected. Block c27f1411e733083cbe3993a498717b94e9bf6a23d1b6e68961ddc76e93810c97 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.560+11:00 [WARN ] Finality Violation Detected. Block b27145aa222b03980762581afbc369dbfed6e1f776f262cefb3e16466b983eb5 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.560+11:00 [WARN ] Finality Violation Detected. Block 96c4b548cc5ab61ac6a78f76fcc1cf393d942cbbaa7f4d3407940594f854958f violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.560+11:00 [WARN ] Finality Violation Detected. Block 76b308fad5472e606dd31581e074add14f690dcd2a7f334e954f459c0b3addc1 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.560+11:00 [WARN ] Finality Violation Detected. Block 37dba956e933a622db8a06d6149d3cbc9169f3d62bb778703e0713be7c0b5fd5 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.560+11:00 [WARN ] Finality Violation Detected. Block 2e14a1ba75be3deb372dfda26714ca28dba991c9d209e2623ea410eb7c2239df violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.560+11:00 [WARN ] Finality Violation Detected. Block 29671b215ef931d5db0c11f2b0a14adf148e602af1a16201932b22a4e2fa71c0 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.560+11:00 [WARN ] Finality Violation Detected. Block 1a6e7fce0eb6cd1ca4885ae63a2fae033d275cefa55af1c97274a046fd2666d6 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.560+11:00 [WARN ] Finality Violation Detected. Block 0a43e1e83eeecb075aa21dd7d494f9f2b3cfca2e47a68f97a2ea20378ad77844 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.560+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c04f168385f075f4fa29c88e736b2d5a030d32fca2565002d713868b7046584a
+2025-11-05 22:04:47.561+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.561+11:00 [WARN ] Finality Violation Detected. Block ecc8515eef16b85224127fd70cffb2b9e6e8c14f692d30ba779daf76ad90c0b8 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.561+11:00 [WARN ] Finality Violation Detected. Block c27f1411e733083cbe3993a498717b94e9bf6a23d1b6e68961ddc76e93810c97 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.561+11:00 [WARN ] Finality Violation Detected. Block b27145aa222b03980762581afbc369dbfed6e1f776f262cefb3e16466b983eb5 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.561+11:00 [WARN ] Finality Violation Detected. Block 96c4b548cc5ab61ac6a78f76fcc1cf393d942cbbaa7f4d3407940594f854958f violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.561+11:00 [WARN ] Finality Violation Detected. Block 76b308fad5472e606dd31581e074add14f690dcd2a7f334e954f459c0b3addc1 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.561+11:00 [WARN ] Finality Violation Detected. Block 50a7d48b897170d12941c124431a09522fbde508684e67be705bc18873dc7271 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.561+11:00 [WARN ] Finality Violation Detected. Block 37dba956e933a622db8a06d6149d3cbc9169f3d62bb778703e0713be7c0b5fd5 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.561+11:00 [WARN ] Finality Violation Detected. Block 2e14a1ba75be3deb372dfda26714ca28dba991c9d209e2623ea410eb7c2239df violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.561+11:00 [WARN ] Finality Violation Detected. Block 29671b215ef931d5db0c11f2b0a14adf148e602af1a16201932b22a4e2fa71c0 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.561+11:00 [WARN ] Finality Violation Detected. Block 1a6e7fce0eb6cd1ca4885ae63a2fae033d275cefa55af1c97274a046fd2666d6 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.561+11:00 [WARN ] Finality Violation Detected. Block 0a43e1e83eeecb075aa21dd7d494f9f2b3cfca2e47a68f97a2ea20378ad77844 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.561+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c04f168385f075f4fa29c88e736b2d5a030d32fca2565002d713868b7046584a
+2025-11-05 22:04:47.561+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.561+11:00 [WARN ] Finality Violation Detected. Block ecc8515eef16b85224127fd70cffb2b9e6e8c14f692d30ba779daf76ad90c0b8 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.561+11:00 [WARN ] Finality Violation Detected. Block c27f1411e733083cbe3993a498717b94e9bf6a23d1b6e68961ddc76e93810c97 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.561+11:00 [WARN ] Finality Violation Detected. Block b27145aa222b03980762581afbc369dbfed6e1f776f262cefb3e16466b983eb5 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.561+11:00 [WARN ] Finality Violation Detected. Block 96c4b548cc5ab61ac6a78f76fcc1cf393d942cbbaa7f4d3407940594f854958f violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.561+11:00 [WARN ] Finality Violation Detected. Block 76b308fad5472e606dd31581e074add14f690dcd2a7f334e954f459c0b3addc1 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.561+11:00 [WARN ] Finality Violation Detected. Block 50a7d48b897170d12941c124431a09522fbde508684e67be705bc18873dc7271 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.561+11:00 [WARN ] Finality Violation Detected. Block 37dba956e933a622db8a06d6149d3cbc9169f3d62bb778703e0713be7c0b5fd5 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.561+11:00 [WARN ] Finality Violation Detected. Block 2e14a1ba75be3deb372dfda26714ca28dba991c9d209e2623ea410eb7c2239df violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.561+11:00 [WARN ] Finality Violation Detected. Block 29671b215ef931d5db0c11f2b0a14adf148e602af1a16201932b22a4e2fa71c0 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.561+11:00 [WARN ] Finality Violation Detected. Block 1a6e7fce0eb6cd1ca4885ae63a2fae033d275cefa55af1c97274a046fd2666d6 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.561+11:00 [WARN ] Finality Violation Detected. Block 0a43e1e83eeecb075aa21dd7d494f9f2b3cfca2e47a68f97a2ea20378ad77844 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.561+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c04f168385f075f4fa29c88e736b2d5a030d32fca2565002d713868b7046584a
+2025-11-05 22:04:47.562+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.562+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c04f168385f075f4fa29c88e736b2d5a030d32fca2565002d713868b7046584a
+2025-11-05 22:04:47.562+11:00 [TRACE] correct commitment: 093fb91fd85a726f2353a77c9a6cc4be2b071f1ef47c73ab1262270b64ad53a0, 9d1a9c88e787f1c3acf10f15ee92dd84a3f9785ee1a862342cbcb7d453c3b5ea
+2025-11-05 22:04:47.562+11:00 [DEBUG] VIRTUAL PROCESSOR, UTXO validated for 093fb91fd85a726f2353a77c9a6cc4be2b071f1ef47c73ab1262270b64ad53a0
+2025-11-05 22:04:47.563+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.563+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c04f168385f075f4fa29c88e736b2d5a030d32fca2565002d713868b7046584a
+2025-11-05 22:04:47.563+11:00 [TRACE] correct commitment: 804d80079637015f8dd0d665a59e7c2130c0b8018b0557bba8cc11210f524dec, 9d1a9c88e787f1c3acf10f15ee92dd84a3f9785ee1a862342cbcb7d453c3b5ea
+2025-11-05 22:04:47.563+11:00 [DEBUG] VIRTUAL PROCESSOR, UTXO validated for 804d80079637015f8dd0d665a59e7c2130c0b8018b0557bba8cc11210f524dec
+2025-11-05 22:04:47.564+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.564+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c04f168385f075f4fa29c88e736b2d5a030d32fca2565002d713868b7046584a
+2025-11-05 22:04:47.564+11:00 [TRACE] correct commitment: c045fde7c1093f6fd368493649e03e9c57d09fb8bd4f13899a41aba0035b44a5, b0b0193f472ec7706a4a776becd80f651b2e642f4b407889f8bc8258255740e4
+2025-11-05 22:04:47.564+11:00 [DEBUG] VIRTUAL PROCESSOR, UTXO validated for c045fde7c1093f6fd368493649e03e9c57d09fb8bd4f13899a41aba0035b44a5
+2025-11-05 22:04:47.566+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.566+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c045fde7c1093f6fd368493649e03e9c57d09fb8bd4f13899a41aba0035b44a5
+2025-11-05 22:04:47.566+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.566+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c045fde7c1093f6fd368493649e03e9c57d09fb8bd4f13899a41aba0035b44a5
+2025-11-05 22:04:47.567+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.567+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c045fde7c1093f6fd368493649e03e9c57d09fb8bd4f13899a41aba0035b44a5
+2025-11-05 22:04:47.567+11:00 [TRACE] Simulation time: 7.254	Generated 50 blocks
+2025-11-05 22:04:47.567+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.567+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c045fde7c1093f6fd368493649e03e9c57d09fb8bd4f13899a41aba0035b44a5
+2025-11-05 22:04:47.568+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.568+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c045fde7c1093f6fd368493649e03e9c57d09fb8bd4f13899a41aba0035b44a5
+2025-11-05 22:04:47.568+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.568+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c045fde7c1093f6fd368493649e03e9c57d09fb8bd4f13899a41aba0035b44a5
+2025-11-05 22:04:47.568+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.568+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c045fde7c1093f6fd368493649e03e9c57d09fb8bd4f13899a41aba0035b44a5
+2025-11-05 22:04:47.569+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.569+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c045fde7c1093f6fd368493649e03e9c57d09fb8bd4f13899a41aba0035b44a5
+2025-11-05 22:04:47.569+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.570+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c045fde7c1093f6fd368493649e03e9c57d09fb8bd4f13899a41aba0035b44a5
+2025-11-05 22:04:47.571+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.571+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c045fde7c1093f6fd368493649e03e9c57d09fb8bd4f13899a41aba0035b44a5
+2025-11-05 22:04:47.571+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.571+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c045fde7c1093f6fd368493649e03e9c57d09fb8bd4f13899a41aba0035b44a5
+2025-11-05 22:04:47.572+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.572+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c045fde7c1093f6fd368493649e03e9c57d09fb8bd4f13899a41aba0035b44a5
+2025-11-05 22:04:47.572+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.572+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c045fde7c1093f6fd368493649e03e9c57d09fb8bd4f13899a41aba0035b44a5
+2025-11-05 22:04:47.573+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.573+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c045fde7c1093f6fd368493649e03e9c57d09fb8bd4f13899a41aba0035b44a5
+2025-11-05 22:04:47.573+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.573+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c045fde7c1093f6fd368493649e03e9c57d09fb8bd4f13899a41aba0035b44a5
+2025-11-05 22:04:47.574+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.574+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c045fde7c1093f6fd368493649e03e9c57d09fb8bd4f13899a41aba0035b44a5
+2025-11-05 22:04:47.574+11:00 [TRACE] correct commitment: f16bfe15741ef538a4fb22b08e4c6b4d7c575e0c555fd95a9265f5f92d6fae7a, ba7e013cc77431f08a16a8d1076793aef03fd18d1285fb318289ea16ab52938d
+2025-11-05 22:04:47.574+11:00 [DEBUG] VIRTUAL PROCESSOR, UTXO validated for f16bfe15741ef538a4fb22b08e4c6b4d7c575e0c555fd95a9265f5f92d6fae7a
+2025-11-05 22:04:47.574+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.575+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: f16bfe15741ef538a4fb22b08e4c6b4d7c575e0c555fd95a9265f5f92d6fae7a
+2025-11-05 22:04:47.575+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.575+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: f16bfe15741ef538a4fb22b08e4c6b4d7c575e0c555fd95a9265f5f92d6fae7a
+2025-11-05 22:04:47.576+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.576+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c045fde7c1093f6fd368493649e03e9c57d09fb8bd4f13899a41aba0035b44a5
+2025-11-05 22:04:47.576+11:00 [TRACE] correct commitment: fce57fa395091c8346a585dd8bf83825d542ddb62823be681e7eae5535653cad, ba7e013cc77431f08a16a8d1076793aef03fd18d1285fb318289ea16ab52938d
+2025-11-05 22:04:47.576+11:00 [DEBUG] VIRTUAL PROCESSOR, UTXO validated for fce57fa395091c8346a585dd8bf83825d542ddb62823be681e7eae5535653cad
+2025-11-05 22:04:47.577+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.577+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c045fde7c1093f6fd368493649e03e9c57d09fb8bd4f13899a41aba0035b44a5
+2025-11-05 22:04:47.577+11:00 [TRACE] correct commitment: da2c7a2ff0636b8a20bfacacce34569161844cb38df02e35740efb24c3880b39, 75b72ac0ed715f9d9cb1b853c328bd09a49d0a97caf87544d91b4268e3d55357
+2025-11-05 22:04:47.577+11:00 [DEBUG] VIRTUAL PROCESSOR, UTXO validated for da2c7a2ff0636b8a20bfacacce34569161844cb38df02e35740efb24c3880b39
+2025-11-05 22:04:47.577+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.577+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c045fde7c1093f6fd368493649e03e9c57d09fb8bd4f13899a41aba0035b44a5
+2025-11-05 22:04:47.578+11:00 [TRACE] correct commitment: f5a13f1b8ae9a261ee4002163fe37fd1a8770851bae672650395408f68cdc526, e3238bd54a66b8920d6dcd32678ab3248faf18dd74e08e1f665385ad0f8ae605
+2025-11-05 22:04:47.578+11:00 [DEBUG] VIRTUAL PROCESSOR, UTXO validated for f5a13f1b8ae9a261ee4002163fe37fd1a8770851bae672650395408f68cdc526
+2025-11-05 22:04:47.578+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.578+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: f5a13f1b8ae9a261ee4002163fe37fd1a8770851bae672650395408f68cdc526
+2025-11-05 22:04:47.579+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.579+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c045fde7c1093f6fd368493649e03e9c57d09fb8bd4f13899a41aba0035b44a5
+2025-11-05 22:04:47.579+11:00 [TRACE] correct commitment: 4ae0388b8e81ea98439dcad8f5b46451ad235f0bb5882795a2389bdc4b54755f, 24cca676bfa5736dcf5a4ff0602d3587ccf958067c63366245175859be23c26e
+2025-11-05 22:04:47.579+11:00 [DEBUG] VIRTUAL PROCESSOR, UTXO validated for 4ae0388b8e81ea98439dcad8f5b46451ad235f0bb5882795a2389bdc4b54755f
+2025-11-05 22:04:47.580+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.580+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c045fde7c1093f6fd368493649e03e9c57d09fb8bd4f13899a41aba0035b44a5
+2025-11-05 22:04:47.580+11:00 [TRACE] correct commitment: 49714190b1320dfe8c0bc16432b84c744342e807f29cdb24740f7389580e200d, b5a2addeb14e5702b1c846c676e25a77c70bc011635273ca7ff3de2f13b184d5
+2025-11-05 22:04:47.580+11:00 [DEBUG] VIRTUAL PROCESSOR, UTXO validated for 49714190b1320dfe8c0bc16432b84c744342e807f29cdb24740f7389580e200d
+2025-11-05 22:04:47.580+11:00 [TRACE] Adjusting the retention period root to cover the required retention period. Target timestamp: 6870
+2025-11-05 22:04:47.580+11:00 [TRACE] block | timestamp = c04f168385f075f4fa29c88e736b2d5a030d32fca2565002d713868b7046584a | 2549
+2025-11-05 22:04:47.580+11:00 [TRACE] block c04f168385f075f4fa29c88e736b2d5a030d32fca2565002d713868b7046584a timestamp 2549 >= 6870
+2025-11-05 22:04:47.580+11:00 [TRACE] Retention period root adjustment summary: old_root=4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2 new_root=c04f168385f075f4fa29c88e736b2d5a030d32fca2565002d713868b7046584a pruning_point=c04f168385f075f4fa29c88e736b2d5a030d32fca2565002d713868b7046584a steps=0 sink_ts=7303 target_ts=6870 retention_ms=433
+2025-11-05 22:04:47.580+11:00 [TRACE] New Pruning Point: c04f168385f075f4fa29c88e736b2d5a030d32fca2565002d713868b7046584a | New Retention Period Root: c04f168385f075f4fa29c88e736b2d5a030d32fca2565002d713868b7046584a
+2025-11-05 22:04:47.580+11:00 [INFO ] Periodic pruning point movement: advancing from 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2 to c04f168385f075f4fa29c88e736b2d5a030d32fca2565002d713868b7046584a
+2025-11-05 22:04:47.580+11:00 [INFO ] Performing a sanity check that the new UTXO set has the expected UTXO commitment
+2025-11-05 22:04:47.580+11:00 [INFO ] Verifying the new pruning point UTXO commitment (sanity test)
+2025-11-05 22:04:47.580+11:00 [INFO ] Pruning point UTXO commitment was verified correctly (sanity test)
+2025-11-05 22:04:47.580+11:00 [INFO ] Updated the pruning point UTXO set
+2025-11-05 22:04:47.580+11:00 [INFO ] Header and Block pruning: preparing proof and anticone data...
+2025-11-05 22:04:47.581+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.581+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c045fde7c1093f6fd368493649e03e9c57d09fb8bd4f13899a41aba0035b44a5
+2025-11-05 22:04:47.581+11:00 [TRACE] correct commitment: c22840ea449c6a4bcdcabdba211410f907210a2dd1b1d3d2f0028e4d799ff9bb, b9fc05da0d84a4841c7f6bd3cf6781b3208160024d96b0c36fa04c931027f193
+2025-11-05 22:04:47.581+11:00 [DEBUG] VIRTUAL PROCESSOR, UTXO validated for c22840ea449c6a4bcdcabdba211410f907210a2dd1b1d3d2f0028e4d799ff9bb
+2025-11-05 22:04:47.582+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.582+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c22840ea449c6a4bcdcabdba211410f907210a2dd1b1d3d2f0028e4d799ff9bb
+2025-11-05 22:04:47.582+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.582+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c22840ea449c6a4bcdcabdba211410f907210a2dd1b1d3d2f0028e4d799ff9bb
+2025-11-05 22:04:47.583+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.583+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c22840ea449c6a4bcdcabdba211410f907210a2dd1b1d3d2f0028e4d799ff9bb
+2025-11-05 22:04:47.584+11:00 [TRACE] Simulation time: 10.015	Generated 75 blocks
+2025-11-05 22:04:47.585+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.585+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c045fde7c1093f6fd368493649e03e9c57d09fb8bd4f13899a41aba0035b44a5
+2025-11-05 22:04:47.585+11:00 [TRACE] correct commitment: f0ed96774cbad0e00df916a7a88e2e3d5f0fbffc0952818b2e7bca200d42ed3a, b9fc05da0d84a4841c7f6bd3cf6781b3208160024d96b0c36fa04c931027f193
+2025-11-05 22:04:47.585+11:00 [DEBUG] VIRTUAL PROCESSOR, UTXO validated for f0ed96774cbad0e00df916a7a88e2e3d5f0fbffc0952818b2e7bca200d42ed3a
+2025-11-05 22:04:47.586+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.586+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c045fde7c1093f6fd368493649e03e9c57d09fb8bd4f13899a41aba0035b44a5
+2025-11-05 22:04:47.586+11:00 [TRACE] correct commitment: f7b56a44647c268bb4b26b19435c3b380760f978982715a79c54d606a28cc1a1, b9fc05da0d84a4841c7f6bd3cf6781b3208160024d96b0c36fa04c931027f193
+2025-11-05 22:04:47.586+11:00 [DEBUG] VIRTUAL PROCESSOR, UTXO validated for f7b56a44647c268bb4b26b19435c3b380760f978982715a79c54d606a28cc1a1
+2025-11-05 22:04:47.587+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.587+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: f7b56a44647c268bb4b26b19435c3b380760f978982715a79c54d606a28cc1a1
+2025-11-05 22:04:47.588+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.588+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: f7b56a44647c268bb4b26b19435c3b380760f978982715a79c54d606a28cc1a1
+2025-11-05 22:04:47.589+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.589+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: f7b56a44647c268bb4b26b19435c3b380760f978982715a79c54d606a28cc1a1
+2025-11-05 22:04:47.589+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.589+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: f7b56a44647c268bb4b26b19435c3b380760f978982715a79c54d606a28cc1a1
+2025-11-05 22:04:47.590+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.590+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: f7b56a44647c268bb4b26b19435c3b380760f978982715a79c54d606a28cc1a1
+2025-11-05 22:04:47.590+11:00 [INFO ] Built headers proof with overall 262 headers (8 unique)
+2025-11-05 22:04:47.590+11:00 [INFO ] Header and Block pruning: waiting for consensus write permissions...
+2025-11-05 22:04:47.591+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.591+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: f7b56a44647c268bb4b26b19435c3b380760f978982715a79c54d606a28cc1a1
+2025-11-05 22:04:47.591+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.591+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: f7b56a44647c268bb4b26b19435c3b380760f978982715a79c54d606a28cc1a1
+2025-11-05 22:04:47.592+11:00 [TRACE] Ignoring block due to transient pruning-point mismatch (expected=4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2, observed=c04f168385f075f4fa29c88e736b2d5a030d32fca2565002d713868b7046584a)
+2025-11-05 22:04:47.592+11:00 [TRACE] Ignoring block due to transient pruning-point mismatch (expected=4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2, observed=c04f168385f075f4fa29c88e736b2d5a030d32fca2565002d713868b7046584a)
+2025-11-05 22:04:47.592+11:00 [TRACE] Ignoring block due to transient pruning-point mismatch (expected=4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2, observed=c04f168385f075f4fa29c88e736b2d5a030d32fca2565002d713868b7046584a)
+2025-11-05 22:04:47.592+11:00 [INFO ] Starting Header and Block pruning...
+2025-11-05 22:04:47.592+11:00 [INFO ] Header and Block pruning: updated ghostdag data for 0 blocks
+2025-11-05 22:04:47.592+11:00 [INFO ] Header and Block pruning: pruned 17 tips: 96c4b548cc5ab61ac6a78f76fcc1cf393d942cbbaa7f4d3407940594f854958f, 91ce0bed78353e8ba9afe00b6b3a640f9b9fe002e867abbe11e4e92160d9901e, 081c831365cf5ea73c74e50b0b2f82270d42c4c7d2a7b953d3d5a9f0832240e0, 29671b215ef931d5db0c11f2b0a14adf148e602af1a16201932b22a4e2fa71c0, 1243bc8d3943fc782b1dab0a953eb6d2c35c7a0ea6e0082a530b12876a798113...2e14a1ba75be3deb372dfda26714ca28dba991c9d209e2623ea410eb7c2239df, 37dba956e933a622db8a06d6149d3cbc9169f3d62bb778703e0713be7c0b5fd5, b27145aa222b03980762581afbc369dbfed6e1f776f262cefb3e16466b983eb5, ecc8515eef16b85224127fd70cffb2b9e6e8c14f692d30ba779daf76ad90c0b8, 1a6e7fce0eb6cd1ca4885ae63a2fae033d275cefa55af1c97274a046fd2666d6
+2025-11-05 22:04:47.592+11:00 [INFO ] Header and Block pruning: starting traversal from: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2 (genesis: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2)
+2025-11-05 22:04:47.593+11:00 [TRACE] Failed to delete reachability node 91ce0bed78353e8ba9afe00b6b3a640f9b9fe002e867abbe11e4e92160d9901e (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:04:47.593+11:00 [TRACE] Failed to delete reachability node 1243bc8d3943fc782b1dab0a953eb6d2c35c7a0ea6e0082a530b12876a798113 (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:04:47.593+11:00 [INFO ] Header and Block pruning completed: traversed: 43, pruned 34
+2025-11-05 22:04:47.593+11:00 [INFO ] Header and Block pruning stats: proof size: 262, pruning point and anticone: 3, unique headers in proof and windows: 10, pruning points in history: 1
+2025-11-05 22:04:47.593+11:00 [INFO ] Rebuilding the pruning proof after pruning data (sanity test)
+2025-11-05 22:04:47.594+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.594+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: f7b56a44647c268bb4b26b19435c3b380760f978982715a79c54d606a28cc1a1
+2025-11-05 22:04:47.595+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.595+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: f7b56a44647c268bb4b26b19435c3b380760f978982715a79c54d606a28cc1a1
+2025-11-05 22:04:47.595+11:00 [TRACE] Ignoring block due to transient pruning-point mismatch (expected=4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2, observed=c04f168385f075f4fa29c88e736b2d5a030d32fca2565002d713868b7046584a)
+2025-11-05 22:04:47.596+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.596+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c045fde7c1093f6fd368493649e03e9c57d09fb8bd4f13899a41aba0035b44a5
+2025-11-05 22:04:47.596+11:00 [TRACE] correct commitment: 4dd76d47bc14d9d555c4161797e282d76defe8393019dce9145f3772e749ee4a, 8bcd12fdd3e75f8b7e73fcf5c2836c632474e19e17843ec0325a5fc011da611c
+2025-11-05 22:04:47.596+11:00 [DEBUG] VIRTUAL PROCESSOR, UTXO validated for 4dd76d47bc14d9d555c4161797e282d76defe8393019dce9145f3772e749ee4a
+2025-11-05 22:04:47.597+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.597+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: 4dd76d47bc14d9d555c4161797e282d76defe8393019dce9145f3772e749ee4a
+2025-11-05 22:04:47.597+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.598+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c045fde7c1093f6fd368493649e03e9c57d09fb8bd4f13899a41aba0035b44a5
+2025-11-05 22:04:47.598+11:00 [TRACE] correct commitment: 630138722ed28a3951ee2b95d279f388be01105f1bf7ab779c5505bb72b52368, 04335ce7772770e8fca73ec35b82e159f348bd4adf5d940dd99ad77fb3df039d
+2025-11-05 22:04:47.598+11:00 [DEBUG] VIRTUAL PROCESSOR, UTXO validated for 630138722ed28a3951ee2b95d279f388be01105f1bf7ab779c5505bb72b52368
+2025-11-05 22:04:47.600+11:00 [INFO ] Proof was rebuilt successfully following pruning
+2025-11-05 22:04:47.600+11:00 [INFO ] Rebuilding pruning point trusted data (sanity test)
+2025-11-05 22:04:47.600+11:00 [INFO ] Trusted data was rebuilt successfully following pruning
+2025-11-05 22:04:47.602+11:00 [INFO ] [PRUNING METRICS] duration_ms=21 traversed=43 pruned=34 lock_hold_ms=1 lock_yields=1 lock_reacquires=43
+2025-11-05 22:04:47.602+11:00 [INFO ] [PRUNING METRICS] commit_type=batched count=1 avg_ops=1264.00 max_ops=1264 avg_bytes=147802.00 max_bytes=147802 avg_commit_ms=1.290 max_commit_ms=1.290
+2025-11-05 22:04:47.602+11:00 [INFO ] [PRUNING METRICS] commit_type=ghostdag_adjust count=1 avg_ops=0.00 max_ops=0 avg_bytes=12.00 max_bytes=12 avg_commit_ms=0.004 max_commit_ms=0.004
+2025-11-05 22:04:47.602+11:00 [INFO ] [PRUNING METRICS] commit_type=tips_and_selected_chain count=1 avg_ops=21.00 max_ops=21 avg_bytes=699.00 max_bytes=699 avg_commit_ms=0.016 max_commit_ms=0.016
+2025-11-05 22:04:47.602+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.602+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: 630138722ed28a3951ee2b95d279f388be01105f1bf7ab779c5505bb72b52368
+2025-11-05 22:04:47.603+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.603+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c22840ea449c6a4bcdcabdba211410f907210a2dd1b1d3d2f0028e4d799ff9bb
+2025-11-05 22:04:47.603+11:00 [TRACE] correct commitment: e7f48cd152470f50166a552b60a5938db412dfb289b40a9d8cec72b36e2d585e, 2f07a15ce559c9323dd03193b426d3b6e9bf7dff8bfb6727ccf63ba219b2de3d
+2025-11-05 22:04:47.603+11:00 [DEBUG] VIRTUAL PROCESSOR, UTXO validated for e7f48cd152470f50166a552b60a5938db412dfb289b40a9d8cec72b36e2d585e
+2025-11-05 22:04:47.604+11:00 [TRACE] Adjusting the retention period root to cover the required retention period. Target timestamp: 9400
+2025-11-05 22:04:47.604+11:00 [TRACE] block | timestamp = c045fde7c1093f6fd368493649e03e9c57d09fb8bd4f13899a41aba0035b44a5 | 4658
+2025-11-05 22:04:47.604+11:00 [TRACE] block c045fde7c1093f6fd368493649e03e9c57d09fb8bd4f13899a41aba0035b44a5 timestamp 4658 >= 9400
+2025-11-05 22:04:47.604+11:00 [TRACE] Retention period root adjustment summary: old_root=c04f168385f075f4fa29c88e736b2d5a030d32fca2565002d713868b7046584a new_root=c045fde7c1093f6fd368493649e03e9c57d09fb8bd4f13899a41aba0035b44a5 pruning_point=c045fde7c1093f6fd368493649e03e9c57d09fb8bd4f13899a41aba0035b44a5 steps=0 sink_ts=9833 target_ts=9400 retention_ms=433
+2025-11-05 22:04:47.604+11:00 [TRACE] New Pruning Point: c045fde7c1093f6fd368493649e03e9c57d09fb8bd4f13899a41aba0035b44a5 | New Retention Period Root: c045fde7c1093f6fd368493649e03e9c57d09fb8bd4f13899a41aba0035b44a5
+2025-11-05 22:04:47.604+11:00 [INFO ] Periodic pruning point movement: advancing from c04f168385f075f4fa29c88e736b2d5a030d32fca2565002d713868b7046584a to c045fde7c1093f6fd368493649e03e9c57d09fb8bd4f13899a41aba0035b44a5
+2025-11-05 22:04:47.604+11:00 [INFO ] Performing a sanity check that the new UTXO set has the expected UTXO commitment
+2025-11-05 22:04:47.604+11:00 [INFO ] Verifying the new pruning point UTXO commitment (sanity test)
+2025-11-05 22:04:47.604+11:00 [INFO ] Pruning point UTXO commitment was verified correctly (sanity test)
+2025-11-05 22:04:47.604+11:00 [INFO ] Updated the pruning point UTXO set
+2025-11-05 22:04:47.604+11:00 [INFO ] Header and Block pruning: preparing proof and anticone data...
+2025-11-05 22:04:47.605+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.605+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: e7f48cd152470f50166a552b60a5938db412dfb289b40a9d8cec72b36e2d585e
+2025-11-05 22:04:47.606+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.606+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: e7f48cd152470f50166a552b60a5938db412dfb289b40a9d8cec72b36e2d585e
+2025-11-05 22:04:47.607+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.607+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: c22840ea449c6a4bcdcabdba211410f907210a2dd1b1d3d2f0028e4d799ff9bb
+2025-11-05 22:04:47.607+11:00 [TRACE] correct commitment: 52d95c4091b7139f4ad06cabad1ec7e59f7edba3deeca459dc3f4ef0f2476731, be85829bb2a3dbdce46f6d08c28d1cfbda4868e7b81eaca0cfdb959c371075f0
+2025-11-05 22:04:47.607+11:00 [DEBUG] VIRTUAL PROCESSOR, UTXO validated for 52d95c4091b7139f4ad06cabad1ec7e59f7edba3deeca459dc3f4ef0f2476731
+2025-11-05 22:04:47.608+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.608+11:00 [WARN ] Finality Violation Detected. Block 1dc25e74e70f965c21d7c98d61691d86ed9fa2d7281326401f94126d61bf7710 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.608+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: 52d95c4091b7139f4ad06cabad1ec7e59f7edba3deeca459dc3f4ef0f2476731
+2025-11-05 22:04:47.609+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.609+11:00 [WARN ] Finality Violation Detected. Block a9bab6e5e4e16c3f04c3062ae9a9d9dee68560e4b5e498bed5d64d770109a5a0 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.609+11:00 [WARN ] Finality Violation Detected. Block 1dc25e74e70f965c21d7c98d61691d86ed9fa2d7281326401f94126d61bf7710 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.609+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: 52d95c4091b7139f4ad06cabad1ec7e59f7edba3deeca459dc3f4ef0f2476731
+2025-11-05 22:04:47.609+11:00 [TRACE] Simulation time: 12.096	Generated 100 blocks
+2025-11-05 22:04:47.609+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.609+11:00 [WARN ] Finality Violation Detected. Block a9bab6e5e4e16c3f04c3062ae9a9d9dee68560e4b5e498bed5d64d770109a5a0 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.610+11:00 [WARN ] Finality Violation Detected. Block 51444e40f3e5438c00e9a6ab4dbeb59156cf0db0f94b4407eb0d47d09a3bb929 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.610+11:00 [WARN ] Finality Violation Detected. Block 1dc25e74e70f965c21d7c98d61691d86ed9fa2d7281326401f94126d61bf7710 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.610+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: 52d95c4091b7139f4ad06cabad1ec7e59f7edba3deeca459dc3f4ef0f2476731
+2025-11-05 22:04:47.610+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.610+11:00 [WARN ] Finality Violation Detected. Block a9bab6e5e4e16c3f04c3062ae9a9d9dee68560e4b5e498bed5d64d770109a5a0 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.610+11:00 [WARN ] Finality Violation Detected. Block 78f8b31ffe35b43aff7283b8c10e92fb19b2c9ebf97e41671997592a8f028993 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.610+11:00 [WARN ] Finality Violation Detected. Block 51444e40f3e5438c00e9a6ab4dbeb59156cf0db0f94b4407eb0d47d09a3bb929 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.610+11:00 [WARN ] Finality Violation Detected. Block 1dc25e74e70f965c21d7c98d61691d86ed9fa2d7281326401f94126d61bf7710 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.610+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: 52d95c4091b7139f4ad06cabad1ec7e59f7edba3deeca459dc3f4ef0f2476731
+2025-11-05 22:04:47.611+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.611+11:00 [WARN ] Finality Violation Detected. Block d9c6dfb2133a9b0691f90b7e15b48501041b903b1aedd0aada2ad6be8acd7c9b violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.611+11:00 [WARN ] Finality Violation Detected. Block a9bab6e5e4e16c3f04c3062ae9a9d9dee68560e4b5e498bed5d64d770109a5a0 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.611+11:00 [WARN ] Finality Violation Detected. Block 78f8b31ffe35b43aff7283b8c10e92fb19b2c9ebf97e41671997592a8f028993 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.611+11:00 [WARN ] Finality Violation Detected. Block 51444e40f3e5438c00e9a6ab4dbeb59156cf0db0f94b4407eb0d47d09a3bb929 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.611+11:00 [WARN ] Finality Violation Detected. Block 1dc25e74e70f965c21d7c98d61691d86ed9fa2d7281326401f94126d61bf7710 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.611+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: 52d95c4091b7139f4ad06cabad1ec7e59f7edba3deeca459dc3f4ef0f2476731
+2025-11-05 22:04:47.612+11:00 [TRACE] virtual processor received 1 tasks
+2025-11-05 22:04:47.612+11:00 [WARN ] Finality Violation Detected. Block d9c6dfb2133a9b0691f90b7e15b48501041b903b1aedd0aada2ad6be8acd7c9b violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.612+11:00 [WARN ] Finality Violation Detected. Block a9bab6e5e4e16c3f04c3062ae9a9d9dee68560e4b5e498bed5d64d770109a5a0 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.612+11:00 [WARN ] Finality Violation Detected. Block 78f8b31ffe35b43aff7283b8c10e92fb19b2c9ebf97e41671997592a8f028993 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.612+11:00 [WARN ] Finality Violation Detected. Block 51444e40f3e5438c00e9a6ab4dbeb59156cf0db0f94b4407eb0d47d09a3bb929 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.612+11:00 [WARN ] Finality Violation Detected. Block 1dc25e74e70f965c21d7c98d61691d86ed9fa2d7281326401f94126d61bf7710 violates finality and is ignored from Virtual chain.
+2025-11-05 22:04:47.612+11:00 [DEBUG] VIRTUAL PROCESSOR, found split point: 52d95c4091b7139f4ad06cabad1ec7e59f7edba3deeca459dc3f4ef0f2476731
+2025-11-05 22:04:47.612+11:00 [INFO ] Built headers proof with overall 265 headers (11 unique)
+2025-11-05 22:04:47.612+11:00 [INFO ] Header and Block pruning: waiting for consensus write permissions...
+2025-11-05 22:04:47.612+11:00 [INFO ] Starting Header and Block pruning...
+2025-11-05 22:04:47.612+11:00 [INFO ] Header and Block pruning: updated ghostdag data for 0 blocks
+2025-11-05 22:04:47.613+11:00 [INFO ] Header and Block pruning: pruned 1 tips: 093fb91fd85a726f2353a77c9a6cc4be2b071f1ef47c73ab1262270b64ad53a0...
+2025-11-05 22:04:47.613+11:00 [INFO ] Header and Block pruning: starting traversal from: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2 (genesis: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2)
+2025-11-05 22:04:47.613+11:00 [TRACE] Skipping reachability relations pruning for 37dba956e933a622db8a06d6149d3cbc9169f3d62bb778703e0713be7c0b5fd5 because parents are missing
+2025-11-05 22:04:47.613+11:00 [ERROR] thread 'pruning-processor' panicked at consensus/src/processes/reachability/inquirer.rs:237:82: called `Result::unwrap()` on an `Err` value: KeyNotFound(Reachability/29671b215ef931d5db0c11f2b0a14adf148e602af1a16201932b22a4e2fa71c0)
+
+thread 'pruning-processor' panicked at consensus/src/processes/reachability/inquirer.rs:237:82:
+called `Result::unwrap()` on an `Err` value: KeyNotFound(Reachability/29671b215ef931d5db0c11f2b0a14adf148e602af1a16201932b22a4e2fa71c0)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+Exiting...

@@ -131,3 +131,39 @@ Phase 1 refactoring is in place. The pruning processor now stages all deletion
 | 10 BPS · 6 000 blocks | `batched` | – | 4 commits · 48 B | Flushes happen once per prune cycle |
 
 **Key observation:** the retention window used for Phase 0 is so shallow that the traversal loop never stages more than a handful of blocks; consequently each `batched` commit still contains ≈48 B (retention checkpoint only) and there is no measurable throughput gain yet. To quantify batching benefits we will need larger histories (or a smaller retention target) so that `per_block` deletions actually accumulate before a flush. That tuning is scheduled for Phase 2.
+
+### Phase 2 Simpa Scenarios (2025-11-05)
+
+We finally exercised real pruning traversals by generating longer histories and shrinking the retention window. Both runs were taken from the `pruning-optimisation` branch with the new reachability error handling fixes applied.
+
+| Profile | Command deltas | Traversed / pruned | `batched` payload | Notes |
+| --- | --- | --- | --- | --- |
+| 2 BPS · 50 k blocks (`simpa-phase2-2bps-50k-ret1e-5.*`) | `SIMPA_TARGET_BLOCKS=50000`, `SIMPA_RETENTION_DAYS=1e-5` | Cycle 1: 12 / 4<br>Cycle 2: 16 / 0 | 155 ops · 7.8 KB (cycle 1)<br>66 ops · 2.3 KB (cycle 2) | First cycle finally queued >100 deletions; lock telemetry still shows one yield per cycle and sub‑0.12 ms commit latency. |
+| 8 BPS · 50 k blocks (`simpa-phase2-8bps-50k-ret1e-5.*`) | `SIMPA_BPS=8`, same retention/target as above | 63 / 41 | 1 174 ops · 95 KB | Batch stays well below the 4 MiB limit, commit takes 0.62 ms, and lock guard is held <25 ms. Subsequent cycles continue safely after ignoring missing reachability nodes. |
+| 10 BPS · 60 k blocks (`simpa-phase2-10bps-60k-ret1e-5.*`) | `SIMPA_BPS=10`, `SIMPA_TARGET_BLOCKS=60000`, `SIMPA_RETENTION_DAYS=1e-5` | Cycle 1: 71 / 42<br>Cycle 2: 55 / 8 | 1 985 ops · 159 KB (cycle 1)<br>343 ops · 14 KB (cycle 2) | Headline workload for Phase 2. Even at 10 BPS the largest batch is 0.16 MB with a 1.4 ms commit; lock yields remain at one per cycle. |
+| 10 BPS · 100 k blocks (`simpa-phase2-10bps-100k-ret1e-5.*`) | Same as above plus `SIMPA_TARGET_BLOCKS=100000` and `SIMPA_LOGLEVEL=trace` | 47 / 31 | 913 ops · 80 KB | First “long history” run after the reachability/relations hardening. A single batch handles every deletion with a 0.62 ms commit, lock_hold=1 ms, lock_yields=1, lock_reacquires=39. |
+| 8 BPS · 50 k blocks (`simpa-phase2-8bps-50k-lock1ms.*`) | `SIMPA_BPS=8`, `SIMPA_RETENTION_DAYS=1e-5`, `PRUNE_LOCK_MAX_DURATION_MS=1` | Cycles: 39/12, 51/11, 56/7 | 493–557 ops, 20–34 KB per flush | Lock forcing keeps each batch sub‑0.25 ms and exaggerates lock reacquires (23/38/50) without tripping other thresholds; useful when validating fairness under aggressive yields. |
+
+Takeaways:
+
+1. Multi-block batching now occurs in practice: instead of flushes containing only the retention checkpoint, we’re staging hundreds of deletes before the single write per cycle. Even in the aggressive 8 BPS scenario the payload is <0.1 MB, so the current thresholds remain conservative.
+2. Reachability churn on deeper traversals does surface missing-node races; adding `StoreError::KeyNotFound` handling to the ancestor check and staging commits lets the loop continue instead of hanging.
+3. Lock telemetry still reports a single yield per cycle because flushes only trigger at the end; to increase fairness we can either lower `PRUNE_LOCK_MAX_DURATION_MS` or force a flush every N blocks once we start pruning millions of nodes. For now the observed hold times stay below 25 ms, so we kept the defaults.
+4. The harness needs `SIMPA_LOGLEVEL=trace` (or an explicit `kaspa_consensus::pipeline::pruning_processor::processor=info` override) to surface `[PRUNING METRICS]` after the latest logging changes; without it the info-level summaries are silently filtered.
+
+### Batch Tuning Controls (2025‑11‑05)
+
+- New env overrides (`PRUNE_BATCH_MAX_BLOCKS`, `PRUNE_BATCH_MAX_OPS`, `PRUNE_BATCH_MAX_BYTES`, `PRUNE_BATCH_MAX_DURATION_MS`, `PRUNE_LOCK_MAX_DURATION_MS`) let us tighten or relax the flush heuristics without recompiling. Overrides are logged on startup, and while they’re active we skip the expensive proof/trusted-data sanity rebuilds to avoid false positives when the DAG advances mid-run.
+- `run-simpa-pruning.sh` now defaults to `kaspa_consensus::pipeline::pruning_processor::processor=trace` so `[PRUNING METRICS]` stay visible, and accepts `SIMPA_ROCKSDB_STATS{,_PERIOD_SEC}` to toggle RocksDB telemetry alongside the pruning traces.
+
+### Phase 3 Stress Scenarios (2025-11-05)
+
+| Profile | Command deltas | Traversed / pruned | `batched` payload | Notes |
+| --- | --- | --- | --- | --- |
+| 10 BPS · 80 k blocks · multi-miner (`simpa-phase3-highbps-multiminer.*`) | `SIMPA_TARGET_BLOCKS=80000`, `SIMPA_BPS=12`, `SIMPA_TPB=512`, `SIMPA_MINERS=4`, `SIMPA_LONG_PAYLOAD=1`, `SIMPA_ROCKSDB_STATS=1` | Four cycles at 58 / 51 each | 1.32k–1.48k ops · 111–121 KB, 0.50–0.84 ms commits | Demonstrates batching under wide DAG fan-out and heavier block payloads. Lock yields remain at 1 despite 4 miners; RocksDB stats confirm no stalls. |
+| 8 BPS · 80 k blocks · ultra-shallow retention (`simpa-phase3-8bps-ret1e-6.*`) | `SIMPA_RETENTION_DAYS=1e-6`, `SIMPA_ROCKSDB_STATS=1` | 33 / 15, then 48 / 14 | 367 ops · 29 KB, then 657 ops · 37 KB | Forcing the retention window to ~0.086 seconds causes frequent prunes with smaller batches; still well within thresholds (0.28 ms commits, lock_hold=0). |
+| 2 BPS · 40 k blocks · deep retention (`simpa-phase3-2bps-ret0.5d.*`) | `SIMPA_RETENTION_DAYS=0.5` | 0 / 0 (multiple cycles) | 1 op · 48 B | Retaining ~43 k blocks keeps the prune traversal idle. We still emit checkpoint-only commits (expected) and confirmed the instrumentation remains cheap even when no deletions occur. |
+
+Crash-drill note: `pruning-optimisation/scripts/run-simpa-crashtest.py` tails the harness log and sends `SIGKILL` once a target line is emitted (`--kill-on "Header and Block pruning: starting traversal"` by default). Its output is in `simpa-prune-20251105-220418.log` (killed mid-prune) and the subsequent restart `simpa-phase3-crash3-recovery.{log,csv}`, showing that simply re-running `run-simpa-pruning.sh` against the on-disk DB resumes pruning without manual intervention. (The recovery flow logs the usual “Header and Block pruning …” sequence rather than a bespoke message—even so, the checkpoint mismatch is resolved automatically.)
+
+DeleteRange note: reachability and children stores already delete entire buckets via RocksDB `delete_range` (see `DbSetAccess::delete_bucket`). Extending that approach to block bodies or UTXO data would require contiguous key ranges, but those keys are full hashes, so any coarse range would inevitably wipe unrelated entries. For now we keep per-key tombstones there and lean on the batch size reductions to keep write amplification manageable.
