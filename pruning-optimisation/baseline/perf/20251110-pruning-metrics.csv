@@ -1,0 +1,9 @@
+source,kind,commit_type,count,avg_ops,max_ops,avg_bytes,max_bytes,avg_commit_ms,max_commit_ms,duration_ms,traversed,pruned,lock_hold_ms,lock_yields,lock_reacquires
+pruning-optimisation/baseline/perf/20251110-mainnet-perf.log,summary,,,,,,,,,7080695,473826,432077,5711421,149503,149504
+pruning-optimisation/baseline/perf/20251110-mainnet-perf.log,commit,batched,149500,854.14,3126,92305.52,638247,0.961,781.666,,,,,,
+pruning-optimisation/baseline/perf/20251110-mainnet-perf.log,commit,ghostdag_adjust,1,50.00,50,11960.00,11960,0.061,0.061,,,,,,
+pruning-optimisation/baseline/perf/20251110-mainnet-perf.log,commit,tips_and_selected_chain,1,153038.00,153038,3519886.00,3519886,56.601,56.601,,,,,,
+pruning-optimisation/baseline/perf/20251110-mainnet-perf.log,summary,,,,,,,,,5391726,473847,432163,4602024,128550,128551
+pruning-optimisation/baseline/perf/20251110-mainnet-perf.log,commit,batched,128548,993.15,3459,107564.47,625626,0.665,672.327,,,,,,
+pruning-optimisation/baseline/perf/20251110-mainnet-perf.log,commit,ghostdag_adjust,1,42.00,42,7153.00,7153,0.070,0.070,,,,,,
+pruning-optimisation/baseline/perf/20251110-mainnet-perf.log,commit,tips_and_selected_chain,1,153752.00,153752,3536308.00,3536308,56.425,56.425,,,,,,

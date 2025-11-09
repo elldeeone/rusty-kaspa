@@ -34,10 +34,10 @@ Phase 2 status: ✅ – we now have reproducible runs at 2 BPS, 8 BPS, and
   - Additional DeleteRange usage was evaluated and left unchanged: reachability/children buckets already rely on RocksDB `delete_range`. Block/UTXO stores, however, use hash-derived keys, so any coarse range delete would nuke unrelated entries; per-block tombstones remain the safe default.
 
 ## Phase 4 – External Validation
-1. Run documented testnet baseline (`phase0-baseline-runbook.md`) on real node with new batching.
-2. Compare `[PRUNING METRICS]` to Simpa results; ensure improvements carry over.
-3. Gather perf/flamegraph snapshots to confirm WriteBatch commits drop from hot path.
-4. Document findings + threshold rationale in `design/phase1-batching-architecture.md` (final version).
+1. ✅ Run documented testnet baseline (`phase0-baseline-runbook.md`) on real node with new batching.
+2. ✅ Compare `[PRUNING METRICS]` to Simpa results; ensure improvements carry over.
+3. ✅ Gather perf/flamegraph snapshots to confirm WriteBatch commits drop from hot path (`baseline/perf/20251110-mainnet-perf.log` + `20251110-pruning-metrics.csv`).
+4. ✅ Document findings + threshold rationale in `design/phase1-batching-architecture.md` (final version).
 
 ## Phase 5 – Readiness Checklist
 - ✅ All new tests pass (unit + Simpa harness).
