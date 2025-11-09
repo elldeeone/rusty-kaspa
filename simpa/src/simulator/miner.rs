@@ -6,6 +6,7 @@ use kaspa_consensus::params::Params;
 use kaspa_consensus_core::api::ConsensusApi;
 use kaspa_consensus_core::block::{Block, TemplateBuildMode, TemplateTransactionSelector};
 use kaspa_consensus_core::coinbase::MinerData;
+use kaspa_consensus_core::errors::block::RuleError;
 use kaspa_consensus_core::mass::MassCalculator;
 use kaspa_consensus_core::sign::sign;
 use kaspa_consensus_core::subnets::SUBNETWORK_ID_NATIVE;
@@ -14,7 +15,6 @@ use kaspa_consensus_core::tx::{
 };
 use kaspa_consensus_core::utxo::utxo_view::UtxoView;
 use kaspa_core::trace;
-use kaspa_consensus_core::errors::block::RuleError;
 use kaspa_utils::sim::{Environment, Process, Resumption, Suspension};
 use rand::rngs::ThreadRng;
 use rand::Rng;
@@ -236,11 +236,11 @@ impl Miner {
             let outcome = match status {
                 Ok(status) => Some(status),
                 Err(RuleError::WrongHeaderPruningPoint(expected, observed)) => {
-                    trace!(
-                        "Ignoring block due to transient pruning-point mismatch (expected={}, observed={})",
-                        expected,
-                        observed
-                    );
+                    trace!("Ignoring block due to transient pruning-point mismatch (expected={}, observed={})", expected, observed);
+                    None
+                }
+                Err(RuleError::UnexpectedHeaderDaaScore(expected, observed)) => {
+                    trace!("Ignoring block due to transient DAA-score mismatch (expected={}, observed={})", expected, observed);
                     None
                 }
                 Err(err) => panic!("Unexpected block validation error during simulation: {err:?}"),
