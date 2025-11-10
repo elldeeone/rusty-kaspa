@@ -17,7 +17,7 @@ use kaspa_consensus::{
 };
 use kaspa_consensus_core::{
     api::ConsensusApi, block::Block, blockstatus::BlockStatus, config::bps::calculate_ghostdag_k, errors::block::BlockProcessResult,
-    mining_rules::MiningRules, tx::TransactionType, BlockHashSet, BlockLevel, HashMapCustomHasher,
+    mining_rules::MiningRules, BlockHashSet, BlockLevel, HashMapCustomHasher,
 };
 use kaspa_consensus_notify::root::ConsensusNotificationRoot;
 use kaspa_core::{
@@ -34,7 +34,6 @@ use kaspa_utils::fd_budget;
 use simulator::network::KaspaNetworkSimulator;
 use std::{collections::VecDeque, sync::Arc, time::Duration};
 
-mod blocks_json;
 pub mod simulator;
 
 /// Kaspa Network Simulator
@@ -101,6 +100,10 @@ struct Args {
     #[arg(long, default_value_t = false)]
     test_pruning: bool,
 
+    /// Skip acceptance-data validation when running with --test-pruning (useful for lightweight pruning benchmarks)
+    #[arg(long, default_value_t = false)]
+    skip_acceptance_validation: bool,
+
     /// Use the legacy full-window DAA mechanism (note: the size of this window scales with bps)
     #[arg(long, default_value_t = false)]
     daa_legacy: bool,
@@ -130,9 +133,6 @@ struct Args {
 
     #[arg(long)]
     override_params_output: Option<String>,
-
-    #[arg(long)]
-    blocks_json_gz_output_path: Option<String>,
 }
 
 #[cfg(feature = "heap")]
@@ -201,7 +201,7 @@ fn main_impl(mut args: Args) {
     args.bps = if args.testnet11 { TenBps::bps() as f64 } else { args.bps };
     let mut params = if args.testnet11 { SIMNET_PARAMS } else { DEVNET_PARAMS };
     params.crescendo_activation = ForkActivation::always();
-    params.coinbase_maturity = 200;
+    params.crescendo.coinbase_maturity = 200;
     params.storage_mass_parameter = 10_000;
     let mut builder = ConfigBuilder::new(params)
         .apply_args(|config| apply_args_to_consensus_params(&args, &mut config.params))
@@ -275,48 +275,40 @@ fn main_impl(mut args: Args) {
         (consensus, lifetime)
     };
 
-    if let Some(blocks_json_output_path) = args.blocks_json_gz_output_path {
-        blocks_json::write_blocks_json(&config.params, &consensus, &blocks_json_output_path);
-    }
-
     if args.test_pruning {
-        let hashes = topologically_ordered_hashes(&consensus, consensus.pruning_point(), false);
+        let hashes = topologically_ordered_hashes(&consensus, consensus.pruning_point());
         let num_blocks = hashes.len();
-        let num_txs = print_stats(&consensus, &hashes, args.delay, args.bps, config.ghostdag_k());
+        let num_txs = print_stats(&consensus, &hashes, args.delay, args.bps, config.ghostdag_k().before());
         info!("There are {num_blocks} blocks with {num_txs} transactions overall above the current pruning point");
 
         if args.retention_period_days.is_some() {
-            let hashes_retention = topologically_ordered_hashes(&consensus, consensus.get_retention_period_root(), false);
+            let hashes_retention = topologically_ordered_hashes(&consensus, consensus.get_retention_period_root());
             info!("There are {} blocks above the retention period root", hashes_retention.len());
         }
 
         consensus.validate_pruning_points(consensus.get_sink()).unwrap();
 
-        // Test whether we can still retrieve a populated transaction given a txid and the accepting block daa score.
-        for hash in hashes.iter().cloned() {
-            if !consensus.is_chain_block(hash).unwrap() {
-                // only chain blocks are worth checking the acceptance data of
-                continue;
-            }
+        if !args.skip_acceptance_validation {
+            // Test whether we can still retrieve a populated transaction given a txid and the accepting block daa score.
+            for hash in hashes.iter().cloned() {
+                if !consensus.is_chain_block(hash).unwrap() {
+                    // only chain blocks are worth checking the acceptance data of
+                    continue;
+                }
 
-            if let Ok(block_acceptance_data) = consensus.get_block_acceptance_data(hash) {
-                block_acceptance_data.iter().for_each(|cbad| {
-                    let block = consensus.get_block(hash).unwrap();
-                    cbad.accepted_transactions.iter().for_each(|ate| {
-                        assert!(
-                            consensus
-                                .get_transactions_by_accepting_daa_score(
-                                    block.header.daa_score,
-                                    Some(vec![ate.transaction_id]),
-                                    TransactionType::SignableTransaction
-                                )
-                                .is_ok(),
-                            "Expected to find find tx {} at accepted daa {} via get_populated_transaction",
-                            ate.transaction_id,
-                            block.header.daa_score
-                        );
+                if let Ok(block_acceptance_data) = consensus.get_block_acceptance_data(hash) {
+                    block_acceptance_data.iter().for_each(|cbad| {
+                        let block = consensus.get_block(hash).unwrap();
+                        cbad.accepted_transactions.iter().for_each(|ate| {
+                            assert!(
+                                consensus.get_populated_transaction(ate.transaction_id, block.header.daa_score).is_ok(),
+                                "Expected to find find tx {} at accepted daa {} via get_populated_transaction",
+                                ate.transaction_id,
+                                block.header.daa_score
+                            );
+                        });
                     });
-                });
+                }
             }
         }
 
@@ -354,51 +346,65 @@ fn apply_args_to_consensus_params(args: &Args, params: &mut Params) {
     // We have no actual PoW in the simulation, so the true max is most reflective,
     // however we avoid the actual max since it is reserved for the DB prefix scheme
     params.max_block_level = BlockLevel::MAX - 1;
-    // params.genesis.timestamp = 0;
+    params.genesis.timestamp = 0;
     if args.testnet11 {
         info!(
             "Using kaspa-testnet-11 configuration (GHOSTDAG K={}, DAA window size={}, Median time window size={})",
-            params.ghostdag_k(),
-            params.difficulty_window_size,
-            params.past_median_time_window_size,
+            params.ghostdag_k().before(),
+            params.difficulty_window_size().before(),
+            params.past_median_time_window_size().before(),
         );
     } else {
         let max_delay = args.delay.max(NETWORK_DELAY_BOUND as f64);
-        let k = u64::max(calculate_ghostdag_k(2.0 * max_delay * args.bps, 0.05), params.ghostdag_k() as u64);
+        let k = u64::max(calculate_ghostdag_k(2.0 * max_delay * args.bps, 0.05), params.ghostdag_k().before() as u64);
         let k = u64::min(k, KType::MAX as u64) as KType; // Clamp to KType::MAX
-        params.ghostdag_k = k;
-        params.mergeset_size_limit = k as u64 * 10;
-        params.max_block_parents = u8::max((0.66 * k as f64) as u8, 10);
-        params.target_time_per_block = (1000.0 / args.bps) as u64;
-        params.merge_depth = (params.merge_depth as f64 * args.bps) as u64;
-        params.coinbase_maturity = (params.coinbase_maturity as f64 * f64::max(1.0, args.bps * args.delay * 0.25)) as u64;
+        params.prior_ghostdag_k = k;
+        params.prior_mergeset_size_limit = k as u64 * 10;
+        params.prior_max_block_parents = u8::max((0.66 * k as f64) as u8, 10);
+        params.prior_target_time_per_block = (1000.0 / args.bps) as u64;
+        params.prior_merge_depth = (params.prior_merge_depth as f64 * args.bps) as u64;
+        params.prior_coinbase_maturity = (params.prior_coinbase_maturity as f64 * f64::max(1.0, args.bps * args.delay * 0.25)) as u64;
 
         if args.daa_legacy {
             // Scale DAA and median-time windows linearly with BPS
             params.crescendo_activation = ForkActivation::never();
             params.timestamp_deviation_tolerance = (params.timestamp_deviation_tolerance as f64 * args.bps) as u64;
-            params.difficulty_window_size = (params.difficulty_window_size as f64 * args.bps) as usize;
+            params.prior_difficulty_window_size = (params.prior_difficulty_window_size as f64 * args.bps) as usize;
         } else {
             // Use the new sampling algorithms
             params.crescendo_activation = ForkActivation::always();
             params.timestamp_deviation_tolerance = (600.0 * args.bps) as u64;
-            params.past_median_time_sample_rate = (10.0 * args.bps) as u64;
-            params.difficulty_sample_rate = (2.0 * args.bps) as u64;
+            params.crescendo.past_median_time_sample_rate = (10.0 * args.bps) as u64;
+            params.crescendo.difficulty_sample_rate = (2.0 * args.bps) as u64;
         }
 
-        info!("2Dλ={}, GHOSTDAG K={}, DAA window size={}", 2.0 * args.delay * args.bps, k, params.difficulty_window_size);
+        info!("2Dλ={}, GHOSTDAG K={}, DAA window size={}", 2.0 * args.delay * args.bps, k, params.difficulty_window_size().before());
     }
     if args.test_pruning {
+        params.crescendo_activation = ForkActivation::new(1250.min(args.target_blocks.map(|x| x / 2).unwrap_or(900)));
+
         params.pruning_proof_m = 16;
         params.min_difficulty_window_size = 16;
+        params.prior_difficulty_window_size = 64;
         params.timestamp_deviation_tolerance = 16;
-        params.difficulty_window_size = params.difficulty_window_size.min(32);
+        params.crescendo.sampled_difficulty_window_size = params.crescendo.sampled_difficulty_window_size.min(32);
 
-        params.ghostdag_k = 20;
-        params.finality_depth = 100 * 2;
-        params.merge_depth = 64 * 2;
-        params.mergeset_size_limit = 32 * 2;
-        params.pruning_depth = 100 * 2 * 2 + 50;
+        let base_finality = 5;
+        let base_pruning = base_finality * 2; // maintain identical pre/post ratios
+        let base_merge_depth = 10;
+        let base_mergeset_limit = 16;
+
+        params.prior_ghostdag_k = 6;
+        params.prior_finality_depth = base_finality;
+        params.prior_merge_depth = base_merge_depth;
+        params.prior_mergeset_size_limit = base_mergeset_limit;
+        params.prior_pruning_depth = base_pruning;
+
+        params.crescendo.ghostdag_k = 12;
+        params.crescendo.finality_depth = base_finality;
+        params.crescendo.merge_depth = base_merge_depth;
+        params.crescendo.mergeset_size_limit = base_mergeset_limit * 2;
+        params.crescendo.pruning_depth = base_pruning;
 
         info!("Setting pruning depth to {:?}", params.pruning_depth());
     }
@@ -414,9 +420,9 @@ fn apply_args_to_perf_params(args: &Args, perf_params: &mut PerfParams) {
 }
 
 async fn validate(src_consensus: &Consensus, dst_consensus: &Consensus, params: &Params, delay: f64, bps: f64, header_only: bool) {
-    let hashes = topologically_ordered_hashes(src_consensus, params.genesis.hash, false);
+    let hashes = topologically_ordered_hashes(src_consensus, params.genesis.hash);
     let num_blocks = hashes.len();
-    let num_txs = print_stats(src_consensus, &hashes, delay, bps, params.ghostdag_k());
+    let num_txs = print_stats(src_consensus, &hashes, delay, bps, params.ghostdag_k().before());
     if header_only {
         info!("Validating {num_blocks} headers...");
     } else {
@@ -478,13 +484,13 @@ fn submit_chunk(
     futures
 }
 
-pub(crate) fn topologically_ordered_hashes(src_consensus: &Consensus, genesis_hash: Hash, include_genesis: bool) -> Vec<Hash> {
+fn topologically_ordered_hashes(src_consensus: &Consensus, genesis_hash: Hash) -> Vec<Hash> {
     let mut queue: VecDeque<Hash> = std::iter::once(genesis_hash).collect();
     let mut visited = BlockHashSet::new();
-    let mut vec = if include_genesis { vec![genesis_hash] } else { Vec::new() };
-    let relations = src_consensus.relations_store.read();
+    let mut vec = Vec::new();
+    let relations = src_consensus.relations_stores.read();
     while let Some(current) = queue.pop_front() {
-        for child in relations.get_children(current).unwrap().read().iter() {
+        for child in relations[0].get_children(current).unwrap().read().iter() {
             if visited.insert(*child) {
                 queue.push_back(*child);
                 vec.push(*child);
