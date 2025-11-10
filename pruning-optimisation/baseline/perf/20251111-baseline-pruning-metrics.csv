@@ -1,0 +1,14 @@
+source,kind,commit_type,count,avg_ops,max_ops,avg_bytes,max_bytes,avg_commit_ms,max_commit_ms,duration_ms,traversed,pruned,lock_hold_ms,lock_yields,lock_reacquires
+pruning-optimisation/baseline/perf/20251111-baseline-mainnet.log,summary,,,,,,,,,7080695,473826,432077,5711421,149503,149504
+pruning-optimisation/baseline/perf/20251111-baseline-mainnet.log,commit,batched,149500,854.14,3126,92305.52,638247,0.961,781.666,,,,,,
+pruning-optimisation/baseline/perf/20251111-baseline-mainnet.log,commit,ghostdag_adjust,1,50.00,50,11960.00,11960,0.061,0.061,,,,,,
+pruning-optimisation/baseline/perf/20251111-baseline-mainnet.log,commit,tips_and_selected_chain,1,153038.00,153038,3519886.00,3519886,56.601,56.601,,,,,,
+pruning-optimisation/baseline/perf/20251111-baseline-mainnet.log,summary,,,,,,,,,5391726,473847,432163,4602024,128550,128551
+pruning-optimisation/baseline/perf/20251111-baseline-mainnet.log,commit,batched,128548,993.15,3459,107564.47,625626,0.665,672.327,,,,,,
+pruning-optimisation/baseline/perf/20251111-baseline-mainnet.log,commit,ghostdag_adjust,1,42.00,42,7153.00,7153,0.070,0.070,,,,,,
+pruning-optimisation/baseline/perf/20251111-baseline-mainnet.log,commit,tips_and_selected_chain,1,153752.00,153752,3536308.00,3536308,56.425,56.425,,,,,,
+pruning-optimisation/baseline/perf/20251111-baseline-mainnet.log,summary,,,,,,,,,5600733,473841,432131,4850974,407215,407216
+pruning-optimisation/baseline/perf/20251111-baseline-mainnet.log,commit,ghostdag_adjust,1,60.00,60,15716.00,15716,0.046,0.046,,,,,,
+pruning-optimisation/baseline/perf/20251111-baseline-mainnet.log,commit,per_block,473828,274.07,1427,29277.66,229454,0.181,55.879,,,,,,
+pruning-optimisation/baseline/perf/20251111-baseline-mainnet.log,commit,retention_checkpoint,1,1.00,1,48.00,48,0.039,0.039,,,,,,
+pruning-optimisation/baseline/perf/20251111-baseline-mainnet.log,commit,tips_and_selected_chain,1,153466.00,153466,3529730.00,3529730,52.979,52.979,,,,,,
