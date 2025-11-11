@@ -9,22 +9,26 @@ SNAP=pruning-optimisation/baseline/experiments/simpa-db-mainnet-20251111
 rsync -a --delete ~/.rusty-kaspa/kaspa-mainnet/datadir/ "${SNAP}/"
 ```
 
-Point `run-simpa-pruning.sh` at this directory to reuse the current reachability/UTXO state. Even though the snapshot is post-prune, it preserves the present horizon and lets Simpa advance immediately.
+Point `run-simpa-pruning.sh` at this directory to reuse the current reachability/UTXO state. Even though the snapshot is post-prune, it preserves the present horizon and lets Simpa advance immediately. (If the live node keeps running, `rsync` may complain about missing `.sst` files while RocksDB compacts; either stop the node briefly or skip this step and let Simpa regenerate a fresh database.)
 
 ## 2. Run Simpa with mainnet-like load
 
+Use the convenience wrapper (all env vars still override the defaults):
+
 ```
-SIMPA_DB_DIR="${SNAP}" \
-SIMPA_BPS=10 \
-SIMPA_MINERS=4 \
-SIMPA_LONG_PAYLOAD=1 \
-SIMPA_RETENTION_DAYS=0.5 \
-SIMPA_ROCKSDB_STATS=1 \
-./pruning-optimisation/run-simpa-pruning.sh
+PRUNE_LOCK_MAX_DURATION_MS=30 \
+PRUNE_BATCH_MAX_BYTES=524288 \
+./pruning-optimisation/run-simpa-mainnetish.sh
 ```
 
-- If the snapshot does not exist, add `SIMPA_FORCE_REBUILD=1 SIMPA_TARGET_BLOCKS=120000` to generate ~120 k blocks in one shot. With `SIMPA_BPS=10` this finishes in ~3 h on a laptop but produces the same pruning depth as the multi-hour mainnet run.
-- Enable pipelined writes via `SIMPA_ROCKSDB_PIPELINED=1` when you want to test RocksDB’s pipelined WAL path.
+Defaults baked into the wrapper:
+
+- 10 BPS, 4 miners, long payloads (~1.4 k tx/block) to mimic current mainnet throughput.
+- Target 120 k blocks with a 0.5‑day retention window so pruning engages almost immediately.
+- RocksDB stats sampled every 30 s; pipelined writes stay off unless `SIMPA_ROCKSDB_PIPELINED=1` is set.
+- Database lives under `baseline/experiments/simpa-db-mainnetish` unless `SIMPA_DB_DIR` is overridden.
+
+If no snapshot exists the wrapper will generate the workload automatically; toggle `SIMPA_FORCE_REBUILD=1` to wipe and re-seed between experiments.
 
 ## 3. Sweep lock/batch overrides quickly
 
@@ -34,8 +38,7 @@ Simpa forwards environment overrides to the pruning processor, so you can emulat
 PRUNE_LOCK_MAX_DURATION_MS=25 \
 PRUNE_BATCH_MAX_BYTES=524288 \
 PRUNE_BATCH_MAX_OPS=1500 \
-SIMPA_DB_DIR="${SNAP}" \
-./pruning-optimisation/run-simpa-pruning.sh
+./pruning-optimisation/run-simpa-mainnetish.sh
 ```
 
 - `PRUNE_LOCK_MAX_DURATION_MS` keeps the reachability lock within Michael’s 10–30 ms target range.
@@ -44,7 +47,7 @@ SIMPA_DB_DIR="${SNAP}" \
 
 ## 4. Harvest metrics after each run
 
-`run-simpa-pruning.sh` automatically creates `simpa-prune-YYYYmmdd-HHMMSS.{log,csv}` under `pruning-optimisation/baseline/experiments/`. Use the same tooling as the live node:
+Both wrappers drop logs/CSVs as `simpa-prune-YYYYmmdd-HHMMSS.{log,csv}` under `pruning-optimisation/baseline/experiments/`. Use the same tooling as the live node:
 
 ```
 python3 pruning-optimisation/scripts/collect_pruning_metrics.py <log> > <csv>
