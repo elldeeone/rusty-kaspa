@@ -1,0 +1,5 @@
+2025-11-12 16:28:22.707+11:00 [INFO ] [PRUNING METRICS] duration_ms=6340177 traversed=474895 pruned=432859 lock_hold_ms=5340010 lock_yields=417863 lock_reacquires=417864
+2025-11-12 16:28:22.707+11:00 [INFO ] [PRUNING METRICS] commit_type=ghostdag_adjust count=1 avg_ops=70.00 max_ops=70 avg_bytes=21873.00 max_bytes=21873 avg_commit_ms=0.155 max_commit_ms=0.155
+2025-11-12 16:28:22.707+11:00 [INFO ] [PRUNING METRICS] commit_type=per_block count=474882 avg_ops=282.30 max_ops=1623 avg_bytes=31622.66 max_bytes=255436 avg_commit_ms=0.246 max_commit_ms=426.607
+2025-11-12 16:28:22.707+11:00 [INFO ] [PRUNING METRICS] commit_type=retention_checkpoint count=1 avg_ops=1.00 max_ops=1 avg_bytes=48.00 max_bytes=48 avg_commit_ms=0.035 max_commit_ms=0.035
+2025-11-12 16:28:22.707+11:00 [INFO ] [PRUNING METRICS] commit_type=tips_and_selected_chain count=1 avg_ops=147208.00 max_ops=147208 avg_bytes=3385796.00 max_bytes=3385796 avg_commit_ms=90.459 max_commit_ms=90.459
