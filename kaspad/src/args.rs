@@ -131,6 +131,8 @@ pub struct UdpArgs {
     pub db_migrate: bool,
     pub retention_count: u32,
     pub retention_days: u32,
+    pub max_digest_payload_bytes: u32,
+    pub max_block_payload_bytes: u32,
     pub admin_remote_allowed: bool,
     pub admin_token_file: Option<PathBuf>,
     pub log_verbosity: String,
@@ -153,6 +155,8 @@ impl Default for UdpArgs {
             db_migrate: false,
             retention_count: 10_000,
             retention_days: 7,
+            max_digest_payload_bytes: 2048,
+            max_block_payload_bytes: 131_072,
             admin_remote_allowed: false,
             admin_token_file: None,
             log_verbosity: DEFAULT_UDP_LOG_VERBOSITY.to_string(),
@@ -196,6 +200,8 @@ impl UdpArgs {
             db_migrate: arg_match_unwrap_or::<bool>(m, "udp-db-migrate", defaults.db_migrate),
             retention_count: arg_match_unwrap_or::<u32>(m, "udp-retention-count", defaults.retention_count),
             retention_days: arg_match_unwrap_or::<u32>(m, "udp-retention-days", defaults.retention_days),
+            max_digest_payload_bytes: arg_match_unwrap_or::<u32>(m, "udp-max-digest-payload", defaults.max_digest_payload_bytes),
+            max_block_payload_bytes: arg_match_unwrap_or::<u32>(m, "udp-max-block-payload", defaults.max_block_payload_bytes),
             admin_remote_allowed: arg_match_unwrap_or::<bool>(m, "udp-admin-remote-allowed", defaults.admin_remote_allowed),
             admin_token_file,
             log_verbosity: arg_match_unwrap_or::<String>(m, "udp-log-verbosity", defaults.log_verbosity.clone()),
@@ -231,6 +237,8 @@ impl UdpArgs {
             db_migrate: self.db_migrate,
             retention_count: self.retention_count,
             retention_days: self.retention_days,
+            max_digest_payload_bytes: self.max_digest_payload_bytes,
+            max_block_payload_bytes: self.max_block_payload_bytes,
             log_verbosity: self.log_verbosity.clone(),
             admin_remote_allowed: self.admin_remote_allowed,
             admin_token_file: self.admin_token_file.clone(),
@@ -299,6 +307,22 @@ mod tests {
     fn udp_listen_conflict_errors() {
         let result = Args::parse(["kaspad", "--udp.enable", "--udp.listen=127.0.0.1:39000", "--udp.listen_unix=/tmp/udp.sock"]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn payload_caps_defaults() {
+        let args = Args::parse(["kaspad"]).expect("defaults");
+        assert_eq!(args.udp.max_digest_payload_bytes, 2048);
+        assert_eq!(args.udp.max_block_payload_bytes, 131_072);
+
+        let cfg = r#"
+            [udp]
+            max_digest_payload_bytes = 4096
+            max_block_payload_bytes = 65536
+        "#;
+        let args: Args = toml::from_str(cfg).expect("toml parse");
+        assert_eq!(args.udp.max_digest_payload_bytes, 4096);
+        assert_eq!(args.udp.max_block_payload_bytes, 65_536);
     }
 }
 
@@ -513,6 +537,24 @@ pub fn cli() -> Command {
                 .require_equals(true)
                 .value_parser(clap::value_parser!(u32))
                 .help("Maximum average bandwidth in kilobits per second (default: 10)."),
+        )
+        .arg(
+            Arg::new("udp-max-digest-payload")
+                .long("udp.max_digest_payload_bytes")
+                .value_name("BYTES")
+                .num_args(1)
+                .require_equals(true)
+                .value_parser(clap::value_parser!(u32))
+                .help("Maximum bytes accepted per Digest payload before dropping (default: 2048)."),
+        )
+        .arg(
+            Arg::new("udp-max-block-payload")
+                .long("udp.max_block_payload_bytes")
+                .value_name("BYTES")
+                .num_args(1)
+                .require_equals(true)
+                .value_parser(clap::value_parser!(u32))
+                .help("Maximum bytes accepted per Block payload before dropping (default: 131072)."),
         )
         .arg(
             Arg::new("udp-require-signature")

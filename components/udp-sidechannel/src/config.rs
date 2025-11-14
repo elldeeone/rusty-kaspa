@@ -1,4 +1,5 @@
-use kaspa_consensus_core::network::NetworkId;
+use crate::frame::PayloadCaps;
+use kaspa_consensus_core::network::{NetworkId, NetworkType};
 use std::{net::SocketAddr, path::PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,6 +35,8 @@ pub struct UdpConfig {
     pub db_migrate: bool,
     pub retention_count: u32,
     pub retention_days: u32,
+    pub max_digest_payload_bytes: u32,
+    pub max_block_payload_bytes: u32,
     pub log_verbosity: String,
     pub admin_remote_allowed: bool,
     pub admin_token_file: Option<PathBuf>,
@@ -54,6 +57,14 @@ impl UdpConfig {
             BindTarget::Disabled
         }
     }
+
+    pub fn payload_caps(&self) -> PayloadCaps {
+        PayloadCaps { digest: self.max_digest_payload_bytes, block: self.max_block_payload_bytes }
+    }
+
+    pub fn network_tag(&self) -> u8 {
+        encode_network(&self.network_id)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -61,4 +72,15 @@ pub enum BindTarget {
     Disabled,
     Udp(SocketAddr),
     Unix(PathBuf),
+}
+
+fn encode_network(id: &NetworkId) -> u8 {
+    let base = match id.network_type() {
+        NetworkType::Mainnet => 0x01,
+        NetworkType::Testnet => 0x02,
+        NetworkType::Devnet => 0x03,
+        NetworkType::Simnet => 0x04,
+    };
+    let suffix = id.suffix().unwrap_or(0) as u8;
+    base | (suffix << 4)
 }
