@@ -43,6 +43,7 @@ use kaspa_mining::{
     MiningCounters,
 };
 use kaspa_p2p_flows::{flow_context::FlowContext, service::P2pService};
+use kaspa_udp_sidechannel::{UdpIngestService, UdpMetrics};
 
 use itertools::Itertools;
 use kaspa_perf_monitor::{builder::Builder as PerfMonitorBuilder, counters::CountersSnapshot};
@@ -629,6 +630,7 @@ do you confirm? (answer y/n or pass --yes to the Kaspad command line to confirm 
         config.default_p2p_port(),
         p2p_tower_counters.clone(),
     ));
+    let udp_config = args.udp.to_runtime_config(network);
 
     let rpc_core_service = Arc::new(RpcCoreService::new(
         consensus_manager.clone(),
@@ -682,6 +684,11 @@ do you confirm? (answer y/n or pass --yes to the Kaspad command line to confirm 
     async_runtime.register(mining_monitor);
     async_runtime.register(perf_monitor);
     async_runtime.register(mining_rule_engine);
+    if udp_config.enable {
+        let udp_metrics = Arc::new(UdpMetrics::new());
+        let udp_service = Arc::new(UdpIngestService::new(udp_config, udp_metrics));
+        async_runtime.register(udp_service);
+    }
 
     let wrpc_service_tasks: usize = 2; // num_cpus::get() / 2;
                                        // Register wRPC servers based on command line arguments
