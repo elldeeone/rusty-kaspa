@@ -157,6 +157,8 @@ blake2b_simd = "1.0.2"
 borsh = { version = "1.5.1", features = ["derive", "rc"] }
 bs58 = { version = "0.5.0", features = ["check"], default-features = false }
 bytes = "1.7.1"
+crc32fast = "1.4.2"
+blake3 = "1.5.1"
 cc = "1.0.83"
 cfb-mode = "0.8.2"
 cfg-if = "1.0.0"

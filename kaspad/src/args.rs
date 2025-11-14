@@ -97,6 +97,234 @@ pub struct Args {
     pub rocksdb_preset: Option<String>,
     pub rocksdb_wal_dir: Option<String>,
     pub rocksdb_cache_size: Option<usize>,
+    pub udp: UdpArgs,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum UdpModeArg {
+    Digest,
+    Blocks,
+    Both,
+}
+
+impl Default for UdpModeArg {
+    fn default() -> Self {
+        Self::Digest
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, rename_all = "snake_case", deny_unknown_fields)]
+pub struct UdpArgs {
+    pub enable: bool,
+    pub listen: Option<SocketAddr>,
+    pub listen_unix: Option<PathBuf>,
+    pub allow_non_local_bind: bool,
+    pub mode: UdpModeArg,
+    pub max_kbps: u32,
+    pub require_signature: bool,
+    pub allowed_signers: Vec<String>,
+    pub digest_queue: usize,
+    pub block_queue: usize,
+    pub discard_unsigned: bool,
+    pub db_migrate: bool,
+    pub retention_count: u32,
+    pub retention_days: u32,
+    pub max_digest_payload_bytes: u32,
+    pub max_block_payload_bytes: u32,
+    pub admin_remote_allowed: bool,
+    pub admin_token_file: Option<PathBuf>,
+    pub log_verbosity: String,
+}
+
+impl Default for UdpArgs {
+    fn default() -> Self {
+        Self {
+            enable: false,
+            listen: Some(DEFAULT_UDP_LISTEN_ADDR.parse().expect("valid default udp listen address")),
+            listen_unix: None,
+            allow_non_local_bind: false,
+            mode: UdpModeArg::Digest,
+            max_kbps: 10,
+            require_signature: true,
+            allowed_signers: Vec::new(),
+            digest_queue: 1024,
+            block_queue: 32,
+            discard_unsigned: true,
+            db_migrate: false,
+            retention_count: 10_000,
+            retention_days: 7,
+            max_digest_payload_bytes: 2048,
+            max_block_payload_bytes: 131_072,
+            admin_remote_allowed: false,
+            admin_token_file: None,
+            log_verbosity: DEFAULT_UDP_LOG_VERBOSITY.to_string(),
+        }
+    }
+}
+
+impl UdpArgs {
+    fn from_matches(m: &clap::ArgMatches, defaults: &UdpArgs) -> Result<Self, clap::Error> {
+        let listen = m.get_one::<SocketAddr>("udp-listen").cloned().or(defaults.listen);
+        let listen_unix = m.get_one::<PathBuf>("udp-listen-unix").cloned().or_else(|| defaults.listen_unix.clone());
+
+        if listen.is_some() && listen_unix.is_some() {
+            return Err(clap::Error::raw(ErrorKind::ArgumentConflict, "only one of --udp.listen or --udp.listen_unix may be set"));
+        }
+
+        if let Some(path) = listen_unix.as_ref() {
+            if path.as_os_str().is_empty() {
+                return Err(clap::Error::raw(ErrorKind::InvalidValue, "--udp.listen_unix path must not be empty"));
+            }
+        }
+
+        let mode = if let Some(raw) = m.get_one::<String>("udp-mode") { raw.parse::<UdpModeArg>()? } else { defaults.mode };
+
+        let allowed_signers = arg_match_many_unwrap_or::<String>(m, "udp-allowed-signers", defaults.allowed_signers.clone());
+
+        let admin_token_file = m.get_one::<PathBuf>("udp-admin-token-file").cloned().or_else(|| defaults.admin_token_file.clone());
+
+        let args = Self {
+            enable: arg_match_unwrap_or::<bool>(m, "udp-enable", defaults.enable),
+            listen,
+            listen_unix,
+            allow_non_local_bind: arg_match_unwrap_or::<bool>(m, "udp-allow-non-local-bind", defaults.allow_non_local_bind),
+            mode,
+            max_kbps: arg_match_unwrap_or::<u32>(m, "udp-max-kbps", defaults.max_kbps),
+            require_signature: arg_match_unwrap_or::<bool>(m, "udp-require-signature", defaults.require_signature),
+            allowed_signers,
+            digest_queue: arg_match_unwrap_or::<usize>(m, "udp-digest-queue", defaults.digest_queue),
+            block_queue: arg_match_unwrap_or::<usize>(m, "udp-block-queue", defaults.block_queue),
+            discard_unsigned: arg_match_unwrap_or::<bool>(m, "udp-discard-unsigned", defaults.discard_unsigned),
+            db_migrate: arg_match_unwrap_or::<bool>(m, "udp-db-migrate", defaults.db_migrate),
+            retention_count: arg_match_unwrap_or::<u32>(m, "udp-retention-count", defaults.retention_count),
+            retention_days: arg_match_unwrap_or::<u32>(m, "udp-retention-days", defaults.retention_days),
+            max_digest_payload_bytes: arg_match_unwrap_or::<u32>(m, "udp-max-digest-payload", defaults.max_digest_payload_bytes),
+            max_block_payload_bytes: arg_match_unwrap_or::<u32>(m, "udp-max-block-payload", defaults.max_block_payload_bytes),
+            admin_remote_allowed: arg_match_unwrap_or::<bool>(m, "udp-admin-remote-allowed", defaults.admin_remote_allowed),
+            admin_token_file,
+            log_verbosity: arg_match_unwrap_or::<String>(m, "udp-log-verbosity", defaults.log_verbosity.clone()),
+        };
+
+        args.validate()?;
+        Ok(args)
+    }
+
+    fn validate(&self) -> Result<(), clap::Error> {
+        if self.enable && self.listen.is_none() && self.listen_unix.is_none() {
+            return Err(clap::Error::raw(
+                ErrorKind::InvalidValue,
+                "UDP ingest is enabled but neither --udp.listen nor --udp.listen_unix was provided",
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn to_runtime_config(&self, network_id: NetworkId) -> UdpConfig {
+        UdpConfig {
+            enable: self.enable,
+            listen: self.listen,
+            listen_unix: self.listen_unix.clone().filter(|p| !p.as_os_str().is_empty()),
+            allow_non_local_bind: self.allow_non_local_bind,
+            mode: self.mode.into(),
+            max_kbps: self.max_kbps,
+            require_signature: self.require_signature,
+            allowed_signers: self.allowed_signers.clone(),
+            digest_queue: self.digest_queue,
+            block_queue: self.block_queue,
+            discard_unsigned: self.discard_unsigned,
+            db_migrate: self.db_migrate,
+            retention_count: self.retention_count,
+            retention_days: self.retention_days,
+            max_digest_payload_bytes: self.max_digest_payload_bytes,
+            max_block_payload_bytes: self.max_block_payload_bytes,
+            log_verbosity: self.log_verbosity.clone(),
+            admin_remote_allowed: self.admin_remote_allowed,
+            admin_token_file: self.admin_token_file.clone(),
+            network_id,
+        }
+    }
+}
+
+impl From<UdpModeArg> for UdpMode {
+    fn from(value: UdpModeArg) -> Self {
+        match value {
+            UdpModeArg::Digest => UdpMode::Digest,
+            UdpModeArg::Blocks => UdpMode::Blocks,
+            UdpModeArg::Both => UdpMode::Both,
+        }
+    }
+}
+
+impl std::str::FromStr for UdpModeArg {
+    type Err = clap::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().as_str() {
+            "digest" => Ok(Self::Digest),
+            "blocks" => Ok(Self::Blocks),
+            "both" => Ok(Self::Both),
+            other => Err(clap::Error::raw(ErrorKind::InvalidValue, format!("unsupported --udp.mode '{other}'"))),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn udp_defaults_are_loopback() {
+        let args = Args::parse(["kaspad"]).expect("args parse");
+        assert!(!args.udp.enable);
+        assert_eq!(args.udp.listen.unwrap().to_string(), DEFAULT_UDP_LISTEN_ADDR);
+        assert!(args.udp.listen_unix.is_none() || args.udp.listen_unix.as_ref().map(|p| !p.as_os_str().is_empty()).unwrap_or(true));
+    }
+
+    #[test]
+    fn udp_enable_via_cli() {
+        let args = Args::parse(["kaspad", "--udp.enable", "--udp.listen=127.0.0.1:40000"]).expect("args parse");
+        assert!(args.udp.enable);
+        assert_eq!(args.udp.listen.unwrap().to_string(), "127.0.0.1:40000");
+    }
+
+    #[test]
+    fn udp_toml_block() {
+        let cfg = r#"
+            [udp]
+            enable = true
+            listen = "127.0.0.1:39000"
+            max_kbps = 25
+        "#;
+        let args: Args = toml::from_str(cfg).expect("toml parse");
+        assert!(args.udp.enable);
+        assert_eq!(args.udp.listen.unwrap().to_string(), "127.0.0.1:39000");
+        assert_eq!(args.udp.max_kbps, 25);
+    }
+
+    #[test]
+    fn udp_listen_conflict_errors() {
+        let result = Args::parse(["kaspad", "--udp.enable", "--udp.listen=127.0.0.1:39000", "--udp.listen_unix=/tmp/udp.sock"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn payload_caps_defaults() {
+        let args = Args::parse(["kaspad"]).expect("defaults");
+        assert_eq!(args.udp.max_digest_payload_bytes, 2048);
+        assert_eq!(args.udp.max_block_payload_bytes, 131_072);
+
+        let cfg = r#"
+            [udp]
+            max_digest_payload_bytes = 4096
+            max_block_payload_bytes = 65536
+        "#;
+        let args: Args = toml::from_str(cfg).expect("toml parse");
+        assert_eq!(args.udp.max_digest_payload_bytes, 4096);
+        assert_eq!(args.udp.max_block_payload_bytes, 65_536);
+    }
+>>>>>>> 01559993 (feat(udp): Phase 2 — frame parsing, fragmentation, de-dup, rate limit)
 }
 
 impl Default for Args {
@@ -269,6 +497,168 @@ pub fn cli() -> Command {
                 .help("Interface:port to listen for wRPC JSON connections (default port: 18110, testnet: 18210)."),
         )
         .arg(arg!(--unsaferpc "Enable RPC commands which affect the state of the node").env("KASPAD_UNSAFERPC"))
+        .arg(
+            Arg::new("udp-enable")
+                .long("udp.enable")
+                .action(ArgAction::SetTrue)
+                .help("Enable the UDP side-channel ingest task (default: disabled)."),
+        )
+        .arg(
+            Arg::new("udp-listen")
+                .long("udp.listen")
+                .value_name("IP:PORT")
+                .num_args(1)
+                .require_equals(true)
+                .value_parser(clap::value_parser!(SocketAddr))
+                .help(format!("Interface:port to bind the UDP ingest socket (default: {DEFAULT_UDP_LISTEN_ADDR}).")),
+        )
+        .arg(
+            Arg::new("udp-listen-unix")
+                .long("udp.listen_unix")
+                .value_name("PATH")
+                .num_args(1)
+                .require_equals(true)
+                .value_parser(clap::value_parser!(PathBuf))
+                .conflicts_with("udp-listen")
+                .help("Optional Unix datagram socket path for UDP ingest (mutually exclusive with --udp.listen)."),
+        )
+        .arg(
+            Arg::new("udp-allow-non-local-bind")
+                .long("udp.allow_non_local_bind")
+                .action(ArgAction::SetTrue)
+                .help("Allow binding the UDP socket to non-loopback interfaces (unsafe; default false)."),
+        )
+        .arg(
+            Arg::new("udp-mode")
+                .long("udp.mode")
+                .value_name("MODE")
+                .num_args(1)
+                .require_equals(true)
+                .value_parser(["digest", "blocks", "both"])
+                .help("UDP ingest mode: digest (default), blocks, or both."),
+        )
+        .arg(
+            Arg::new("udp-max-kbps")
+                .long("udp.max_kbps")
+                .value_name("KBPS")
+                .num_args(1)
+                .require_equals(true)
+                .value_parser(clap::value_parser!(u32))
+                .help("Maximum average bandwidth in kilobits per second (default: 10)."),
+        )
+        .arg(
+            Arg::new("udp-max-digest-payload")
+                .long("udp.max_digest_payload_bytes")
+                .value_name("BYTES")
+                .num_args(1)
+                .require_equals(true)
+                .value_parser(clap::value_parser!(u32))
+                .help("Maximum bytes accepted per Digest payload before dropping (default: 2048)."),
+        )
+        .arg(
+            Arg::new("udp-max-block-payload")
+                .long("udp.max_block_payload_bytes")
+                .value_name("BYTES")
+                .num_args(1)
+                .require_equals(true)
+                .value_parser(clap::value_parser!(u32))
+                .help("Maximum bytes accepted per Block payload before dropping (default: 131072)."),
+        )
+        .arg(
+            Arg::new("udp-require-signature")
+                .long("udp.require_signature")
+                .value_name("BOOL")
+                .num_args(1)
+                .require_equals(true)
+                .value_parser(BoolishValueParser::new())
+                .help("Require Schnorr signatures on digest frames (default: true)."),
+        )
+        .arg(
+            Arg::new("udp-allowed-signers")
+                .long("udp.allowed_signers")
+                .value_name("HEX")
+                .action(ArgAction::Append)
+                .require_equals(true)
+                .help("Add a hex-encoded public key allowed to sign digests (may be specified multiple times)."),
+        )
+        .arg(
+            Arg::new("udp-digest-queue")
+                .long("udp.digest_queue")
+                .value_name("COUNT")
+                .num_args(1)
+                .require_equals(true)
+                .value_parser(clap::value_parser!(usize))
+                .help("Digest queue capacity before applying back-pressure (default: 1024)."),
+        )
+        .arg(
+            Arg::new("udp-block-queue")
+                .long("udp.block_queue")
+                .value_name("COUNT")
+                .num_args(1)
+                .require_equals(true)
+                .value_parser(clap::value_parser!(usize))
+                .help("Block queue capacity for optional block mode (default: 32)."),
+        )
+        .arg(
+            Arg::new("udp-discard-unsigned")
+                .long("udp.discard_unsigned")
+                .value_name("BOOL")
+                .num_args(1)
+                .require_equals(true)
+                .value_parser(BoolishValueParser::new())
+                .help("Drop unsigned frames when signature verification is enabled (default: true)."),
+        )
+        .arg(
+            Arg::new("udp-db-migrate")
+                .long("udp.db_migrate")
+                .value_name("BOOL")
+                .num_args(1)
+                .require_equals(true)
+                .value_parser(BoolishValueParser::new())
+                .help("Allow creation/migration of the UDP digest column family (default: false)."),
+        )
+        .arg(
+            Arg::new("udp-retention-count")
+                .long("udp.retention_count")
+                .value_name("COUNT")
+                .num_args(1)
+                .require_equals(true)
+                .value_parser(clap::value_parser!(u32))
+                .help("Number of digests to retain before pruning (default: 10000)."),
+        )
+        .arg(
+            Arg::new("udp-retention-days")
+                .long("udp.retention_days")
+                .value_name("DAYS")
+                .num_args(1)
+                .require_equals(true)
+                .value_parser(clap::value_parser!(u32))
+                .help("Maximum age in days to retain digests (default: 7)."),
+        )
+        .arg(
+            Arg::new("udp-admin-remote-allowed")
+                .long("udp.admin_remote_allowed")
+                .action(ArgAction::SetTrue)
+                .help("Allow UDP admin RPCs to be invoked remotely (default: local-only)."),
+        )
+        .arg(
+            Arg::new("udp-admin-token-file")
+                .long("udp.admin_token_file")
+                .value_name("PATH")
+                .num_args(1)
+                .require_equals(true)
+                .value_parser(clap::value_parser!(PathBuf))
+                .help("Path to a file containing a bearer token required for remote UDP admin RPCs."),
+        )
+        .arg(
+            Arg::new("udp-log-verbosity")
+                .long("udp.log_verbosity")
+                .value_name("LEVEL")
+                .num_args(1)
+                .require_equals(true)
+                .help("Override UDP ingest log verbosity (default: info)."),
+        )
+>>>>>>> 01559993 (feat(udp): Phase 2 — frame parsing, fragmentation, de-dup, rate limit)
         .arg(
             Arg::new("connect-peers")
                 .long("connect")

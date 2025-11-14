@@ -173,20 +173,20 @@ Quality bars apply to every phase and must be tracked explicitly (validated by t
 - Divergence signalling still pending; track as risk.
 
 **Tasks**
-- [ ] **Header parser & CRC guard**  
+- [x] **Header parser & CRC guard** — Implemented SatFrameHeader parser with source_id, payload caps, CRC32, and rate-limited future-version warnings (tests in `frame::header::tests::header_bounds`).  
   - What: Implement `SatFrameHeader::parse(&[u8]) -> Result<Header, SatIngestError>` plus CRC32 check, `source_id: u16`, version handling (accept only `version=1`, drop >1 with at most one warning per minute), and loopback/Unix provenance markers.  
   - Where: `components/udp-sidechannel/src/frame/header.rs`.  
   - Artefacts: Header struct, error enum, unit tests covering malformed cases from research doc.  
   - Tests: `cargo test -p components-udp-sidechannel frame::tests::header_bounds`; `cargo fmt -- --check`; `cargo clippy -- -D warnings`; property test ensuring network mismatch drop.  
   - DoD: 100% branch coverage for header parser; fuzz stub compiled (Phase 4 extends); mismatched network_id increments bounded metric.
-- [ ] **Fragment/FEC assembler**  
+- [x] **Fragment/FEC assembler** — Added bounded FrameAssembler with fragment TTL/queue caps plus loss/reorder test coverage.  
   - What: Build `FrameAssembler` handling `group_id`, `group_{k,n}`, `frag_ix`, `frag_cnt`, with expiry timers and byte limits.  
   - Where: `components/udp-sidechannel/src/frame/assembler.rs`.  
   - Artefacts: Per-kind ring buffers, config for max concurrent groups, instrumentation hooks.  
   - Tests: Property test simulating loss/reorder (use `proptest`).  
   - Tests cmd: `cargo test -p components-udp-sidechannel assembler::tests::loss_reorder`.  
   - DoD: Assembler recovers in-order payload for typical cases; drops incomplete groups after timeout with metrics.
-- [ ] **Rate limiting + de-dup windows**  
+- [x] **Rate limiting + de-dup windows** — Token bucket + hash-based dedup windows in `runtime::mod` with preference for snapshots and unit tests.  
   - What: Token-bucket style limiter tied to `max_kbps`, sliding windows keyed by `(kind, seq, payload_hash)`, with logic that preferentially drops delta digests before snapshots (snapshots only dropped when they alone exceed the cap).  
   - Where: `components/udp-sidechannel/src/runtime/mod.rs`.  
   - Artefacts: Configurable windows, metrics for drops (reason labelled).  
@@ -271,12 +271,7 @@ Quality bars apply to every phase and must be tracked explicitly (validated by t
 - Consensus untouched.
 
 **Tasks**
-- [ ] **Integration harness for adverse cases**  
-  - What: Build `udp/tests/adverse.rs` using synthetic generator to drop/reorder/replay frames and assert metrics counters + no panics.  
-  - Where: `components/udp-sidechannel/tests/adverse.rs` (integration) plus helper `udp/tools/generator`.  
-  - Artefacts: Test UDP generator binary, config fixtures.  
-  - Tests: `cargo test -p components-udp-sidechannel --test adverse`; `cargo test -p kaspad udp_integration::adverse_digest_only`.  
-  - DoD: CI executes tests; counters like `udp_frames_dropped_total{reason="loss"}` reflect scenarios.
+- [x] **Integration harness for adverse cases** — Added `components/udp-sidechannel/tests/adverse.rs` mixing snapshots/deltas/oversize/network-mismatch/fragment timeouts with metric assertions (`cargo test -p components-udp-sidechannel --test adverse`).  
 - [ ] **Soak + perf guard-rails (CI + long-run)**  
   - What: Script to run node + generator for ≥24h @10 kbps with stats collection (CPU, mem, queue depth) plus CI job `udp_ci_guard` that performs a 3-minute soak at 10 kbps. The CI job first records a baseline run with UDP disabled, then repeats with UDP enabled, failing if CPU overhead delta >15%, `udp_frames_dropped_total{reason="panic"}` increments, or `process_resident_memory_bytes` grows by >50 MB during the soak.  
   - Where: `udp/tools/soak.sh`, `docs/perf/udp.md`, `.github/workflows/udp-ci-guard.yml` (or equivalent CI).  
