@@ -1,0 +1,27 @@
+[package]
+name = "kaspa-udp-sidechannel"
+description = "UDP side-channel ingest components for rusty-kaspa"
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+kaspa-core.workspace = true
+kaspa-consensus-core.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+tokio = { workspace = true, features = ["net", "time", "sync", "macros", "rt", "rt-multi-thread"] }
+workflow-log.workspace = true
+log.workspace = true
+
+[features]
+default = []
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

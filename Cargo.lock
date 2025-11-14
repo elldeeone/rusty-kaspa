@@ -3265,6 +3265,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "kaspa-udp-sidechannel"
+version = "1.0.1"
+dependencies = [
+ "kaspa-consensus-core",
+ "kaspa-core",
+ "log",
+ "serde",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "workflow-log",
+]
+
+[[package]]
 name = "kaspa-utils"
 version = "1.0.1"
 dependencies = [
@@ -3740,6 +3754,7 @@ dependencies = [
  "kaspa-rpc-core",
  "kaspa-rpc-service",
  "kaspa-txscript",
+ "kaspa-udp-sidechannel",
  "kaspa-utils",
  "kaspa-utils-tower",
  "kaspa-utxoindex",
