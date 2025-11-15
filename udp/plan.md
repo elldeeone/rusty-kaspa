@@ -193,6 +193,10 @@ Quality bars apply to every phase and must be tracked explicitly (validated by t
   - Tests: `cargo test -p components-udp-sidechannel runtime::tests::dedup_and_ratecap`.  
   - DoD: `udp_frames_dropped_total{reason="duplicate"}` increments on replay fixture; limiter clamps throughput in integration test replay harness; delta-first drop behaviour verified; sequence windows never appear as labels (only reasons).
 
+#### Phase 2 audit notes (2025-11-15)
+- UDP admin RPCs/locality guard remain outstanding despite the plan requirements (see `udp/docs/AUDIT-phase1-2.md`); keep these on the Phase 3 critical path before wiring enable/disable RPCs.
+- Observability gap: frame counters were recorded before the bounded queue accepted a message. Apply `udp/docs/patches/01-fix-frame-metrics.patch` so metrics reflect only successfully enqueued frames.
+
 ### Phase 3 — DigestV1 Parsing, Signature Verification, RocksDB CF Storage, RPCs/Metrics
 **Objective:** Complete end-to-end digest path: parse `DigestV1`, verify signatures, persist records, expose RPCs + metrics, and implement divergence signalling.
 

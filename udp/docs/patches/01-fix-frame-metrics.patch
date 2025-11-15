@@ -1,0 +1,30 @@
+diff --git a/components/udp-sidechannel/src/service.rs b/components/udp-sidechannel/src/service.rs
+index d3280243..d0a772bd 100644
+--- a/components/udp-sidechannel/src/service.rs
++++ b/components/udp-sidechannel/src/service.rs
+@@ -528,13 +528,20 @@ impl FrameProcessor {
+                 let bytes = frame.payload.len() + HEADER_LEN;
+                 let seq = header.seq;
+                 let kind = header.kind;
+-                self.metrics.record_frame(kind, bytes);
+                 if let Some(slot) = self.queue_depth.try_reserve(kind) {
+                     let queued = QueuedFrame::new(frame, slot);
+-                    if let Err(err) = self.tx.try_send(queued) {
+-                        self.handle_queue_error(err, remote, now, datagram_len);
+-                    } else {
+-                        trace!("udp.event=frame_accept kind={} seq={} bytes={} remote={}", kind.as_str(), seq, bytes, remote.as_str());
++                    match self.tx.try_send(queued) {
++                        Ok(()) => {
++                            self.metrics.record_frame(kind, bytes);
++                            trace!(
++                                "udp.event=frame_accept kind={} seq={} bytes={} remote={}",
++                                kind.as_str(),
++                                seq,
++                                bytes,
++                                remote.as_str()
++                            );
++                        }
++                        Err(err) => self.handle_queue_error(err, remote, now, datagram_len),
+                     }
+                 } else {
+                     let event = header.as_drop_event(DropReason::QueueFull, frame.payload.len());
