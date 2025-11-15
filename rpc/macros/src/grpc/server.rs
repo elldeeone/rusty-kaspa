@@ -68,12 +68,15 @@ impl ToTokens for RpcTable {
                     targets.push(quote! {
                         #payload_ops::#handler => {
                             let method: Method<#server_ctx_type, #connection_ctx_type, #kaspad_request_type, #kaspad_response_type> =
-                            Method::new(|server_ctx: #server_ctx_type, _: #connection_ctx_type, request: #kaspad_request_type| {
+                            Method::new(|server_ctx: #server_ctx_type, connection: #connection_ctx_type, request: #kaspad_request_type| {
                                 Box::pin(async move {
                                     let mut response: #kaspad_response_type = match request.payload {
                                         Some(Payload::#request_type(ref request)) => match request.try_into() {
-                                            // TODO: RPC-CONNECTION
-                                            Ok(request) => server_ctx.core_service.#fn_call(None,request).await.into(),
+                                            Ok(request) => {
+                                                let rpc_connection: kaspa_rpc_core::api::connection::DynRpcConnection =
+                                                    connection.as_rpc_connection();
+                                                server_ctx.core_service.#fn_call(Some(&rpc_connection), request).await.into()
+                                            }
                                             Err(err) => #response_message_type::from(err).into(),
                                         },
                                         _ => {

@@ -138,6 +138,12 @@ pub enum RpcApiOps {
     GetCurrentBlockColor = 149,
     /// Get UTXO Return Addresses
     GetUtxoReturnAddress = 150,
+    /// Get UDP ingest subsystem status
+    GetUdpIngestInfo = 151,
+    /// Enable UDP ingest subsystem
+    UdpEnable = 152,
+    /// Disable UDP ingest subsystem
+    UdpDisable = 153,
 }
 
 impl RpcApiOps {

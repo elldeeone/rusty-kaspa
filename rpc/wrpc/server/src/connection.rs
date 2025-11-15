@@ -6,7 +6,14 @@ use kaspa_notify::{
     notification::Notification as NotificationT,
     notifier::Notify,
 };
-use kaspa_rpc_core::{api::ops::RpcApiOps, notify::mode::NotificationMode, Notification};
+use kaspa_rpc_core::{
+    api::{
+        connection::{DynRpcConnection, RpcConnection},
+        ops::RpcApiOps,
+    },
+    notify::mode::NotificationMode,
+    Notification,
+};
 use std::{
     fmt::{Debug, Display},
     sync::{Arc, Mutex},
@@ -91,6 +98,10 @@ impl Connection {
         Connection { inner: Arc::new(ConnectionInner { id, peer: *peer, messenger, grpc_client, listener_id }) }
     }
 
+    pub fn as_rpc_connection(&self) -> DynRpcConnection {
+        Arc::new(self.clone())
+    }
+
     /// Obtain the connection id
     pub fn id(&self) -> u64 {
         self.inner.id
@@ -136,6 +147,16 @@ impl Connection {
             Encoding::Borsh => workflow_rpc::server::protocol::borsh::create_serialized_notification_message(op, msg),
             Encoding::SerdeJson => workflow_rpc::server::protocol::serde_json::create_serialized_notification_message(op, msg),
         }
+    }
+}
+
+impl RpcConnection for Connection {
+    fn id(&self) -> u64 {
+        self.id()
+    }
+
+    fn peer_address(&self) -> Option<SocketAddr> {
+        Some(*self.peer())
     }
 }
 

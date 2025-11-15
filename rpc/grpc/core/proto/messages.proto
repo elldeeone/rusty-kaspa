@@ -66,6 +66,9 @@ message KaspadRequest {
     GetFeeEstimateExperimentalRequestMessage getFeeEstimateExperimentalRequest = 1108;
     GetCurrentBlockColorRequestMessage getCurrentBlockColorRequest = 1110;
     GetUtxoReturnAddressRequestMessage GetUtxoReturnAddressRequest = 1112;
+    GetUdpIngestInfoRequestMessage getUdpIngestInfoRequest = 1114;
+    UdpEnableRequestMessage udpEnableRequest = 1115;
+    UdpDisableRequestMessage udpDisableRequest = 1116;
   }
 }
 
@@ -132,6 +135,9 @@ message KaspadResponse {
     GetFeeEstimateExperimentalResponseMessage getFeeEstimateExperimentalResponse = 1109;
     GetCurrentBlockColorResponseMessage getCurrentBlockColorResponse = 1111;
     GetUtxoReturnAddressResponseMessage GetUtxoReturnAddressResponse = 1113;
+    GetUdpIngestInfoResponseMessage getUdpIngestInfoResponse = 1114;
+    UdpEnableResponseMessage udpEnableResponse = 1115;
+    UdpDisableResponseMessage udpDisableResponse = 1116;
   }
 }
 

@@ -689,6 +689,33 @@ async fn sanity_test() {
                 })
             }
 
+            KaspadPayloadOps::GetUdpIngestInfo => {
+                let rpc_client = client.clone();
+                tst!(op, {
+                    let snapshot = rpc_client.get_udp_ingest_info(None).await.unwrap();
+                    assert_eq!(snapshot.mode, "digest");
+                    assert!(snapshot.bind_address.is_some());
+                    assert_eq!(snapshot.max_kbps, 10);
+                })
+            }
+
+            KaspadPayloadOps::UdpEnable => {
+                let rpc_client = client.clone();
+                tst!(op, {
+                    let _ = rpc_client.udp_disable(None).await; // ensure known state
+                    let enabled = rpc_client.udp_enable(None).await.unwrap();
+                    assert!(enabled.enabled);
+                    let snapshot = rpc_client.get_udp_ingest_info(None).await.unwrap();
+                    assert!(snapshot.enabled);
+                    let disabled = rpc_client.udp_disable(None).await.unwrap();
+                    assert!(!disabled.enabled);
+                })
+            }
+
+            KaspadPayloadOps::UdpDisable => {
+                tst!(op, "covered by UdpEnable")
+            }
+
             KaspadPayloadOps::NotifyBlockAdded => {
                 let rpc_client = client.clone();
                 let id = listener_id;

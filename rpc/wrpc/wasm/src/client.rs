@@ -981,6 +981,8 @@ build_wrpc_wasm_bindgen_interface!(
         /// Retrieves the current network configuration.
         /// Returned information: Current network configuration.
         GetCurrentNetwork,
+        /// Retrieves UDP ingest subsystem status and counters.
+        GetUdpIngestInfo,
     ],
     [
         // functions with `request` argument
@@ -1039,6 +1041,10 @@ build_wrpc_wasm_bindgen_interface!(
         /// Retrieves the virtual chain corresponding to a specified block hash.
         /// Returned information: Virtual chain information.
         GetVirtualChainFromBlock,
+        /// Enables the UDP ingest subsystem.
+        UdpEnable,
+        /// Disables the UDP ingest subsystem.
+        UdpDisable,
         /// Resolves a finality conflict in the Kaspa BlockDAG.
         /// Returned information: None.
         ResolveFinalityConflict,

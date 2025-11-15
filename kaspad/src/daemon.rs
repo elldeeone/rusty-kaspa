@@ -8,7 +8,7 @@ use kaspa_consensus_core::{
     mining_rules::MiningRules,
 };
 use kaspa_consensus_notify::{root::ConsensusNotificationRoot, service::NotifyService};
-use kaspa_core::{core::Core, debug, info, trace};
+use kaspa_core::{core::Core, debug, info, trace, warn};
 use kaspa_core::{kaspad_env::version, task::tick::TickService};
 use kaspa_database::{
     prelude::{CachePolicy, DbWriter, DirectDbWriter},
@@ -18,7 +18,7 @@ use kaspa_grpc_server::service::GrpcService;
 use kaspa_notify::{address::tracker::Tracker, subscription::context::SubscriptionContext};
 use kaspa_p2p_lib::Hub;
 use kaspa_p2p_mining::rule_engine::MiningRuleEngine;
-use kaspa_rpc_service::service::RpcCoreService;
+use kaspa_rpc_service::service::{RpcCoreService, UdpAdminPolicy};
 use kaspa_txscript::caches::TxScriptCacheCounters;
 use kaspa_utils::git;
 use kaspa_utils::networking::ContextualNetAddress;
@@ -631,6 +631,27 @@ do you confirm? (answer y/n or pass --yes to the Kaspad command line to confirm 
         p2p_tower_counters.clone(),
     ));
     let udp_config = args.udp.to_runtime_config(network);
+    let udp_metrics = Arc::new(UdpMetrics::new());
+    let udp_service = Arc::new(UdpIngestService::new(udp_config.clone(), udp_metrics.clone()));
+    let udp_admin_token = match args.udp.admin_token_file.as_ref() {
+        Some(path) => match fs::read_to_string(path) {
+            Ok(contents) => {
+                let trimmed = contents.trim().to_string();
+                if trimmed.is_empty() {
+                    warn!("udp admin token file '{}' is empty; ignoring", path.display());
+                    None
+                } else {
+                    Some(trimmed)
+                }
+            }
+            Err(err) => {
+                warn!("failed reading udp admin token file '{}': {err}", path.display());
+                None
+            }
+        },
+        None => None,
+    };
+    let udp_admin_policy = UdpAdminPolicy { allow_remote: args.udp.admin_remote_allowed, token: udp_admin_token };
 
     let rpc_core_service = Arc::new(RpcCoreService::new(
         consensus_manager.clone(),
@@ -650,6 +671,8 @@ do you confirm? (answer y/n or pass --yes to the Kaspad command line to confirm 
         grpc_tower_counters.clone(),
         system_info,
         mining_rule_engine.clone(),
+        udp_service.clone(),
+        udp_admin_policy.clone(),
     ));
     let grpc_service_broadcasters: usize = 3; // TODO: add a command line argument or derive from other arg/config/host-related fields
     let grpc_service = if !args.disable_grpc {
@@ -684,11 +707,7 @@ do you confirm? (answer y/n or pass --yes to the Kaspad command line to confirm 
     async_runtime.register(mining_monitor);
     async_runtime.register(perf_monitor);
     async_runtime.register(mining_rule_engine);
-    if udp_config.enable {
-        let udp_metrics = Arc::new(UdpMetrics::new());
-        let udp_service = Arc::new(UdpIngestService::new(udp_config, udp_metrics));
-        async_runtime.register(udp_service);
-    }
+    async_runtime.register(udp_service.clone());
 
     let wrpc_service_tasks: usize = 2; // num_cpus::get() / 2;
                                        // Register wRPC servers based on command line arguments

@@ -985,3 +985,54 @@ message GetUtxoReturnAddressResponseMessage {
   string return_address = 1;
   RPCError error = 1000;
 }
+
+message RpcUdpQueueSnapshot {
+  uint32 capacity = 1;
+  uint32 depth = 2;
+}
+
+message RpcUdpMetricEntry {
+  string label = 1;
+  uint64 value = 2;
+}
+
+message GetUdpIngestInfoRequestMessage {
+  optional string auth_token = 1;
+}
+
+message GetUdpIngestInfoResponseMessage {
+  bool enabled = 1;
+  optional string bind_address = 2;
+  optional string bind_unix = 3;
+  bool allow_non_local = 4;
+  string mode = 5;
+  uint32 max_kbps = 6;
+  RpcUdpQueueSnapshot digest_queue = 7;
+  RpcUdpQueueSnapshot block_queue = 8;
+  repeated RpcUdpMetricEntry frames = 9;
+  repeated RpcUdpMetricEntry drops = 10;
+  uint64 bytes_total = 11;
+  RPCError error = 1000;
+}
+
+message UdpEnableRequestMessage {
+  optional string auth_token = 1;
+}
+
+message UdpEnableResponseMessage {
+  bool previous_enabled = 1;
+  bool enabled = 2;
+  optional string note = 3;
+  RPCError error = 1000;
+}
+
+message UdpDisableRequestMessage {
+  optional string auth_token = 1;
+}
+
+message UdpDisableResponseMessage {
+  bool previous_enabled = 1;
+  bool enabled = 2;
+  optional string note = 3;
+  RPCError error = 1000;
+}

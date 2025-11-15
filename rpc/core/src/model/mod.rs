@@ -16,6 +16,7 @@ pub mod script_class;
 pub mod subnets;
 mod tests;
 pub mod tx;
+pub mod udp;
 
 pub use address::*;
 pub use block::*;
@@ -30,3 +31,4 @@ pub use network::*;
 pub use peer::*;
 pub use subnets::*;
 pub use tx::*;
+pub use udp::*;

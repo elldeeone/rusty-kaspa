@@ -11,4 +11,4 @@ pub use frame::{
 };
 pub use metrics::UdpMetrics;
 pub use runtime::{DropClass, FrameRuntime, RuntimeConfig, RuntimeDecision};
-pub use service::{QueuedFrame, UdpIngestError, UdpIngestService};
+pub use service::{QueueSnapshot, QueuedFrame, UdpIngestError, UdpIngestService, UdpIngestSnapshot};
