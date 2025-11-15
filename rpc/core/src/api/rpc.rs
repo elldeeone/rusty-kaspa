@@ -451,6 +451,29 @@ pub trait RpcApi: Sync + Send + AnySync {
         request: GetUtxoReturnAddressRequest,
     ) -> RpcResult<GetUtxoReturnAddressResponse>;
 
+    async fn get_udp_ingest_info(&self, auth_token: Option<String>) -> RpcResult<GetUdpIngestInfoResponse> {
+        self.get_udp_ingest_info_call(None, GetUdpIngestInfoRequest { auth_token }).await
+    }
+    async fn get_udp_ingest_info_call(
+        &self,
+        connection: Option<&DynRpcConnection>,
+        request: GetUdpIngestInfoRequest,
+    ) -> RpcResult<GetUdpIngestInfoResponse>;
+
+    async fn udp_enable(&self, auth_token: Option<String>) -> RpcResult<UdpEnableResponse> {
+        self.udp_enable_call(None, UdpEnableRequest { auth_token }).await
+    }
+    async fn udp_enable_call(&self, connection: Option<&DynRpcConnection>, request: UdpEnableRequest) -> RpcResult<UdpEnableResponse>;
+
+    async fn udp_disable(&self, auth_token: Option<String>) -> RpcResult<UdpDisableResponse> {
+        self.udp_disable_call(None, UdpDisableRequest { auth_token }).await
+    }
+    async fn udp_disable_call(
+        &self,
+        connection: Option<&DynRpcConnection>,
+        request: UdpDisableRequest,
+    ) -> RpcResult<UdpDisableResponse>;
+
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Fee estimation API
 

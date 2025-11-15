@@ -25,7 +25,7 @@ use kaspa_consensusmanager::ConsensusManager;
 use kaspa_core::time::unix_now;
 use kaspa_core::{
     core::Core,
-    debug,
+    debug, info,
     kaspad_env::version,
     signals::Shutdown,
     task::service::{AsyncService, AsyncServiceError, AsyncServiceFuture},
@@ -67,6 +67,7 @@ use kaspa_rpc_core::{
     Notification, RpcError, RpcResult,
 };
 use kaspa_txscript::{extract_script_pub_key_address, pay_to_address_script};
+use kaspa_udp_sidechannel::{config::UdpMode, QueueSnapshot, UdpIngestService, UdpIngestSnapshot};
 use kaspa_utils::expiring_cache::ExpiringCache;
 use kaspa_utils::sysinfo::SystemInfo;
 use kaspa_utils::{channel::Channel, triggers::SingleTrigger};
@@ -99,6 +100,12 @@ use workflow_rpc::server::WebSocketCounters as WrpcServerCounters;
 /// from this instance to registered services and backwards should occur
 /// by adding respectively to the registered service a Collector and a
 /// Subscriber.
+#[derive(Clone)]
+pub struct UdpAdminPolicy {
+    pub allow_remote: bool,
+    pub token: Option<String>,
+}
+
 pub struct RpcCoreService {
     consensus_manager: Arc<ConsensusManager>,
     notifier: Arc<Notifier<Notification, ChannelConnection>>,
@@ -122,6 +129,8 @@ pub struct RpcCoreService {
     fee_estimate_cache: ExpiringCache<RpcFeeEstimate>,
     fee_estimate_verbose_cache: ExpiringCache<kaspa_mining::errors::MiningManagerResult<GetFeeEstimateExperimentalResponse>>,
     mining_rule_engine: Arc<MiningRuleEngine>,
+    udp_service: Arc<UdpIngestService>,
+    udp_admin_policy: UdpAdminPolicy,
 }
 
 const RPC_CORE: &str = "rpc-core";
@@ -148,6 +157,8 @@ impl RpcCoreService {
         grpc_tower_counters: Arc<TowerConnectionCounters>,
         system_info: SystemInfo,
         mining_rule_engine: Arc<MiningRuleEngine>,
+        udp_service: Arc<UdpIngestService>,
+        udp_admin_policy: UdpAdminPolicy,
     ) -> Self {
         // This notifier UTXOs subscription granularity to index-processor or consensus notifier
         let policies = match index_notifier {
@@ -227,6 +238,8 @@ impl RpcCoreService {
             fee_estimate_cache: ExpiringCache::new(Duration::from_millis(500), Duration::from_millis(1000)),
             fee_estimate_verbose_cache: ExpiringCache::new(Duration::from_millis(500), Duration::from_millis(1000)),
             mining_rule_engine,
+            udp_service,
+            udp_admin_policy,
         }
     }
 
@@ -409,6 +422,46 @@ NOTE: This error usually indicates an RPC conversion error between the node and 
             Some(blue) => Ok(GetCurrentBlockColorResponse { blue }),
             None => Err(RpcError::MergerNotFound(request.hash)),
         }
+    }
+
+    async fn get_udp_ingest_info_call(
+        &self,
+        connection: Option<&DynRpcConnection>,
+        request: GetUdpIngestInfoRequest,
+    ) -> RpcResult<GetUdpIngestInfoResponse> {
+        self.ensure_udp_admin_authorized(connection, &request.auth_token)?;
+        let snapshot = self.udp_service.snapshot();
+        Ok(Self::snapshot_to_udp_response(snapshot))
+    }
+
+    async fn udp_enable_call(&self, connection: Option<&DynRpcConnection>, request: UdpEnableRequest) -> RpcResult<UdpEnableResponse> {
+        self.ensure_udp_admin_authorized(connection, &request.auth_token)?;
+        let was_enabled = self.udp_service.set_enabled(true);
+        if !was_enabled {
+            info!("udp.event=admin_enable source=rpc");
+        }
+        Ok(UdpEnableResponse {
+            previous_enabled: was_enabled,
+            enabled: true,
+            note: if was_enabled { Some("already enabled".into()) } else { Some("UDP ingest enabled".into()) },
+        })
+    }
+
+    async fn udp_disable_call(
+        &self,
+        connection: Option<&DynRpcConnection>,
+        request: UdpDisableRequest,
+    ) -> RpcResult<UdpDisableResponse> {
+        self.ensure_udp_admin_authorized(connection, &request.auth_token)?;
+        let was_enabled = self.udp_service.set_enabled(false);
+        if was_enabled {
+            info!("udp.event=admin_disable source=rpc");
+        }
+        Ok(UdpDisableResponse {
+            previous_enabled: was_enabled,
+            enabled: false,
+            note: if was_enabled { Some("UDP ingest disabled".into()) } else { Some("already disabled".into()) },
+        })
     }
 
     async fn get_block_call(&self, _connection: Option<&DynRpcConnection>, request: GetBlockRequest) -> RpcResult<GetBlockResponse> {
@@ -1372,5 +1425,59 @@ impl AsyncService for RpcCoreService {
             trace!("{} stopped", Self::IDENT);
             Ok(())
         })
+    }
+}
+impl RpcCoreService {
+    fn udp_mode_str(mode: UdpMode) -> &'static str {
+        match mode {
+            UdpMode::Digest => "digest",
+            UdpMode::Blocks => "blocks",
+            UdpMode::Both => "both",
+        }
+    }
+
+    fn udp_queue_to_rpc(queue: &QueueSnapshot) -> RpcUdpQueueSnapshot {
+        RpcUdpQueueSnapshot { capacity: queue.capacity as u32, depth: queue.depth as u32 }
+    }
+
+    fn udp_metrics_to_rpc(entries: Vec<(&'static str, u64)>) -> Vec<RpcUdpMetricEntry> {
+        entries.iter().map(|(label, value)| RpcUdpMetricEntry { label: (*label).to_string(), value: *value }).collect()
+    }
+
+    fn snapshot_to_udp_response(snapshot: UdpIngestSnapshot) -> GetUdpIngestInfoResponse {
+        GetUdpIngestInfoResponse {
+            enabled: snapshot.enabled,
+            bind_address: snapshot.listen.map(|addr| addr.to_string()),
+            bind_unix: snapshot.listen_unix.as_ref().map(|p| p.display().to_string()),
+            allow_non_local: snapshot.allow_non_local_bind,
+            mode: Self::udp_mode_str(snapshot.mode).to_string(),
+            max_kbps: snapshot.max_kbps,
+            digest_queue: Self::udp_queue_to_rpc(&snapshot.digest_queue),
+            block_queue: Self::udp_queue_to_rpc(&snapshot.block_queue),
+            frames: Self::udp_metrics_to_rpc(snapshot.frames),
+            drops: Self::udp_metrics_to_rpc(snapshot.drops),
+            bytes_total: snapshot.bytes_total,
+        }
+    }
+
+    fn ensure_udp_admin_authorized(&self, connection: Option<&DynRpcConnection>, auth_token: &Option<String>) -> RpcResult<()> {
+        if let Some(expected) = self.udp_admin_policy.token.as_ref() {
+            match auth_token {
+                Some(provided) if provided == expected => return Ok(()),
+                _ => {
+                    return Err(RpcError::General("valid UDP admin token required".to_string()));
+                }
+            }
+        } else if !self.udp_admin_policy.allow_remote {
+            if let Some(conn) = connection {
+                if let Some(addr) = conn.peer_address() {
+                    if !addr.ip().is_loopback() {
+                        return Err(RpcError::General("remote UDP admin RPCs are disabled".to_string()));
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 }

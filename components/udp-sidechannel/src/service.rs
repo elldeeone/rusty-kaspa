@@ -1,5 +1,5 @@
 use crate::{
-    config::{BindTarget, UdpConfig},
+    config::{BindTarget, UdpConfig, UdpMode},
     frame::{
         assembler::{FrameAssembler, FrameAssemblerConfig, ReassembledFrame},
         header::{HeaderParseContext, SatFrameHeader, HEADER_LEN},
@@ -11,7 +11,7 @@ use crate::{
 use bytes::Bytes;
 use kaspa_core::task::service::{AsyncService, AsyncServiceError, AsyncServiceFuture, AsyncServiceResult};
 use kaspa_core::{debug, error, info, trace, warn};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::{
     net::SocketAddr,
     path::PathBuf,
@@ -40,6 +40,8 @@ pub struct UdpIngestService {
     config: UdpConfig,
     metrics: Arc<UdpMetrics>,
     shutdown: watch::Sender<bool>,
+    enabled_flag: AtomicBool,
+    enabled_tx: watch::Sender<bool>,
     queue_depth: Arc<QueueDepth>,
     tx: mpsc::Sender<QueuedFrame>,
     rx: Mutex<Option<mpsc::Receiver<QueuedFrame>>>,
@@ -52,17 +54,21 @@ impl UdpIngestService {
     pub const IDENT: &'static str = "udp-ingest";
 
     pub fn new(config: UdpConfig, metrics: Arc<UdpMetrics>) -> Self {
+        let initially_enabled = config.initially_enabled();
         let (digest_cap, block_cap) = queue_caps(&config);
         let total_cap = digest_cap.saturating_add(block_cap).max(1);
         let (tx, rx) = mpsc::channel(total_cap);
         let queue_depth = Arc::new(QueueDepth::new(digest_cap, block_cap));
         let (shutdown, _) = watch::channel(false);
+        let (enabled_tx, _) = watch::channel(initially_enabled);
         let drop_logger = Arc::new(DropLogger::new(metrics.clone()));
 
         Self {
             config,
             metrics,
             shutdown,
+            enabled_flag: AtomicBool::new(initially_enabled),
+            enabled_tx,
             queue_depth,
             tx,
             rx: Mutex::new(Some(rx)),
@@ -76,37 +82,101 @@ impl UdpIngestService {
         self.rx.lock().ok().and_then(|mut guard| guard.take())
     }
 
+    pub fn is_enabled(&self) -> bool {
+        self.enabled_flag.load(Ordering::SeqCst)
+    }
+
+    pub fn set_enabled(&self, enabled: bool) -> bool {
+        let previous = self.enabled_flag.swap(enabled, Ordering::SeqCst);
+        if previous != enabled {
+            let _ = self.enabled_tx.send(enabled);
+        }
+        previous
+    }
+
+    pub fn snapshot(&self) -> UdpIngestSnapshot {
+        let (digest_depth, block_depth) = self.queue_depth.snapshot();
+        UdpIngestSnapshot {
+            enabled: self.is_enabled(),
+            listen: self.config.listen,
+            listen_unix: self.config.listen_unix.clone(),
+            allow_non_local_bind: self.config.allow_non_local_bind,
+            mode: self.config.mode,
+            max_kbps: self.config.max_kbps,
+            digest_queue: digest_depth,
+            block_queue: block_depth,
+            frames: self.metrics.frames_snapshot(),
+            drops: self.metrics.drops_snapshot(),
+            bytes_total: self.metrics.bytes_total(),
+        }
+    }
+
     async fn run(self: &Arc<Self>) -> AsyncServiceResult<()> {
-        match self.bind_listener().await {
-            Ok(BoundListener::Udp(socket)) => {
-                let bind_desc = socket.local_addr().map(|a| a.to_string()).unwrap_or_else(|_| "unknown".to_string());
-                info!("udp.event=bind_ok kind=udp addr={bind_desc}");
-                self.pump_udp(socket).await
+        let mut shutdown = self.shutdown.subscribe();
+        let mut enabled_rx = self.enabled_tx.subscribe();
+        let mut logged_disabled = false;
+
+        loop {
+            if !self.is_enabled() {
+                if !logged_disabled {
+                    info!("udp.event=disabled");
+                    logged_disabled = true;
+                }
+                tokio::select! {
+                    _ = shutdown.changed() => break,
+                    changed = enabled_rx.changed() => {
+                        if changed.is_err() {
+                            break;
+                        }
+                        continue;
+                    }
+                }
             }
-            #[cfg(unix)]
-            Ok(BoundListener::Unix(socket)) => {
-                let bind_desc = socket
-                    .local_addr()
-                    .ok()
-                    .and_then(|addr| addr.as_pathname().map(|p| p.display().to_string()))
-                    .unwrap_or_else(|| "unknown".to_string());
-                info!("udp.event=bind_ok kind=unix path={bind_desc}");
-                self.pump_unix(socket).await
-            }
-            Err(UdpIngestError::Disabled) => {
-                info!("udp.event=disabled");
-                Ok(())
-            }
-            Err(err) => {
-                error!("udp.event=bind_fail reason={err}");
-                Err(AsyncServiceError::Service(err.to_string()))
+
+            logged_disabled = false;
+
+            match self.bind_listener().await {
+                Ok(BoundListener::Udp(socket)) => {
+                    let bind_desc = socket.local_addr().map(|a| a.to_string()).unwrap_or_else(|_| "unknown".to_string());
+                    info!("udp.event=bind_ok kind=udp addr={bind_desc}");
+                    let mut pump_enabled = self.enabled_tx.subscribe();
+                    self.pump_udp(socket, &mut shutdown, &mut pump_enabled).await?;
+                }
+                #[cfg(unix)]
+                Ok(BoundListener::Unix(socket)) => {
+                    let bind_desc = socket
+                        .local_addr()
+                        .ok()
+                        .and_then(|addr| addr.as_pathname().map(|p| p.display().to_string()))
+                        .unwrap_or_else(|| "unknown".to_string());
+                    info!("udp.event=bind_ok kind=unix path={bind_desc}");
+                    let mut pump_enabled = self.enabled_tx.subscribe();
+                    self.pump_unix(socket, &mut shutdown, &mut pump_enabled).await?;
+                }
+                Err(UdpIngestError::NotConfigured) => {
+                    warn!("udp.event=bind_fail reason=not_configured");
+                    tokio::select! {
+                        _ = shutdown.changed() => break,
+                        changed = enabled_rx.changed() => {
+                            if changed.is_err() {
+                                break;
+                            }
+                        }
+                    }
+                }
+                Err(err) => {
+                    error!("udp.event=bind_fail reason={err}");
+                    return Err(AsyncServiceError::Service(err.to_string()));
+                }
             }
         }
+
+        Ok(())
     }
 
     async fn bind_listener(&self) -> Result<BoundListener, UdpIngestError> {
         match self.config.bind_target() {
-            BindTarget::Disabled => Err(UdpIngestError::Disabled),
+            BindTarget::Disabled => Err(UdpIngestError::NotConfigured),
             BindTarget::Udp(addr) => {
                 self.ensure_loopback(addr)?;
                 let socket = UdpSocket::bind(addr).await.map_err(UdpIngestError::Io)?;
@@ -134,13 +204,22 @@ impl UdpIngestService {
         }
     }
 
-    async fn pump_udp(&self, socket: UdpSocket) -> AsyncServiceResult<()> {
-        let mut shutdown = self.shutdown.subscribe();
+    async fn pump_udp(
+        &self,
+        socket: UdpSocket,
+        shutdown: &mut watch::Receiver<bool>,
+        enabled_rx: &mut watch::Receiver<bool>,
+    ) -> AsyncServiceResult<()> {
         let mut buf = vec![0u8; self.max_datagram_len()];
         let mut processor = FrameProcessor::new(&self.config, &self.metrics, &self.drop_logger, &self.queue_depth, &self.tx);
         loop {
             tokio::select! {
                 _ = shutdown.changed() => break,
+                changed = enabled_rx.changed() => {
+                    if changed.is_err() || !self.is_enabled() {
+                        break;
+                    }
+                }
                 result = socket.recv_from(&mut buf) => {
                     match result {
                         Ok((len, peer)) => {
@@ -160,13 +239,22 @@ impl UdpIngestService {
     }
 
     #[cfg(unix)]
-    async fn pump_unix(&self, socket: UnixDatagram) -> AsyncServiceResult<()> {
-        let mut shutdown = self.shutdown.subscribe();
+    async fn pump_unix(
+        &self,
+        socket: UnixDatagram,
+        shutdown: &mut watch::Receiver<bool>,
+        enabled_rx: &mut watch::Receiver<bool>,
+    ) -> AsyncServiceResult<()> {
         let mut buf = vec![0u8; self.max_datagram_len()];
         let mut processor = FrameProcessor::new(&self.config, &self.metrics, &self.drop_logger, &self.queue_depth, &self.tx);
         loop {
             tokio::select! {
                 _ = shutdown.changed() => break,
+                changed = enabled_rx.changed() => {
+                    if changed.is_err() || !self.is_enabled() {
+                        break;
+                    }
+                }
                 result = socket.recv_from(&mut buf) => {
                     match result {
                         Ok((len, peer_addr)) => {
@@ -233,8 +321,8 @@ impl AsyncService for UdpIngestService {
 
 #[derive(Debug, Error)]
 pub enum UdpIngestError {
-    #[error("udp ingest disabled")]
-    Disabled,
+    #[error("udp ingest not configured (no UDP or Unix bind target set)")]
+    NotConfigured,
     #[error("non-loopback bind attempted for {0} without override")]
     NonLocalBind(String),
     #[error("unix datagram sockets unsupported on this platform (path: {0})")]
@@ -285,6 +373,27 @@ impl QueuedFrame {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct QueueSnapshot {
+    pub capacity: usize,
+    pub depth: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct UdpIngestSnapshot {
+    pub enabled: bool,
+    pub listen: Option<SocketAddr>,
+    pub listen_unix: Option<PathBuf>,
+    pub allow_non_local_bind: bool,
+    pub mode: UdpMode,
+    pub max_kbps: u32,
+    pub digest_queue: QueueSnapshot,
+    pub block_queue: QueueSnapshot,
+    pub frames: Vec<(&'static str, u64)>,
+    pub drops: Vec<(&'static str, u64)>,
+    pub bytes_total: u64,
+}
+
 struct QueueDepth {
     digest_cap: usize,
     block_cap: usize,
@@ -295,6 +404,13 @@ struct QueueDepth {
 impl QueueDepth {
     fn new(digest_cap: usize, block_cap: usize) -> Self {
         Self { digest_cap, block_cap, digest: AtomicCounter::new(), block: AtomicCounter::new() }
+    }
+
+    fn snapshot(&self) -> (QueueSnapshot, QueueSnapshot) {
+        (
+            QueueSnapshot { capacity: self.digest_cap, depth: self.digest.current() },
+            QueueSnapshot { capacity: self.block_cap, depth: self.block.current() },
+        )
     }
 
     fn try_reserve(self: &Arc<Self>, kind: FrameKind) -> Option<QueueSlot> {
@@ -338,6 +454,10 @@ struct AtomicCounter {
 impl AtomicCounter {
     fn new() -> Self {
         Self { value: AtomicUsize::new(0) }
+    }
+
+    fn current(&self) -> usize {
+        self.value.load(Ordering::Relaxed)
     }
 
     fn reserve(&self, cap: usize) -> bool {
@@ -528,13 +648,20 @@ impl FrameProcessor {
                 let bytes = frame.payload.len() + HEADER_LEN;
                 let seq = header.seq;
                 let kind = header.kind;
-                self.metrics.record_frame(kind, bytes);
                 if let Some(slot) = self.queue_depth.try_reserve(kind) {
                     let queued = QueuedFrame::new(frame, slot);
-                    if let Err(err) = self.tx.try_send(queued) {
-                        self.handle_queue_error(err, remote, now, datagram_len);
-                    } else {
-                        trace!("udp.event=frame_accept kind={} seq={} bytes={} remote={}", kind.as_str(), seq, bytes, remote.as_str());
+                    match self.tx.try_send(queued) {
+                        Ok(()) => {
+                            self.metrics.record_frame(kind, bytes);
+                            trace!(
+                                "udp.event=frame_accept kind={} seq={} bytes={} remote={}",
+                                kind.as_str(),
+                                seq,
+                                bytes,
+                                remote.as_str()
+                            );
+                        }
+                        Err(err) => self.handle_queue_error(err, remote, now, datagram_len),
                     }
                 } else {
                     let event = header.as_drop_event(DropReason::QueueFull, frame.payload.len());

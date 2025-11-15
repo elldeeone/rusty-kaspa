@@ -45,10 +45,6 @@ pub struct UdpConfig {
 
 impl UdpConfig {
     pub fn bind_target(&self) -> BindTarget {
-        if !self.enable {
-            return BindTarget::Disabled;
-        }
-
         if let Some(path) = self.listen_unix.clone() {
             BindTarget::Unix(path)
         } else if let Some(addr) = self.listen {
@@ -64,6 +60,10 @@ impl UdpConfig {
 
     pub fn network_tag(&self) -> u8 {
         encode_network(&self.network_id)
+    }
+
+    pub fn initially_enabled(&self) -> bool {
+        self.enable
     }
 }
 

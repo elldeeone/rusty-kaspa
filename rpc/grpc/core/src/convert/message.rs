@@ -439,6 +439,58 @@ from!(item: RpcResult<&kaspa_rpc_core::GetUtxoReturnAddressResponse>, protowire:
     Self { return_address: item.return_address.address_to_string(), error: None }
 });
 
+from!(item: &kaspa_rpc_core::GetUdpIngestInfoRequest, protowire::GetUdpIngestInfoRequestMessage, {
+    Self { auth_token: item.auth_token.clone() }
+});
+from!(item: RpcResult<&kaspa_rpc_core::GetUdpIngestInfoResponse>, protowire::GetUdpIngestInfoResponseMessage, {
+    let digest_queue = Some(protowire::RpcUdpQueueSnapshot {
+        capacity: item.digest_queue.capacity,
+        depth: item.digest_queue.depth,
+    });
+    let block_queue = Some(protowire::RpcUdpQueueSnapshot {
+        capacity: item.block_queue.capacity,
+        depth: item.block_queue.depth,
+    });
+    Self {
+        enabled: item.enabled,
+        bind_address: item.bind_address.clone(),
+        bind_unix: item.bind_unix.clone(),
+        allow_non_local: item.allow_non_local,
+        mode: item.mode.clone(),
+        max_kbps: item.max_kbps,
+        digest_queue,
+        block_queue,
+        frames: item.frames.iter().map(|entry| protowire::RpcUdpMetricEntry { label: entry.label.clone(), value: entry.value }).collect(),
+        drops: item.drops.iter().map(|entry| protowire::RpcUdpMetricEntry { label: entry.label.clone(), value: entry.value }).collect(),
+        bytes_total: item.bytes_total,
+        error: None,
+    }
+});
+
+from!(item: &kaspa_rpc_core::UdpEnableRequest, protowire::UdpEnableRequestMessage, {
+    Self { auth_token: item.auth_token.clone() }
+});
+from!(item: RpcResult<&kaspa_rpc_core::UdpEnableResponse>, protowire::UdpEnableResponseMessage, {
+    Self {
+        previous_enabled: item.previous_enabled,
+        enabled: item.enabled,
+        note: item.note.clone(),
+        error: None,
+    }
+});
+
+from!(item: &kaspa_rpc_core::UdpDisableRequest, protowire::UdpDisableRequestMessage, {
+    Self { auth_token: item.auth_token.clone() }
+});
+from!(item: RpcResult<&kaspa_rpc_core::UdpDisableResponse>, protowire::UdpDisableResponseMessage, {
+    Self {
+        previous_enabled: item.previous_enabled,
+        enabled: item.enabled,
+        note: item.note.clone(),
+        error: None,
+    }
+});
+
 from!(&kaspa_rpc_core::PingRequest, protowire::PingRequestMessage);
 from!(RpcResult<&kaspa_rpc_core::PingResponse>, protowire::PingResponseMessage);
 
@@ -965,6 +1017,63 @@ try_from!(item: &protowire::GetUtxoReturnAddressRequestMessage, kaspa_rpc_core::
 });
 try_from!(item: &protowire::GetUtxoReturnAddressResponseMessage, RpcResult<kaspa_rpc_core::GetUtxoReturnAddressResponse>, {
     Self { return_address: Address::try_from(item.return_address.clone())? }
+});
+
+try_from!(item: &protowire::RpcUdpQueueSnapshot, kaspa_rpc_core::RpcUdpQueueSnapshot, {
+    Self { capacity: item.capacity, depth: item.depth }
+});
+try_from!(item: &protowire::RpcUdpMetricEntry, kaspa_rpc_core::RpcUdpMetricEntry, {
+    Self { label: item.label.clone(), value: item.value }
+});
+try_from!(item: &protowire::GetUdpIngestInfoRequestMessage, kaspa_rpc_core::GetUdpIngestInfoRequest, {
+    Self { auth_token: item.auth_token.clone().filter(|token| !token.is_empty()) }
+});
+try_from!(item: &protowire::GetUdpIngestInfoResponseMessage, RpcResult<kaspa_rpc_core::GetUdpIngestInfoResponse>, {
+    let digest_queue = item
+        .digest_queue
+        .as_ref()
+        .ok_or_else(|| RpcError::MissingRpcFieldError("GetUdpIngestInfoResponseMessage".to_string(), "digest_queue".to_string()))?
+        .try_into()?;
+    let block_queue = item
+        .block_queue
+        .as_ref()
+        .ok_or_else(|| RpcError::MissingRpcFieldError("GetUdpIngestInfoResponseMessage".to_string(), "block_queue".to_string()))?
+        .try_into()?;
+    let frames = item.frames.iter().map(|entry| entry.try_into()).collect::<Result<Vec<_>, _>>()?;
+    let drops = item.drops.iter().map(|entry| entry.try_into()).collect::<Result<Vec<_>, _>>()?;
+    Self {
+        enabled: item.enabled,
+        bind_address: item.bind_address.clone().filter(|addr| !addr.is_empty()),
+        bind_unix: item.bind_unix.clone().filter(|path| !path.is_empty()),
+        allow_non_local: item.allow_non_local,
+        mode: item.mode.clone(),
+        max_kbps: item.max_kbps,
+        digest_queue,
+        block_queue,
+        frames,
+        drops,
+        bytes_total: item.bytes_total,
+    }
+});
+try_from!(item: &protowire::UdpEnableRequestMessage, kaspa_rpc_core::UdpEnableRequest, {
+    Self { auth_token: item.auth_token.clone().filter(|token| !token.is_empty()) }
+});
+try_from!(item: &protowire::UdpEnableResponseMessage, RpcResult<kaspa_rpc_core::UdpEnableResponse>, {
+    Self {
+        previous_enabled: item.previous_enabled,
+        enabled: item.enabled,
+        note: item.note.clone().filter(|note| !note.is_empty()),
+    }
+});
+try_from!(item: &protowire::UdpDisableRequestMessage, kaspa_rpc_core::UdpDisableRequest, {
+    Self { auth_token: item.auth_token.clone().filter(|token| !token.is_empty()) }
+});
+try_from!(item: &protowire::UdpDisableResponseMessage, RpcResult<kaspa_rpc_core::UdpDisableResponse>, {
+    Self {
+        previous_enabled: item.previous_enabled,
+        enabled: item.enabled,
+        note: item.note.clone().filter(|note| !note.is_empty()),
+    }
 });
 
 try_from!(&protowire::PingRequestMessage, kaspa_rpc_core::PingRequest);

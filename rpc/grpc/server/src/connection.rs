@@ -21,7 +21,10 @@ use kaspa_notify::{
     listener::{ListenerId, ListenerLifespan},
     notifier::Notifier,
 };
-use kaspa_rpc_core::Notification;
+use kaspa_rpc_core::{
+    api::connection::{DynRpcConnection, RpcConnection},
+    Notification,
+};
 use parking_lot::Mutex;
 use std::{
     collections::{hash_map::Entry, HashMap},
@@ -213,6 +216,10 @@ impl Display for Connection {
 }
 
 impl Connection {
+    pub fn as_rpc_connection(&self) -> DynRpcConnection {
+        Arc::new(self.clone())
+    }
+
     pub(crate) fn new(
         net_address: SocketAddr,
         server_context: ServerContext,
@@ -355,6 +362,17 @@ impl Connection {
                 Err(GrpcServerError::OutgoingRouteCapacityReached(self.to_string()))
             }
         }
+    }
+}
+
+impl RpcConnection for Connection {
+    fn id(&self) -> u64 {
+        let raw = self.identity().as_u128();
+        (raw & 0xffff_ffff_ffff_ffff) as u64
+    }
+
+    fn peer_address(&self) -> Option<SocketAddr> {
+        Some(self.net_address())
     }
 }
 

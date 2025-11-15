@@ -1856,3 +1856,127 @@ try_from!(args: GetUtxoReturnAddressResponse, IGetUtxoReturnAddressResponse, {
 });
 
 // ---
+
+declare! {
+    IGetUdpIngestInfoRequest,
+    r#"
+    /**
+     *
+     *
+     * @category Node RPC
+     */
+    export interface IGetUdpIngestInfoRequest {
+        authToken?: string;
+    }
+    "#,
+}
+
+try_from!(args: IGetUdpIngestInfoRequest, GetUdpIngestInfoRequest, {
+    Ok(from_value(args.into())?)
+});
+
+declare! {
+    IGetUdpIngestInfoResponse,
+    r#"
+    /**
+     *
+     *
+     * @category Node RPC
+     */
+    export interface IGetUdpIngestInfoResponse {
+        enabled: boolean;
+        bindAddress?: string;
+        bindUnix?: string;
+        allowNonLocal: boolean;
+        mode: string;
+        maxKbps: number;
+        digestQueue: IRpcUdpQueueSnapshot;
+        blockQueue: IRpcUdpQueueSnapshot;
+        frames: IRpcUdpMetricEntry[];
+        drops: IRpcUdpMetricEntry[];
+        bytesTotal: bigint;
+    }
+    "#,
+}
+
+try_from!(args: GetUdpIngestInfoResponse, IGetUdpIngestInfoResponse, {
+    Ok(to_value(&args)?.into())
+});
+
+declare! {
+    IUdpEnableRequest,
+    r#"
+    /**
+     *
+     *
+     * @category Node RPC
+     */
+    export interface IUdpEnableRequest {
+        authToken?: string;
+    }
+    "#,
+}
+
+try_from!(args: IUdpEnableRequest, UdpEnableRequest, {
+    Ok(from_value(args.into())?)
+});
+
+declare! {
+    IUdpEnableResponse,
+    r#"
+    /**
+     *
+     *
+     * @category Node RPC
+     */
+    export interface IUdpEnableResponse {
+        previousEnabled: boolean;
+        enabled: boolean;
+        note?: string;
+    }
+    "#,
+}
+
+try_from!(args: UdpEnableResponse, IUdpEnableResponse, {
+    Ok(to_value(&args)?.into())
+});
+
+declare! {
+    IUdpDisableRequest,
+    r#"
+    /**
+     *
+     *
+     * @category Node RPC
+     */
+    export interface IUdpDisableRequest {
+        authToken?: string;
+    }
+    "#,
+}
+
+try_from!(args: IUdpDisableRequest, UdpDisableRequest, {
+    Ok(from_value(args.into())?)
+});
+
+declare! {
+    IUdpDisableResponse,
+    r#"
+    /**
+     *
+     *
+     * @category Node RPC
+     */
+    export interface IUdpDisableResponse {
+        previousEnabled: boolean;
+        enabled: boolean;
+        note?: string;
+    }
+    "#,
+}
+
+try_from!(args: UdpDisableResponse, IUdpDisableResponse, {
+    Ok(to_value(&args)?.into())
+});
+
+// ---
