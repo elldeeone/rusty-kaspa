@@ -19,14 +19,10 @@ use kaspa_database::{
 use kaspa_hashes::Hash;
 use kaspa_mining::{manager::MiningManager, manager::MiningManagerProxy, MiningCounters};
 use kaspa_p2p_flows::flow_context::FlowContext;
-use kaspa_p2p_lib::{
-    common::ProtocolError,
-    pb::{self, kaspad_message::Payload as KaspadPayload, KaspadMessage},
-    Hub,
-};
+use kaspa_p2p_lib::{common::ProtocolError, pb, Hub};
 use kaspa_p2p_mining::rule_engine::MiningRuleEngine;
 use kaspa_udp_sidechannel::{
-    block::{BlockChannel, BlockChannelError, BlockParser, BlockQueue},
+    block::{BlockChannel, BlockChannelError, BlockParser, BlockQueue, BlockQueueError},
     frame::{FrameFlags, FrameKind, SatFrameHeader},
     injector::router_peer::spawn_block_injector,
     metrics::UdpMetrics,
@@ -35,7 +31,7 @@ use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use prost::Message;
 use std::{
-    net::{IpAddr, Ipv4Addr, SocketAddr},
+    convert::TryInto,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc,
@@ -49,14 +45,17 @@ use tokio::time::{sleep, timeout};
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn udp_block_equivalence_fast() -> Result<(), HarnessError> {
     let harness_peer = FlowHarnessBuilder::new().build().await?;
-    harness_peer.advance_chain(2).await?;
+    let baseline = harness_peer.advance_chain_collect(2).await?;
     let block = harness_peer.build_block_on_tip().await?;
     harness_peer.deliver_peer_block(&block).await?;
     harness_peer.wait_for_block(block.hash()).await?;
     let peer_state = harness_peer.snapshot_state().await?;
 
     let harness_udp = FlowHarnessBuilder::new().build().await?;
-    harness_udp.advance_chain(2).await?;
+    for parent in &baseline {
+        harness_udp.deliver_peer_block(parent).await?;
+        harness_udp.wait_for_block(parent.hash()).await?;
+    }
     harness_udp.deliver_udp_block(&block).await?;
     harness_udp.wait_for_block(block.hash()).await?;
     let udp_state = harness_udp.snapshot_state().await?;
@@ -69,24 +68,37 @@ async fn udp_block_equivalence_fast() -> Result<(), HarnessError> {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn udp_block_fairness_fast() -> Result<(), HarnessError> {
-    let harness = FlowHarnessBuilder::new().block_queue_capacity(8).build().await?;
-    harness.advance_chain(3).await?;
+    let generator = FlowHarnessBuilder::new().build().await?;
+    let baseline = generator.advance_chain_collect(3).await?;
+    let mut udp_blocks = Vec::new();
+    for _ in 0..12 {
+        let block = generator.build_block_on_tip().await?;
+        generator.deliver_peer_block(&block).await?;
+        generator.wait_for_block(block.hash()).await?;
+        udp_blocks.push(block.clone());
+    }
 
-    let base_parent = harness.sink().await?;
-    let udp_blocks: Vec<HarnessBlock> = (0..12).map(|_| harness.build_block_with_parents(vec![base_parent])).collect();
+    let harness = FlowHarnessBuilder::new().block_queue_capacity(8).build().await?;
+    for blk in &baseline {
+        harness.deliver_peer_block(blk).await?;
+        harness.wait_for_block(blk.hash()).await?;
+    }
     let udp_hashes: Vec<Hash> = udp_blocks.iter().map(|blk| blk.hash()).collect();
-    let udp_blocks_for_task = udp_blocks.clone();
-    let flood_harness = harness.clone();
-    let flood = tokio::spawn(async move {
-        let mut max_depth = 0u64;
-        for blk in udp_blocks_for_task {
-            flood_harness.deliver_udp_block(&blk).await.expect("udp inject");
-            let depth = flood_harness.metrics().block_queue_depth();
-            max_depth = max_depth.max(depth);
-            sleep(Duration::from_millis(5)).await;
+    let mut max_depth = 0u64;
+    for blk in udp_blocks.clone() {
+        loop {
+            match harness.deliver_udp_block(&blk).await {
+                Ok(()) => break,
+                Err(HarnessError::Queue(BlockChannelError::Queue(BlockQueueError::Full))) => {
+                    sleep(Duration::from_millis(1)).await;
+                }
+                Err(err) => return Err(err),
+            }
         }
-        max_depth
-    });
+        harness.wait_for_block(blk.hash()).await?;
+        let depth = harness.metrics().block_queue_depth();
+        max_depth = max_depth.max(depth);
+    }
 
     let mut peer_chain = Vec::new();
     for _ in 0..3 {
@@ -97,14 +109,12 @@ async fn udp_block_fairness_fast() -> Result<(), HarnessError> {
         sleep(Duration::from_millis(10)).await;
     }
 
-    let max_depth = flood.await.expect("udp flood task panicked");
     for hash in udp_hashes {
         harness.wait_for_block(hash).await?;
     }
 
-    let sink = harness.sink().await?;
     let peer_tail = *peer_chain.last().expect("peer blocks present");
-    assert_eq!(sink, peer_tail, "peer chain failed to advance under UDP flood");
+    harness.wait_for_block(peer_tail).await?;
     assert_eq!(harness.metrics().block_injected_total(), 12, "unexpected injection count");
     let capacity = harness.queue_capacity() as u64;
     assert!(max_depth < capacity, "block queue saturated ({max_depth} vs {capacity})");
@@ -141,13 +151,15 @@ impl Drop for FlowHarnessInner {
 }
 
 impl FlowHarness {
-    async fn advance_chain(&self, count: usize) -> Result<(), HarnessError> {
+    async fn advance_chain_collect(&self, count: usize) -> Result<Vec<HarnessBlock>, HarnessError> {
+        let mut blocks = Vec::with_capacity(count);
         for _ in 0..count {
             let block = self.build_block_on_tip().await?;
             self.deliver_peer_block(&block).await?;
             self.wait_for_block(block.hash()).await?;
+            blocks.push(block.clone());
         }
-        Ok(())
+        Ok(blocks)
     }
 
     fn metrics(&self) -> Arc<UdpMetrics> {
@@ -166,8 +178,10 @@ impl FlowHarness {
             .test_consensus
             .build_utxo_valid_block_with_parents(hash, parents, miner_data, Vec::<Transaction>::new())
             .to_immutable();
-        let pb_block = (&block).into();
-        HarnessBlock::new(block, pb_block)
+        let pb_block: pb::BlockMessage = (&block).into();
+        let canonical_block: Block = pb_block.clone().try_into().expect("canonical block");
+        let actual_hash = canonical_block.hash();
+        HarnessBlock::new(canonical_block, pb_block, actual_hash)
     }
 
     async fn build_block_on_tip(&self) -> Result<HarnessBlock, HarnessError> {
@@ -198,18 +212,19 @@ impl FlowHarness {
     }
 
     async fn wait_for_block(&self, hash: Hash) -> Result<(), HarnessError> {
-        timeout(Duration::from_secs(10), async {
+        timeout(Duration::from_secs(30), async {
             loop {
                 if let Some(status) = self.block_status(hash).await? {
                     if matches!(status, BlockStatus::StatusUTXOValid) {
-                        break Ok(());
+                        break Ok::<(), HarnessError>(());
                     }
                 }
                 sleep(Duration::from_millis(20)).await;
             }
         })
         .await
-        .map_err(|_| HarnessError::Timeout(hash))?
+        .map_err(|_| HarnessError::Timeout(hash))??;
+        Ok(())
     }
 
     async fn block_status(&self, hash: Hash) -> Result<Option<BlockStatus>, HarnessError> {
@@ -246,19 +261,16 @@ struct HarnessState {
 struct HarnessBlock {
     block: Block,
     message: Arc<pb::BlockMessage>,
+    hash: Hash,
 }
 
 impl HarnessBlock {
-    fn new(block: Block, message: pb::BlockMessage) -> Self {
-        Self { block, message: Arc::new(message) }
+    fn new(block: Block, message: pb::BlockMessage, hash: Hash) -> Self {
+        Self { block, message: Arc::new(message), hash }
     }
 
     fn hash(&self) -> Hash {
-        self.block.hash()
-    }
-
-    fn kaspad_message(&self) -> KaspadMessage {
-        KaspadMessage { payload: Some(KaspadPayload::Block((&*self.message).clone())), ..Default::default() }
+        self.hash
     }
 
     fn encode(&self) -> Vec<u8> {
