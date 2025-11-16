@@ -40,6 +40,7 @@ kaspa-consensusmanager.workspace = true
 kaspa-p2p-flows = { workspace = true, features = ["test-utils"] }
 kaspa-mining.workspace = true
 kaspa-p2p-mining.workspace = true
+once_cell.workspace = true
 tempfile.workspace = true
 
 [lints]
