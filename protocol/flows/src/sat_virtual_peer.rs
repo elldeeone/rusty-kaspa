@@ -1,7 +1,7 @@
 use crate::flow_context::FlowContext;
+use kaspa_connectionmanager::{InjectError, PeerMessageInjector};
 use kaspa_core::warn;
-use kaspa_p2p_lib::common::ProtocolError;
-use kaspa_p2p_lib::{pb::KaspadMessage, InjectError, PeerMessageInjector, Router};
+use kaspa_p2p_lib::{common::ProtocolError, pb::KaspadMessage, Router};
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::Arc,

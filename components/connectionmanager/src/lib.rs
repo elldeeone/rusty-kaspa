@@ -24,6 +24,9 @@ use tokio::{
     time::{interval, MissedTickBehavior},
 };
 
+pub mod injector;
+pub use injector::{InjectError, PeerMessageInjector};
+
 pub struct ConnectionManager {
     p2p_adaptor: Arc<kaspa_p2p_lib::Adaptor>,
     outbound_target: usize,

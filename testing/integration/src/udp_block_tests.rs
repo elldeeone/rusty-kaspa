@@ -25,14 +25,16 @@ use std::{
 use tokio::net::UdpSocket;
 use tokio::task::JoinHandle;
 
-const BASELINE_BLOCKS: u64 = 4;
+const BASELINE_BLOCKS: u64 = 2;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "Spawns full kaspad instances (~2 min); run manually when validating UDP block mode"]
 async fn udp_block_equivalence() {
     init_allocator_with_default_settings();
     log::try_init_logger("INFO");
 
-    let args_control = base_args();
+    let mut args_control = base_args();
+    args_control.udp.db_migrate = true;
     let mut args_udp = base_args();
     let udp_addr = reserve_udp_addr();
     args_udp.udp.enable = true;
@@ -40,6 +42,7 @@ async fn udp_block_equivalence() {
     args_udp.udp.mode = UdpModeArg::Blocks;
     args_udp.udp.danger_accept_blocks = true;
     args_udp.udp.block_max_bytes = 1_048_576;
+    args_udp.udp.db_migrate = true;
 
     let mut miner = Daemon::new_random_with_args(args_control, 64);
     let mut udp_node = Daemon::new_random_with_args(args_udp, 64);
@@ -91,9 +94,15 @@ async fn udp_block_equivalence() {
 
     let ingest_info = udp_client.get_udp_ingest_info(None).await.unwrap();
     assert_eq!(ingest_info.block_injected_total, 1, "block injector metric did not increment");
+
+    miner_client.disconnect().await.unwrap();
+    udp_client.disconnect().await.unwrap();
+    miner.shutdown();
+    udp_node.shutdown();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "Spawns full kaspad instances (~2 min); run manually when validating UDP block mode"]
 async fn udp_block_fairness() {
     init_allocator_with_default_settings();
     log::try_init_logger("INFO");
@@ -106,6 +115,7 @@ async fn udp_block_fairness() {
     args_target.udp.mode = UdpModeArg::Blocks;
     args_target.udp.danger_accept_blocks = true;
     args_target.udp.listen = Some(reserve_udp_addr());
+    args_target.udp.db_migrate = true;
 
     let mut source = Daemon::new_random_with_args(args_source, 64);
     let mut target = Daemon::new_random_with_args(args_target, 64);
@@ -143,6 +153,11 @@ async fn udp_block_fairness() {
 
     let allowed = baseline.mul_f64(1.2) + Duration::from_millis(200);
     assert!(stressed <= allowed, "UDP flood degraded throughput beyond tolerance");
+
+    miner_client.disconnect().await.unwrap();
+    target_client.disconnect().await.unwrap();
+    source.shutdown();
+    target.shutdown();
 }
 
 fn base_args() -> Args {

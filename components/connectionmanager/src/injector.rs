@@ -1,4 +1,4 @@
-use crate::{common::ProtocolError, pb::KaspadMessage};
+use kaspa_p2p_lib::{common::ProtocolError, pb::KaspadMessage};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -11,7 +11,6 @@ pub enum InjectError {
     Protocol(#[from] ProtocolError),
 }
 
-/// Trait implemented by in-process peers that can enqueue messages into the router flows.
 pub trait PeerMessageInjector: Send + Sync {
     fn inject(&self, msg: KaspadMessage) -> Result<(), InjectError>;
 }
