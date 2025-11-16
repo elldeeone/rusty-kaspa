@@ -16,6 +16,9 @@ pub mod consensus_pipeline_tests;
 pub mod daemon_integration_tests;
 
 #[cfg(test)]
+pub mod udp_block_tests;
+
+#[cfg(test)]
 #[cfg(feature = "devnet-prealloc")]
 pub mod mempool_benchmarks;
 

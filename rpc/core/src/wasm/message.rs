@@ -2011,6 +2011,7 @@ declare! {
         sources: IRpcUdpSourceInfo[];
         signatureFailures: bigint;
         skewSeconds: bigint;
+        blockInjectedTotal: bigint;
     }
     "#,
 }

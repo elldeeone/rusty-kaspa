@@ -18,6 +18,8 @@ pub struct UdpMetrics {
     signature_failures: AtomicU64,
     skew_seconds: AtomicU64,
     divergence_detected: AtomicBool,
+    block_injected_total: AtomicU64,
+    block_queue_depth: AtomicU64,
 }
 
 impl Default for UdpMetrics {
@@ -31,6 +33,8 @@ impl Default for UdpMetrics {
             signature_failures: AtomicU64::new(0),
             skew_seconds: AtomicU64::new(0),
             divergence_detected: AtomicBool::new(false),
+            block_injected_total: AtomicU64::new(0),
+            block_queue_depth: AtomicU64::new(0),
         }
     }
 }
@@ -56,6 +60,22 @@ impl UdpMetrics {
 
     pub fn set_divergence_detected(&self, detected: bool) {
         self.divergence_detected.store(detected, Ordering::Relaxed);
+    }
+
+    pub fn record_block_injected(&self) {
+        self.block_injected_total.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn block_injected_total(&self) -> u64 {
+        self.block_injected_total.load(Ordering::Relaxed)
+    }
+
+    pub fn set_block_queue_depth(&self, depth: u64) {
+        self.block_queue_depth.store(depth, Ordering::Relaxed);
+    }
+
+    pub fn block_queue_depth(&self) -> u64 {
+        self.block_queue_depth.load(Ordering::Relaxed)
     }
 
     pub fn record_drop(&self, reason: DropReason) {

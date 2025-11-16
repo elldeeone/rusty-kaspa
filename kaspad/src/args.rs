@@ -127,12 +127,15 @@ pub struct UdpArgs {
     pub allowed_signers: Vec<String>,
     pub digest_queue: usize,
     pub block_queue: usize,
+    pub danger_accept_blocks: bool,
+    pub block_mainnet_override: bool,
     pub discard_unsigned: bool,
     pub db_migrate: bool,
     pub retention_count: u32,
     pub retention_days: u32,
     pub max_digest_payload_bytes: u32,
     pub max_block_payload_bytes: u32,
+    pub block_max_bytes: u32,
     pub admin_remote_allowed: bool,
     pub admin_token_file: Option<PathBuf>,
     pub log_verbosity: String,
@@ -151,12 +154,15 @@ impl Default for UdpArgs {
             allowed_signers: Vec::new(),
             digest_queue: 1024,
             block_queue: 32,
+            danger_accept_blocks: false,
+            block_mainnet_override: false,
             discard_unsigned: true,
             db_migrate: false,
             retention_count: 10_000,
             retention_days: 7,
             max_digest_payload_bytes: 2048,
-            max_block_payload_bytes: 131_072,
+            max_block_payload_bytes: 1_048_576,
+            block_max_bytes: 1_048_576,
             admin_remote_allowed: false,
             admin_token_file: None,
             log_verbosity: DEFAULT_UDP_LOG_VERBOSITY.to_string(),
@@ -196,12 +202,15 @@ impl UdpArgs {
             allowed_signers,
             digest_queue: arg_match_unwrap_or::<usize>(m, "udp-digest-queue", defaults.digest_queue),
             block_queue: arg_match_unwrap_or::<usize>(m, "udp-block-queue", defaults.block_queue),
+            danger_accept_blocks: arg_match_unwrap_or::<bool>(m, "udp-danger-accept-blocks", defaults.danger_accept_blocks),
+            block_mainnet_override: arg_match_unwrap_or::<bool>(m, "udp-block-mainnet-override", defaults.block_mainnet_override),
             discard_unsigned: arg_match_unwrap_or::<bool>(m, "udp-discard-unsigned", defaults.discard_unsigned),
             db_migrate: arg_match_unwrap_or::<bool>(m, "udp-db-migrate", defaults.db_migrate),
             retention_count: arg_match_unwrap_or::<u32>(m, "udp-retention-count", defaults.retention_count),
             retention_days: arg_match_unwrap_or::<u32>(m, "udp-retention-days", defaults.retention_days),
             max_digest_payload_bytes: arg_match_unwrap_or::<u32>(m, "udp-max-digest-payload", defaults.max_digest_payload_bytes),
             max_block_payload_bytes: arg_match_unwrap_or::<u32>(m, "udp-max-block-payload", defaults.max_block_payload_bytes),
+            block_max_bytes: arg_match_unwrap_or::<u32>(m, "udp-block-max-bytes", defaults.block_max_bytes),
             admin_remote_allowed: arg_match_unwrap_or::<bool>(m, "udp-admin-remote-allowed", defaults.admin_remote_allowed),
             admin_token_file,
             log_verbosity: arg_match_unwrap_or::<String>(m, "udp-log-verbosity", defaults.log_verbosity.clone()),
@@ -233,12 +242,15 @@ impl UdpArgs {
             allowed_signers: self.allowed_signers.clone(),
             digest_queue: self.digest_queue,
             block_queue: self.block_queue,
+            danger_accept_blocks: self.danger_accept_blocks,
+            block_mainnet_override: self.block_mainnet_override,
             discard_unsigned: self.discard_unsigned,
             db_migrate: self.db_migrate,
             retention_count: self.retention_count,
             retention_days: self.retention_days,
             max_digest_payload_bytes: self.max_digest_payload_bytes,
             max_block_payload_bytes: self.max_block_payload_bytes,
+            block_max_bytes: self.block_max_bytes,
             log_verbosity: self.log_verbosity.clone(),
             admin_remote_allowed: self.admin_remote_allowed,
             admin_token_file: self.admin_token_file.clone(),
@@ -313,7 +325,7 @@ mod tests {
     fn payload_caps_defaults() {
         let args = Args::parse(["kaspad"]).expect("defaults");
         assert_eq!(args.udp.max_digest_payload_bytes, 2048);
-        assert_eq!(args.udp.max_block_payload_bytes, 131_072);
+        assert_eq!(args.udp.max_block_payload_bytes, 1_048_576);
 
         let cfg = r#"
             [udp]
@@ -562,7 +574,16 @@ pub fn cli() -> Command {
                 .num_args(1)
                 .require_equals(true)
                 .value_parser(clap::value_parser!(u32))
-                .help("Maximum bytes accepted per Block payload before dropping (default: 131072)."),
+                .help("Maximum bytes accepted per Block payload before dropping (default: 1048576)."),
+        )
+        .arg(
+            Arg::new("udp-block-max-bytes")
+                .long("udp.block_max_bytes")
+                .value_name("BYTES")
+                .num_args(1)
+                .require_equals(true)
+                .value_parser(clap::value_parser!(u32))
+                .help("Maximum bytes accepted for fully reassembled BlockV1 payloads (default: 1048576)."),
         )
         .arg(
             Arg::new("udp-require-signature")
@@ -598,6 +619,18 @@ pub fn cli() -> Command {
                 .require_equals(true)
                 .value_parser(clap::value_parser!(usize))
                 .help("Block queue capacity for optional block mode (default: 32)."),
+        )
+        .arg(
+            Arg::new("udp-danger-accept-blocks")
+                .long("udp.danger_accept_blocks")
+                .action(ArgAction::SetTrue)
+                .help("Enable experimental BlockV1 ingestion (requires udp.mode=blocks/both)."),
+        )
+        .arg(
+            Arg::new("udp-block-mainnet-override")
+                .long("udp.block_mainnet_override")
+                .action(ArgAction::SetTrue)
+                .help("Allow dev/test block mode on mainnet (dangerous; default disabled)."),
         )
         .arg(
             Arg::new("udp-discard-unsigned")

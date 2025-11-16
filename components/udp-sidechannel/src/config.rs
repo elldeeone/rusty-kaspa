@@ -31,12 +31,15 @@ pub struct UdpConfig {
     pub allowed_signers: Vec<String>,
     pub digest_queue: usize,
     pub block_queue: usize,
+    pub danger_accept_blocks: bool,
+    pub block_mainnet_override: bool,
     pub discard_unsigned: bool,
     pub db_migrate: bool,
     pub retention_count: u32,
     pub retention_days: u32,
     pub max_digest_payload_bytes: u32,
     pub max_block_payload_bytes: u32,
+    pub block_max_bytes: u32,
     pub log_verbosity: String,
     pub admin_remote_allowed: bool,
     pub admin_token_file: Option<PathBuf>,
@@ -64,6 +67,16 @@ impl UdpConfig {
 
     pub fn initially_enabled(&self) -> bool {
         self.enable
+    }
+
+    pub fn blocks_allowed(&self) -> bool {
+        if !(self.mode.allows_blocks() && self.danger_accept_blocks) {
+            return false;
+        }
+        match self.network_id.network_type() {
+            NetworkType::Mainnet => self.block_mainnet_override,
+            _ => true,
+        }
     }
 }
 

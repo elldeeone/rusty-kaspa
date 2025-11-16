@@ -497,6 +497,7 @@ from!(item: RpcResult<&kaspa_rpc_core::GetUdpIngestInfoResponse>, protowire::Get
         sources: item.sources.iter().map(|s| s.into()).collect(),
         signature_failures: item.signature_failures,
         skew_seconds: item.skew_seconds,
+        block_injected_total: item.block_injected_total,
         error: None,
     }
 });
@@ -1154,6 +1155,7 @@ try_from!(item: &protowire::GetUdpIngestInfoResponseMessage, RpcResult<kaspa_rpc
         sources,
         signature_failures: item.signature_failures,
         skew_seconds: item.skew_seconds,
+        block_injected_total: item.block_injected_total,
     }
 });
 try_from!(item: &protowire::GetUdpDigestsRequestMessage, kaspa_rpc_core::GetUdpDigestsRequest, {

@@ -267,6 +267,7 @@ pub struct GetUdpIngestInfoResponse {
     pub sources: Vec<RpcUdpSourceInfo>,
     pub signature_failures: u64,
     pub skew_seconds: u64,
+    pub block_injected_total: u64,
 }
 
 impl Serializer for GetUdpIngestInfoResponse {
@@ -326,6 +327,7 @@ impl Serializer for GetUdpIngestInfoResponse {
         }
         store!(u64, &self.signature_failures, writer)?;
         store!(u64, &self.skew_seconds, writer)?;
+        store!(u64, &self.block_injected_total, writer)?;
         Ok(())
     }
 }
@@ -370,6 +372,7 @@ impl Deserializer for GetUdpIngestInfoResponse {
         }
         let signature_failures = load!(u64, reader)?;
         let skew_seconds = load!(u64, reader)?;
+        let block_injected_total = load!(u64, reader)?;
         Ok(Self {
             rpc_version,
             enabled,
@@ -392,6 +395,7 @@ impl Deserializer for GetUdpIngestInfoResponse {
             sources,
             signature_failures,
             skew_seconds,
+            block_injected_total,
         })
     }
 }
