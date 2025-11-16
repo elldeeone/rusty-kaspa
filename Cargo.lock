@@ -3246,6 +3246,7 @@ dependencies = [
  "kaspa-p2p-lib",
  "kaspa-p2p-mining",
  "log",
+ "once_cell",
  "parking_lot",
  "prost",
  "secp256k1",

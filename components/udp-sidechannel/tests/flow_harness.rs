@@ -5,20 +5,24 @@ use kaspa_consensus::{
     consensus::test_consensus::{TestConsensus, TestConsensusFactory},
 };
 use kaspa_consensus_core::{
+    block::Block,
     blockstatus::BlockStatus,
     coinbase::MinerData,
     tx::{ScriptPublicKey, Transaction},
 };
 use kaspa_consensusmanager::{ConsensusManager, ConsensusProxy};
 use kaspa_core::task::tick::TickService;
-use kaspa_database::{create_temp_db, prelude::ConnBuilder, utils::DbLifetime};
+use kaspa_database::{
+    prelude::{ConnBuilder, DB},
+    utils::get_kaspa_tempdir,
+};
 use kaspa_hashes::Hash;
 use kaspa_mining::{manager::MiningManager, manager::MiningManagerProxy, MiningCounters};
 use kaspa_p2p_flows::flow_context::FlowContext;
 use kaspa_p2p_lib::{
     common::ProtocolError,
     pb::{self, kaspad_message::Payload as KaspadPayload, KaspadMessage},
-    Hub, Router,
+    Hub,
 };
 use kaspa_p2p_mining::rule_engine::MiningRuleEngine;
 use kaspa_udp_sidechannel::{
@@ -27,6 +31,7 @@ use kaspa_udp_sidechannel::{
     injector::router_peer::spawn_block_injector,
     metrics::UdpMetrics,
 };
+use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use prost::Message;
 use std::{
@@ -117,14 +122,12 @@ struct FlowHarnessInner {
     test_consensus: Arc<TestConsensus>,
     consensus_handles: Mutex<Option<Vec<JoinHandle<()>>>>,
     flow_context: Arc<FlowContext>,
-    peer_router: Arc<Router>,
     udp_metrics: Arc<UdpMetrics>,
     block_channel: BlockChannel,
     block_id: AtomicU64,
     frame_seq: AtomicU64,
     queue_capacity: usize,
     tick_service: Arc<TickService>,
-    _meta_db_lifetime: DbLifetime,
 }
 
 impl Drop for FlowHarnessInner {
@@ -133,6 +136,7 @@ impl Drop for FlowHarnessInner {
             self.test_consensus.shutdown(handles);
         }
         self.tick_service.shutdown();
+        retain_test_consensus(self.test_consensus.clone());
     }
 }
 
@@ -162,7 +166,8 @@ impl FlowHarness {
             .test_consensus
             .build_utxo_valid_block_with_parents(hash, parents, miner_data, Vec::<Transaction>::new())
             .to_immutable();
-        HarnessBlock::new(hash, (&block).into())
+        let pb_block = (&block).into();
+        HarnessBlock::new(block, pb_block)
     }
 
     async fn build_block_on_tip(&self) -> Result<HarnessBlock, HarnessError> {
@@ -171,7 +176,8 @@ impl FlowHarness {
     }
 
     async fn deliver_peer_block(&self, block: &HarnessBlock) -> Result<(), HarnessError> {
-        self.inner.peer_router.route_to_flow(block.kaspad_message()).map_err(HarnessError::Protocol)
+        let session = self.consensus_session().await;
+        self.inner.flow_context.submit_rpc_block(&session, block.consensus_block()).await.map_err(HarnessError::Protocol)
     }
 
     async fn deliver_udp_block(&self, block: &HarnessBlock) -> Result<(), HarnessError> {
@@ -238,17 +244,17 @@ struct HarnessState {
 
 #[derive(Clone)]
 struct HarnessBlock {
-    hash: Hash,
+    block: Block,
     message: Arc<pb::BlockMessage>,
 }
 
 impl HarnessBlock {
-    fn new(hash: Hash, message: pb::BlockMessage) -> Self {
-        Self { hash, message: Arc::new(message) }
+    fn new(block: Block, message: pb::BlockMessage) -> Self {
+        Self { block, message: Arc::new(message) }
     }
 
     fn hash(&self) -> Hash {
-        self.hash
+        self.block.hash()
     }
 
     fn kaspad_message(&self) -> KaspadMessage {
@@ -259,6 +265,10 @@ impl HarnessBlock {
         let mut buf = Vec::with_capacity(1024);
         self.message.encode(&mut buf).expect("encode block");
         buf
+    }
+
+    fn consensus_block(&self) -> Block {
+        self.block.clone()
     }
 }
 
@@ -278,14 +288,16 @@ impl FlowHarnessBuilder {
     }
 
     async fn build(self) -> Result<FlowHarness, HarnessError> {
-        let config = Arc::new(ConfigBuilder::new(SIMNET_PARAMS).skip_proof_of_work().build());
+        let mut config = ConfigBuilder::new(SIMNET_PARAMS).skip_proof_of_work().build();
+        config.disable_upnp = true;
+        let config = Arc::new(config);
         let test_consensus = Arc::new(TestConsensus::new(config.as_ref()));
         let handles = test_consensus.init();
         let factory = Arc::new(TestConsensusFactory::new(test_consensus.clone()));
         let consensus_manager = Arc::new(ConsensusManager::new(factory));
 
         let tick_service = Arc::new(TickService::new());
-        let (meta_db_lifetime, meta_db) = create_temp_db!(ConnBuilder::default().with_files_limit(2));
+        let meta_db = test_meta_db();
         let (address_manager, _) = AddressManager::new(config.clone(), meta_db, tick_service.clone());
 
         let hub = Hub::new();
@@ -321,8 +333,6 @@ impl FlowHarnessBuilder {
         flow_context.start_async_services();
 
         let sat_injector = flow_context.create_sat_virtual_peer().map_err(HarnessError::Protocol)?;
-        let router = Router::new_virtual(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0));
-        flow_context.register_virtual_router_for_tests(router.clone()).map_err(HarnessError::Protocol)?;
 
         let udp_metrics = Arc::new(UdpMetrics::new());
         let parser = BlockParser::new(self.block_max_bytes);
@@ -336,17 +346,29 @@ impl FlowHarnessBuilder {
                 test_consensus,
                 consensus_handles: Mutex::new(Some(handles)),
                 flow_context,
-                peer_router: router,
                 udp_metrics,
                 block_channel,
                 block_id: AtomicU64::new(0),
                 frame_seq: AtomicU64::new(0),
                 queue_capacity: self.block_queue,
                 tick_service,
-                _meta_db_lifetime: meta_db_lifetime,
             }),
         })
     }
+}
+
+fn test_meta_db() -> Arc<DB> {
+    static META_DB: Lazy<Arc<DB>> = Lazy::new(|| {
+        let dir = get_kaspa_tempdir();
+        let path = dir.into_path();
+        ConnBuilder::default().with_files_limit(2).with_db_path(path).build().unwrap()
+    });
+    META_DB.clone()
+}
+
+fn retain_test_consensus(tc: Arc<TestConsensus>) {
+    static LEAKED: Lazy<parking_lot::Mutex<Vec<Arc<TestConsensus>>>> = Lazy::new(|| parking_lot::Mutex::new(Vec::new()));
+    LEAKED.lock().push(tc);
 }
 
 #[derive(Debug, Error)]

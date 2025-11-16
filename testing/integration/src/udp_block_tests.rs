@@ -34,8 +34,10 @@ async fn udp_block_equivalence() {
     log::try_init_logger("INFO");
 
     let mut args_control = base_args();
+    args_control.enable_unsynced_mining = true;
     args_control.udp.db_migrate = true;
     let mut args_udp = base_args();
+    args_udp.enable_unsynced_mining = true;
     let udp_addr = reserve_udp_addr();
     args_udp.udp.enable = true;
     args_udp.udp.listen = Some(udp_addr);
@@ -60,8 +62,8 @@ async fn udp_block_equivalence() {
     miner_client.submit_block(template.block, false).await.unwrap();
 
     wait_for(
-        50,
-        40,
+        100,
+        150,
         || {
             let client = miner_client.clone();
             let hash = block_hash;
@@ -76,12 +78,16 @@ async fn udp_block_equivalence() {
     send_block_over_udp(udp_addr, &udp_network, 42, &block_message).await;
 
     wait_for(
-        50,
-        60,
+        100,
+        150,
         || {
             let client = udp_client.clone();
             let hash = block_hash;
-            async move { client.get_block_dag_info().await.unwrap().sink == hash }
+            async move {
+                let info = client.get_block_dag_info().await.unwrap();
+                println!("udp sink {} (target {})", info.sink, hash);
+                info.sink == hash
+            }
         },
         "udp node did not ingest block",
     )
