@@ -151,6 +151,16 @@ impl UdpDigestManager {
                 signer_id: 0,
                 signature_valid: false,
             });
+            if entry.signer_id != 0 && entry.signer_id != variant.signer_id() {
+                warn!(
+                    "udp.event=digest_drop reason=source_signer_mismatch source={} expected_signer={} got_signer={}",
+                    source_id,
+                    entry.signer_id,
+                    variant.signer_id()
+                );
+                self.metrics.record_drop(DropReason::SourceSignerMismatch);
+                return;
+            }
             if entry.last_epoch > 0 && variant.epoch() < entry.last_epoch {
                 warn!("udp.event=digest_drop reason=epoch source={} epoch={}", source_id, variant.epoch());
                 self.metrics.record_drop(DropReason::StaleSeq);
@@ -251,6 +261,10 @@ impl UdpDigestManager {
 
     pub fn divergence_state(&self) -> DivergenceState {
         self.state.lock().expect("digest state poisoned").divergence
+    }
+
+    pub fn update_signers(&self, keys: &[String]) -> Result<usize, super::SignerError> {
+        self.parser.reload_signers(keys)
     }
 }
 
@@ -355,6 +369,26 @@ mod tests {
             recv_timestamp_ms: epoch,
             source_id: 1,
         })
+    }
+
+    #[test]
+    fn source_signer_mismatch_rejected() {
+        let manager = UdpDigestManager::test_instance();
+        let mut first = sample_delta(1);
+        if let DigestVariant::Delta(delta) = &mut first {
+            delta.signer_id = 2;
+        }
+        manager.record_variant(first);
+        let mut second = sample_delta(2);
+        if let DigestVariant::Delta(delta) = &mut second {
+            delta.signer_id = 3;
+        }
+        manager.record_variant(second);
+        let drops = manager.metrics.drops_snapshot();
+        let mismatch_count = drops.into_iter().find(|(reason, _)| *reason == "source_signer_mismatch").map(|(_, v)| v).unwrap_or(0);
+        assert_eq!(mismatch_count, 1);
+        let report = manager.report();
+        assert_eq!(report.sources[0].last_epoch, 1, "mismatched signer digest ignored");
     }
 }
 

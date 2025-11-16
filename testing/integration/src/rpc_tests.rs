@@ -1,11 +1,18 @@
-use std::{str::FromStr, sync::Arc, time::Duration};
+use std::{net::SocketAddr, str::FromStr, sync::Arc, time::Duration};
 
 use crate::common::{client_notify::ChannelNotify, daemon::Daemon};
+use crc32fast::Hasher;
 use futures_util::future::try_join_all;
 use kaspa_addresses::{Address, Prefix, Version};
 use kaspa_consensus::params::SIMNET_GENESIS;
-use kaspa_consensus_core::{constants::MAX_SOMPI, header::Header, subnets::SubnetworkId, tx::Transaction};
-use kaspa_core::{assert_match, info};
+use kaspa_consensus_core::{
+    constants::MAX_SOMPI,
+    header::Header,
+    network::{NetworkId, NetworkType},
+    subnets::SubnetworkId,
+    tx::Transaction,
+};
+use kaspa_core::{assert_match, info, time::unix_now};
 use kaspa_grpc_core::ops::KaspadPayloadOps;
 use kaspa_hashes::Hash;
 use kaspa_notify::{
@@ -15,10 +22,20 @@ use kaspa_notify::{
         SinkBlueScoreChangedScope, UtxosChangedScope, VirtualChainChangedScope, VirtualDaaScoreChangedScope,
     },
 };
-use kaspa_rpc_core::{api::rpc::RpcApi, model::*, Notification};
-use kaspa_utils::{fd_budget, networking::ContextualNetAddress};
+use kaspa_rpc_core::{api::rpc::RpcApi, model::*, Notification, RpcError, RpcResult};
+use kaspa_udp_sidechannel::{
+    digest::DIGEST_SIG_DOMAIN,
+    frame::{header::HEADER_LEN, FrameKind},
+};
+use kaspa_utils::{fd_budget, hex::ToHex, networking::ContextualNetAddress};
 use kaspad_lib::args::Args;
+use secp256k1::{Keypair, Message, Secp256k1, SecretKey, XOnlyPublicKey};
+use sha2::{Digest as ShaDigest, Sha256};
 use tokio::task::JoinHandle;
+use tokio::{
+    net::UdpSocket,
+    time::{sleep, timeout},
+};
 
 #[macro_export]
 macro_rules! tst {
@@ -43,7 +60,7 @@ async fn sanity_test() {
     // As we log the panic, we want to set it up after the logger
     kaspa_core::panic::configure_panic();
 
-    let args = Args {
+    let mut args = Args {
         simnet: true,
         disable_upnp: true, // UPnP registration might take some time and is not needed for this test
         enable_unsynced_mining: true,
@@ -52,6 +69,12 @@ async fn sanity_test() {
         unsafe_rpc: true,
         ..Default::default()
     };
+    let initial_signer_hex = signer_hex_from_secret(&INITIAL_SIGNER_SECRET);
+    args.udp.enable = true;
+    args.udp.listen = Some("127.0.0.1:0".parse().unwrap());
+    args.udp.require_signature = true;
+    args.udp.allowed_signers = vec![initial_signer_hex];
+    args.udp.db_migrate = true;
 
     let fd_total_budget = fd_budget::limit();
     let mut daemon = Daemon::new_random_with_args(args, fd_total_budget);
@@ -60,6 +83,7 @@ async fn sanity_test() {
     let connection = ChannelConnection::new("test", sender, ChannelType::Closable);
     let listener_id = client.register_new_listener(connection);
     let mut tasks: Vec<JoinHandle<()>> = Vec::new();
+    let udp_admin_lock = Arc::new(tokio::sync::Mutex::new(()));
 
     // The intent of this for/match design (emphasizing the absence of an arm with fallback pattern in the match)
     // is to force any implementor of a new RpcApi method to add a matching arm here and to strongly incentivize
@@ -713,7 +737,9 @@ async fn sanity_test() {
 
             KaspadPayloadOps::UdpEnable => {
                 let rpc_client = client.clone();
+                let udp_admin_lock = udp_admin_lock.clone();
                 tst!(op, {
+                    let _guard = udp_admin_lock.lock().await;
                     let _ = rpc_client.udp_disable(None).await; // ensure known state
                     let enabled = rpc_client.udp_enable(None).await.unwrap();
                     assert!(enabled.enabled);
@@ -726,6 +752,16 @@ async fn sanity_test() {
 
             KaspadPayloadOps::UdpDisable => {
                 tst!(op, "covered by UdpEnable")
+            }
+
+            KaspadPayloadOps::UdpUpdateSigners => {
+                let rpc_client = client.clone();
+                let network = network_id;
+                let udp_admin_lock = udp_admin_lock.clone();
+                tst!(op, {
+                    let _guard = udp_admin_lock.lock().await;
+                    udp_update_signers_sla(&rpc_client, network).await;
+                })
             }
 
             KaspadPayloadOps::NotifyBlockAdded => {
@@ -823,3 +859,188 @@ async fn sanity_test() {
     drop(client);
     daemon.shutdown();
 }
+
+async fn udp_update_signers_sla(client: &kaspa_grpc_client::GrpcClient, network: NetworkId) {
+    let mut info = client.get_udp_ingest_info(None).await.unwrap();
+    let restore_disable = if !info.enabled {
+        client.udp_enable(None).await.unwrap();
+        info = client.get_udp_ingest_info(None).await.unwrap();
+        true
+    } else {
+        false
+    };
+    assert!(info.enabled, "UDP ingest must be enabled for this test");
+    let bind_addr: SocketAddr = info.bind_address.expect("bind address").parse().expect("valid socket address");
+    let network_tag = encode_network_tag(&network);
+    let initial_keypair = keypair_from_secret(&INITIAL_SIGNER_SECRET);
+    send_snapshot_and_wait(client, &bind_addr, network_tag, &initial_keypair, 1).await.unwrap();
+
+    let rotated_hex = signer_hex_from_secret(&ROTATED_SIGNER_SECRET);
+    client.udp_update_signers(vec![rotated_hex], None).await.unwrap();
+
+    let rotated_keypair = keypair_from_secret(&ROTATED_SIGNER_SECRET);
+    timeout(Duration::from_secs(5), async { send_snapshot_and_wait(client, &bind_addr, network_tag, &rotated_keypair, 2).await })
+        .await
+        .expect("digest from new signer accepted within SLA")
+        .unwrap();
+
+    if restore_disable {
+        client.udp_disable(None).await.unwrap();
+    }
+}
+
+async fn send_snapshot_and_wait(
+    client: &kaspa_grpc_client::GrpcClient,
+    addr: &SocketAddr,
+    network_tag: u8,
+    keypair: &Keypair,
+    epoch: u64,
+) -> RpcResult<()> {
+    send_snapshot_datagram(addr, network_tag, keypair, epoch).await.expect("udp send ok");
+    wait_for_digest_epoch(client, epoch, Duration::from_secs(5)).await
+}
+
+async fn send_snapshot_datagram(addr: &SocketAddr, network_tag: u8, keypair: &Keypair, epoch: u64) -> std::io::Result<()> {
+    let fields = snapshot_fields(epoch, unix_now());
+    let signature = sign_snapshot(epoch, TEST_SOURCE_ID, &fields, keypair);
+    let payload = snapshot_payload(&fields, &signature);
+    let mut datagram = vec![0u8; HEADER_LEN + payload.len()];
+    datagram[..4].copy_from_slice(b"KUDP");
+    datagram[4] = 1;
+    datagram[5] = FrameKind::Digest as u8;
+    datagram[6] = network_tag;
+    datagram[7] = 0x0C;
+    datagram[8..16].copy_from_slice(&epoch.to_le_bytes());
+    datagram[16..20].copy_from_slice(&0u32.to_le_bytes());
+    datagram[20..22].copy_from_slice(&0u16.to_le_bytes());
+    datagram[22..24].copy_from_slice(&0u16.to_le_bytes());
+    datagram[24..26].copy_from_slice(&0u16.to_le_bytes());
+    datagram[26..28].copy_from_slice(&1u16.to_le_bytes());
+    datagram[28..32].copy_from_slice(&(payload.len() as u32).to_le_bytes());
+    datagram[32..34].copy_from_slice(&TEST_SOURCE_ID.to_le_bytes());
+    datagram[HEADER_LEN..].copy_from_slice(&payload);
+    let mut hasher = Hasher::new();
+    hasher.update(&datagram[..HEADER_LEN - 4]);
+    let crc = hasher.finalize();
+    datagram[HEADER_LEN - 4..HEADER_LEN].copy_from_slice(&crc.to_le_bytes());
+    let socket = UdpSocket::bind("127.0.0.1:0").await?;
+    socket.send_to(&datagram, addr).await?;
+    Ok(())
+}
+
+async fn wait_for_digest_epoch(client: &kaspa_grpc_client::GrpcClient, epoch: u64, timeout_duration: Duration) -> RpcResult<()> {
+    timeout(timeout_duration, async {
+        loop {
+            let response = client.get_udp_digests(None, Some(32), None).await?;
+            if response.digests.iter().any(|record| record.epoch == epoch && record.verified) {
+                return Ok(());
+            }
+            sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await
+    .map_err(|_| RpcError::General("digest not observed before timeout".to_string()))?
+}
+
+fn keypair_from_secret(secret: &[u8; 32]) -> Keypair {
+    let secp = Secp256k1::new();
+    let sk = SecretKey::from_slice(secret).expect("secret key");
+    Keypair::from_secret_key(&secp, &sk)
+}
+
+fn signer_hex_from_secret(secret: &[u8; 32]) -> String {
+    let secp = Secp256k1::new();
+    let sk = SecretKey::from_slice(secret).expect("secret key");
+    let keypair = Keypair::from_secret_key(&secp, &sk);
+    let (xonly, _) = XOnlyPublicKey::from_keypair(&keypair);
+    xonly.serialize().to_vec().to_hex()
+}
+
+#[derive(Clone)]
+struct SnapshotFields {
+    epoch: u64,
+    frame_ts_ms: u64,
+    pruning_point: Hash,
+    pruning_proof_commitment: Hash,
+    utxo_muhash: Hash,
+    virtual_selected_parent: Hash,
+    virtual_blue_score: u64,
+    daa_score: u64,
+    blue_work: [u8; 32],
+}
+
+fn snapshot_fields(epoch: u64, frame_ts_ms: u64) -> SnapshotFields {
+    SnapshotFields {
+        epoch,
+        frame_ts_ms,
+        pruning_point: Hash::from_bytes([1; 32]),
+        pruning_proof_commitment: Hash::from_bytes([2; 32]),
+        utxo_muhash: Hash::from_bytes([3; 32]),
+        virtual_selected_parent: Hash::from_bytes([4; 32]),
+        virtual_blue_score: 100 + epoch,
+        daa_score: 200 + epoch,
+        blue_work: [5; 32],
+    }
+}
+
+fn snapshot_payload(fields: &SnapshotFields, signature: &[u8; 64]) -> Vec<u8> {
+    let mut buf = Vec::new();
+    buf.extend_from_slice(&fields.epoch.to_le_bytes());
+    buf.extend_from_slice(&fields.frame_ts_ms.to_le_bytes());
+    buf.extend_from_slice(&fields.pruning_point.as_bytes());
+    buf.extend_from_slice(&fields.pruning_proof_commitment.as_bytes());
+    buf.extend_from_slice(&fields.utxo_muhash.as_bytes());
+    buf.extend_from_slice(&fields.virtual_selected_parent.as_bytes());
+    buf.extend_from_slice(&fields.virtual_blue_score.to_le_bytes());
+    buf.extend_from_slice(&fields.daa_score.to_le_bytes());
+    buf.extend_from_slice(&fields.blue_work);
+    buf.push(0);
+    buf.extend_from_slice(&TEST_SIGNER_ID.to_le_bytes());
+    buf.extend_from_slice(signature);
+    buf
+}
+
+fn sign_snapshot(seq: u64, source_id: u16, fields: &SnapshotFields, keypair: &Keypair) -> [u8; 64] {
+    let mut buf = Vec::new();
+    buf.extend_from_slice(DIGEST_SIG_DOMAIN.as_bytes());
+    buf.push(1);
+    buf.extend_from_slice(&seq.to_le_bytes());
+    buf.extend_from_slice(&fields.epoch.to_le_bytes());
+    buf.extend_from_slice(&fields.frame_ts_ms.to_le_bytes());
+    buf.extend_from_slice(&fields.pruning_point.as_bytes());
+    buf.extend_from_slice(&fields.pruning_proof_commitment.as_bytes());
+    buf.extend_from_slice(&fields.utxo_muhash.as_bytes());
+    buf.extend_from_slice(&fields.virtual_selected_parent.as_bytes());
+    buf.extend_from_slice(&fields.virtual_blue_score.to_le_bytes());
+    buf.extend_from_slice(&fields.daa_score.to_le_bytes());
+    buf.extend_from_slice(&fields.blue_work);
+    buf.push(0);
+    buf.extend_from_slice(&source_id.to_le_bytes());
+    sign_preimage(&buf, keypair)
+}
+
+fn sign_preimage(bytes: &[u8], keypair: &Keypair) -> [u8; 64] {
+    let hash = Sha256::digest(bytes);
+    let message = Message::from_digest_slice(&hash).expect("digest slice");
+    let secp = Secp256k1::new();
+    let sig = secp.sign_schnorr(&message, keypair);
+    let mut out = [0u8; 64];
+    out.copy_from_slice(sig.as_ref());
+    out
+}
+
+fn encode_network_tag(network: &NetworkId) -> u8 {
+    let base = match network.network_type() {
+        NetworkType::Mainnet => 0x01,
+        NetworkType::Testnet => 0x02,
+        NetworkType::Devnet => 0x03,
+        NetworkType::Simnet => 0x04,
+    };
+    let suffix = network.suffix().unwrap_or(0) as u8;
+    base | (suffix << 4)
+}
+
+const INITIAL_SIGNER_SECRET: [u8; 32] = [0x11; 32];
+const ROTATED_SIGNER_SECRET: [u8; 32] = [0x22; 32];
+const TEST_SOURCE_ID: u16 = 7;
+const TEST_SIGNER_ID: u16 = 0;

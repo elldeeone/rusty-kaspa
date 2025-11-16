@@ -433,6 +433,14 @@ impl RpcApi for RpcCoreMock {
         Ok(UdpDisableResponse { previous_enabled: true, enabled: false, note: Some("udp ingest disabled (mock)".into()) })
     }
 
+    async fn udp_update_signers_call(
+        &self,
+        _connection: Option<&DynRpcConnection>,
+        request: UdpUpdateSignersRequest,
+    ) -> RpcResult<UdpUpdateSignersResponse> {
+        Ok(UdpUpdateSignersResponse { applied: true, applied_at_ms: 0, signer_count: request.keys.len() as u32 })
+    }
+
     async fn get_udp_digests_call(
         &self,
         _connection: Option<&DynRpcConnection>,

@@ -92,6 +92,7 @@ pub enum KaspadPayloadOps {
     GetUdpDigests,
     UdpEnable,
     UdpDisable,
+    UdpUpdateSigners,
 
     // Subscription commands for starting/stopping notifications
     NotifyBlockAdded,

@@ -631,3 +631,71 @@ impl Deserializer for UdpDisableResponse {
         Ok(Self { previous_enabled, enabled, note })
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct UdpUpdateSignersRequest {
+    #[serde(default)]
+    pub keys: Vec<String>,
+    #[serde(default)]
+    pub auth_token: Option<String>,
+}
+
+impl Serializer for UdpUpdateSignersRequest {
+    fn serialize<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        store!(u16, &0, writer)?;
+        store!(u32, &(self.keys.len() as u32), writer)?;
+        for key in &self.keys {
+            store!(String, key, writer)?;
+        }
+        match &self.auth_token {
+            Some(token) => {
+                store!(bool, &true, writer)?;
+                store!(String, token, writer)?;
+            }
+            None => store!(bool, &false, writer)?,
+        }
+        Ok(())
+    }
+}
+
+impl Deserializer for UdpUpdateSignersRequest {
+    fn deserialize<R: Read>(reader: &mut R) -> std::io::Result<Self> {
+        let _version = load!(u16, reader)?;
+        let len = load!(u32, reader)?;
+        let mut keys = Vec::with_capacity(len as usize);
+        for _ in 0..len {
+            keys.push(load!(String, reader)?);
+        }
+        let auth_token = if load!(bool, reader)? { Some(load!(String, reader)?) } else { None };
+        Ok(Self { keys, auth_token })
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct UdpUpdateSignersResponse {
+    pub applied: bool,
+    pub applied_at_ms: u64,
+    pub signer_count: u32,
+}
+
+impl Serializer for UdpUpdateSignersResponse {
+    fn serialize<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        store!(u16, &0, writer)?;
+        store!(bool, &self.applied, writer)?;
+        store!(u64, &self.applied_at_ms, writer)?;
+        store!(u32, &self.signer_count, writer)?;
+        Ok(())
+    }
+}
+
+impl Deserializer for UdpUpdateSignersResponse {
+    fn deserialize<R: Read>(reader: &mut R) -> std::io::Result<Self> {
+        let _version = load!(u16, reader)?;
+        let applied = load!(bool, reader)?;
+        let applied_at_ms = load!(u64, reader)?;
+        let signer_count = load!(u32, reader)?;
+        Ok(Self { applied, applied_at_ms, signer_count })
+    }
+}

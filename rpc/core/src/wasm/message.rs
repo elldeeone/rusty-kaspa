@@ -1772,6 +1772,112 @@ try_from!(args: GetUtxoReturnAddressResponse, IGetUtxoReturnAddressResponse, {
 // ---
 
 declare! {
+    IRpcUdpQueueSnapshot,
+    r#"
+    /**
+     *
+     *
+     * @category Node RPC
+     */
+    export interface IRpcUdpQueueSnapshot {
+        capacity: number;
+        depth: number;
+    }
+    "#,
+}
+
+declare! {
+    IRpcUdpMetricEntry,
+    r#"
+    /**
+     *
+     *
+     * @category Node RPC
+     */
+    export interface IRpcUdpMetricEntry {
+        label: string;
+        value: bigint;
+    }
+    "#,
+}
+
+declare! {
+    IRpcUdpSourceInfo,
+    r#"
+    /**
+     *
+     *
+     * @category Node RPC
+     */
+    export interface IRpcUdpSourceInfo {
+        sourceId: number;
+        lastEpoch: bigint;
+        lastTsMs: bigint;
+        signerId: number;
+        signatureValid: boolean;
+    }
+    "#,
+}
+
+declare! {
+    IRpcUdpDivergenceInfo,
+    r#"
+    /**
+     *
+     *
+     * @category Node RPC
+     */
+    export interface IRpcUdpDivergenceInfo {
+        detected: boolean;
+        lastMismatchEpoch?: bigint;
+    }
+    "#,
+}
+
+declare! {
+    IRpcUdpDigestSummary,
+    r#"
+    /**
+     *
+     *
+     * @category Node RPC
+     */
+    export interface IRpcUdpDigestSummary {
+        epoch: bigint;
+        pruningPoint?: string;
+        pruningProofCommitment?: string;
+        utxoMuhash?: string;
+        virtualSelectedParent: string;
+        virtualBlueScore: bigint;
+        daaScore: bigint;
+        blueWorkHex: string;
+        keptHeadersMmrRoot?: string;
+        signerId: number;
+        signatureValid: boolean;
+        recvTsMs: bigint;
+        sourceId: number;
+    }
+    "#,
+}
+
+declare! {
+    IRpcUdpDigestRecord,
+    r#"
+    /**
+     *
+     *
+     * @category Node RPC
+     */
+    export interface IRpcUdpDigestRecord {
+        epoch: bigint;
+        kind: string;
+        summary: IRpcUdpDigestSummary;
+        verified: boolean;
+    }
+    "#,
+}
+
+declare! {
     IGetUdpIngestInfoRequest,
     r#"
     /**
@@ -1798,6 +1904,7 @@ declare! {
      * @category Node RPC
      */
     export interface IGetUdpIngestInfoResponse {
+        rpcVersion: number;
         enabled: boolean;
         bindAddress?: string;
         bindUnix?: string;
@@ -1809,11 +1916,58 @@ declare! {
         frames: IRpcUdpMetricEntry[];
         drops: IRpcUdpMetricEntry[];
         bytesTotal: bigint;
+        rxKbps: number;
+        lastFrameTsMs?: bigint;
+        framesReceived: bigint;
+        lastDigest?: IRpcUdpDigestSummary;
+        divergence: IRpcUdpDivergenceInfo;
+        sourceCount: number;
+        sources: IRpcUdpSourceInfo[];
+        signatureFailures: bigint;
+        skewSeconds: bigint;
     }
     "#,
 }
 
 try_from!(args: GetUdpIngestInfoResponse, IGetUdpIngestInfoResponse, {
+    Ok(to_value(&args)?.into())
+});
+
+declare! {
+    IGetUdpDigestsRequest,
+    r#"
+    /**
+     *
+     *
+     * @category Node RPC
+     */
+    export interface IGetUdpDigestsRequest {
+        fromEpoch?: bigint;
+        limit?: number;
+        authToken?: string;
+    }
+    "#,
+}
+
+try_from!(args: IGetUdpDigestsRequest, GetUdpDigestsRequest, {
+    Ok(from_value(args.into())?)
+});
+
+declare! {
+    IGetUdpDigestsResponse,
+    r#"
+    /**
+     *
+     *
+     * @category Node RPC
+     */
+    export interface IGetUdpDigestsResponse {
+        digests: IRpcUdpDigestRecord[];
+    }
+    "#,
+}
+
+try_from!(args: GetUdpDigestsResponse, IGetUdpDigestsResponse, {
     Ok(to_value(&args)?.into())
 });
 
@@ -1890,6 +2044,45 @@ declare! {
 }
 
 try_from!(args: UdpDisableResponse, IUdpDisableResponse, {
+    Ok(to_value(&args)?.into())
+});
+
+declare! {
+    IUdpUpdateSignersRequest,
+    r#"
+    /**
+     *
+     *
+     * @category Node RPC
+     */
+    export interface IUdpUpdateSignersRequest {
+        keys: string[];
+        authToken?: string;
+    }
+    "#,
+}
+
+try_from!(args: IUdpUpdateSignersRequest, UdpUpdateSignersRequest, {
+    Ok(from_value(args.into())?)
+});
+
+declare! {
+    IUdpUpdateSignersResponse,
+    r#"
+    /**
+     *
+     *
+     * @category Node RPC
+     */
+    export interface IUdpUpdateSignersResponse {
+        applied: boolean;
+        appliedAtMs: bigint;
+        signerCount: number;
+    }
+    "#,
+}
+
+try_from!(args: UdpUpdateSignersResponse, IUdpUpdateSignersResponse, {
     Ok(to_value(&args)?.into())
 });
 

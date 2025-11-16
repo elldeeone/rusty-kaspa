@@ -146,6 +146,8 @@ pub enum RpcApiOps {
     UdpDisable = 153,
     /// Retrieve stored UDP digests
     GetUdpDigests = 154,
+    /// Update allowed UDP signer set
+    UdpUpdateSigners = 155,
 }
 
 impl RpcApiOps {

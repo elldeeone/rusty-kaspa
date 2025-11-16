@@ -70,6 +70,7 @@ message KaspadRequest {
     UdpEnableRequestMessage udpEnableRequest = 1115;
     UdpDisableRequestMessage udpDisableRequest = 1116;
     GetUdpDigestsRequestMessage getUdpDigestsRequest = 1117;
+    UdpUpdateSignersRequestMessage udpUpdateSignersRequest = 1118;
   }
 }
 
@@ -140,6 +141,7 @@ message KaspadResponse {
     UdpEnableResponseMessage udpEnableResponse = 1115;
     UdpDisableResponseMessage udpDisableResponse = 1116;
     GetUdpDigestsResponseMessage getUdpDigestsResponse = 1117;
+    UdpUpdateSignersResponseMessage udpUpdateSignersResponse = 1118;
   }
 }
 

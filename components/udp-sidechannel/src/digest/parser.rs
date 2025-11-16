@@ -30,7 +30,7 @@ impl SignerRegistry {
         Self { keys: Arc::new(RwLock::new(Vec::new())) }
     }
 
-    pub fn from_hex(input: &[String]) -> Result<Self, SignerError> {
+    pub fn parse_hex_keys(input: &[String]) -> Result<Vec<XOnlyPublicKey>, SignerError> {
         let mut keys = Vec::with_capacity(input.len());
         for (idx, key) in input.iter().enumerate() {
             if key.len() != 64 {
@@ -41,20 +41,31 @@ impl SignerRegistry {
             let parsed = XOnlyPublicKey::from_slice(&bytes).map_err(|_| SignerError::InvalidKey(idx as u16))?;
             keys.push(parsed);
         }
-        Ok(Self { keys: Arc::new(RwLock::new(keys)) })
+        Ok(keys)
+    }
+
+    pub fn from_hex(input: &[String]) -> Result<Self, SignerError> {
+        Ok(Self { keys: Arc::new(RwLock::new(Self::parse_hex_keys(input)?)) })
     }
 
     pub fn replace(&self, keys: Vec<XOnlyPublicKey>) {
         *self.keys.write().expect("signer registry poisoned") = keys;
     }
 
+    pub fn len(&self) -> usize {
+        self.keys.read().expect("signer registry poisoned").len()
+    }
+
+    pub fn replace_from_hex(&self, input: &[String]) -> Result<usize, SignerError> {
+        let keys = Self::parse_hex_keys(input)?;
+        let len = keys.len();
+        self.replace(keys);
+        Ok(len)
+    }
+
     pub fn get(&self, id: u16) -> Option<XOnlyPublicKey> {
         let guard = self.keys.read().expect("signer registry poisoned");
         guard.get(id as usize).copied()
-    }
-
-    pub fn len(&self) -> usize {
-        self.keys.read().expect("signer registry poisoned").len()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -69,6 +80,18 @@ pub enum SignerError {
     InvalidKey(u16),
 }
 
+impl std::fmt::Display for SignerError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SignerError::InvalidLength(idx, value) => write!(f, "signer {idx} has invalid length (got `{value}`)"),
+            SignerError::InvalidHex(idx) => write!(f, "signer {idx} contains invalid hex characters"),
+            SignerError::InvalidKey(idx) => write!(f, "signer {idx} is not a valid x-only public key"),
+        }
+    }
+}
+
+impl std::error::Error for SignerError {}
+
 pub struct DigestParser {
     secp: Secp256k1<secp256k1::VerifyOnly>,
     require_signature: bool,
@@ -79,6 +102,10 @@ pub struct DigestParser {
 impl DigestParser {
     pub fn new(require_signature: bool, signers: SignerRegistry, skew: TimestampSkew) -> Self {
         Self { secp: Secp256k1::verification_only(), require_signature, skew, signers }
+    }
+
+    pub fn reload_signers(&self, input: &[String]) -> Result<usize, SignerError> {
+        self.signers.replace_from_hex(input)
     }
 
     pub fn parse(&self, header: &SatFrameHeader, payload: &[u8]) -> Result<DigestVariant, DigestError> {

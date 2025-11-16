@@ -651,6 +651,7 @@ impl RpcApi for KaspaRpcClient {
             GetUdpDigests,
             UdpEnable,
             UdpDisable,
+            UdpUpdateSigners,
             ResolveFinalityConflict,
             Shutdown,
             SubmitBlock,

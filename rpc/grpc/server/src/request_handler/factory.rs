@@ -86,6 +86,7 @@ impl Factory {
                 GetUdpDigests,
                 UdpEnable,
                 UdpDisable,
+                UdpUpdateSigners,
                 NotifyBlockAdded,
                 NotifyNewBlockTemplate,
                 NotifyFinalityConflict,
