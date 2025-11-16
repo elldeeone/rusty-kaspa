@@ -97,3 +97,59 @@ fn encode_network(id: &NetworkId) -> u8 {
     let suffix = id.suffix().unwrap_or(0) as u8;
     base | (suffix << 4)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn base_config(network: NetworkType) -> UdpConfig {
+        UdpConfig {
+            enable: true,
+            listen: None,
+            listen_unix: None,
+            allow_non_local_bind: false,
+            mode: UdpMode::Digest,
+            max_kbps: 0,
+            require_signature: false,
+            allowed_signers: vec![],
+            digest_queue: 0,
+            block_queue: 0,
+            danger_accept_blocks: false,
+            block_mainnet_override: false,
+            discard_unsigned: false,
+            db_migrate: false,
+            retention_count: 0,
+            retention_days: 0,
+            max_digest_payload_bytes: 0,
+            max_block_payload_bytes: 0,
+            block_max_bytes: 0,
+            log_verbosity: String::new(),
+            admin_remote_allowed: false,
+            admin_token_file: None,
+            network_id: NetworkId::new(network),
+        }
+    }
+
+    #[test]
+    fn blocks_disallowed_without_danger_flag_unit() {
+        let mut cfg = base_config(NetworkType::Testnet);
+        cfg.mode = UdpMode::Blocks;
+        assert!(!cfg.blocks_allowed());
+    }
+
+    #[test]
+    fn blocks_disallowed_on_mainnet_without_override_unit() {
+        let mut cfg = base_config(NetworkType::Mainnet);
+        cfg.mode = UdpMode::Both;
+        cfg.danger_accept_blocks = true;
+        assert!(!cfg.blocks_allowed());
+    }
+
+    #[test]
+    fn blocks_allowed_on_testnet_with_danger_flag_unit() {
+        let mut cfg = base_config(NetworkType::Testnet);
+        cfg.mode = UdpMode::Both;
+        cfg.danger_accept_blocks = true;
+        assert!(cfg.blocks_allowed());
+    }
+}

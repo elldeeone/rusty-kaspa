@@ -349,10 +349,12 @@ Quality bars apply to every phase and must be tracked explicitly (validated by t
   - Tests: CLI test verifying enabling requires explicit flag; doc lint.  
   - DoD: Block mode cannot be enabled unintentionally; documentation highlights risks.
 
-**Delivered:** BlockV1 parsing + bounded queues, SatVirtualPeer injection (hidden, low-priority), config/doc gating, metrics wiring, and integration coverage
-(`testing/integration/src/udp_block_tests.rs::udp_block_equivalence` and
-`udp_block_fairness`). Docs: `docs/udp/block-mode.md`. Metrics: `udp_block_injected_total`,
-`udp_queue_occupancy{queue="block"}`. Config knobs: `--udp.danger_accept_blocks`,
+**Delivered:** BlockV1 parsing + bounded queues, SatVirtualPeer injection (hidden, low-priority), FlowHarness-based
+equivalence/fairness tests (`components/udp-sidechannel/tests/flow_harness.rs::{udp_block_equivalence_fast,
+udp_block_fairness_fast}`), plus the original manual soak tests in `testing/integration/src/udp_block_tests.rs`
+left behind `--ignored`. Docs: `docs/udp/block-mode.md` now reference the fast suite. Metrics:
+`udp_block_injected_total`, `udp_queue_occupancy{queue="block"}`. Config knobs + unit guard
+coverage: `components/udp-sidechannel/src/config.rs::tests`. CLI flags: `--udp.danger_accept_blocks`,
 `--udp.block_max_bytes`, `--udp.block_mainnet_override`.
 
 ### Phase 6 — Operator Docs & Dashboards; Hardening; Testnet Enablement Plan
