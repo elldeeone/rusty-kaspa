@@ -3282,13 +3282,19 @@ dependencies = [
 name = "kaspa-udp-sidechannel"
 version = "1.0.1"
 dependencies = [
+ "bincode",
  "blake3",
  "bytes",
  "crc32fast",
+ "faster-hex",
  "kaspa-consensus-core",
  "kaspa-core",
+ "kaspa-database",
+ "kaspa-hashes",
  "log",
+ "secp256k1",
  "serde",
+ "sha2",
  "tempfile",
  "thiserror",
  "tokio",

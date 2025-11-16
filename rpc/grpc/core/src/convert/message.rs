@@ -442,29 +442,69 @@ from!(item: RpcResult<&kaspa_rpc_core::GetUtxoReturnAddressResponse>, protowire:
 from!(item: &kaspa_rpc_core::GetUdpIngestInfoRequest, protowire::GetUdpIngestInfoRequestMessage, {
     Self { auth_token: item.auth_token.clone() }
 });
-from!(item: RpcResult<&kaspa_rpc_core::GetUdpIngestInfoResponse>, protowire::GetUdpIngestInfoResponseMessage, {
-    let digest_queue = Some(protowire::RpcUdpQueueSnapshot {
-        capacity: item.digest_queue.capacity,
-        depth: item.digest_queue.depth,
-    });
-    let block_queue = Some(protowire::RpcUdpQueueSnapshot {
-        capacity: item.block_queue.capacity,
-        depth: item.block_queue.depth,
-    });
+from!(item: &kaspa_rpc_core::RpcUdpDigestSummary, protowire::RpcUdpDigestSummary, {
     Self {
+        epoch: item.epoch,
+        pruning_point: item.pruning_point.clone(),
+        pruning_proof_commitment: item.pruning_proof_commitment.clone(),
+        utxo_muhash: item.utxo_muhash.clone(),
+        virtual_selected_parent: item.virtual_selected_parent.clone(),
+        virtual_blue_score: item.virtual_blue_score,
+        daa_score: item.daa_score,
+        blue_work_hex: item.blue_work_hex.clone(),
+        kept_headers_mmr_root: item.kept_headers_mmr_root.clone(),
+        signer_id: item.signer_id as u32,
+        signature_valid: item.signature_valid,
+        recv_ts_ms: item.recv_ts_ms,
+        source_id: item.source_id as u32,
+    }
+});
+from!(item: &kaspa_rpc_core::RpcUdpSourceInfo, protowire::RpcUdpSourceInfo, {
+    Self {
+        source_id: item.source_id as u32,
+        last_epoch: item.last_epoch,
+        last_ts_ms: item.last_ts_ms,
+        signer_id: item.signer_id as u32,
+        signature_valid: item.signature_valid,
+    }
+});
+from!(item: &kaspa_rpc_core::RpcUdpDivergenceInfo, protowire::RpcUdpDivergenceInfo, {
+    Self { detected: item.detected, last_mismatch_epoch: item.last_mismatch_epoch }
+});
+from!(item: &kaspa_rpc_core::RpcUdpDigestRecord, protowire::RpcUdpDigestRecord, {
+    Self { epoch: item.epoch, kind: item.kind.clone(), summary: Some((&item.summary).into()), verified: item.verified }
+});
+from!(item: RpcResult<&kaspa_rpc_core::GetUdpIngestInfoResponse>, protowire::GetUdpIngestInfoResponseMessage, {
+    Self {
+        rpc_version: item.rpc_version as u32,
         enabled: item.enabled,
         bind_address: item.bind_address.clone(),
         bind_unix: item.bind_unix.clone(),
         allow_non_local: item.allow_non_local,
         mode: item.mode.clone(),
         max_kbps: item.max_kbps,
-        digest_queue,
-        block_queue,
+        digest_queue: Some(protowire::RpcUdpQueueSnapshot { capacity: item.digest_queue.capacity, depth: item.digest_queue.depth }),
+        block_queue: Some(protowire::RpcUdpQueueSnapshot { capacity: item.block_queue.capacity, depth: item.block_queue.depth }),
         frames: item.frames.iter().map(|entry| protowire::RpcUdpMetricEntry { label: entry.label.clone(), value: entry.value }).collect(),
         drops: item.drops.iter().map(|entry| protowire::RpcUdpMetricEntry { label: entry.label.clone(), value: entry.value }).collect(),
         bytes_total: item.bytes_total,
+        rx_kbps: item.rx_kbps,
+        last_frame_ts_ms: item.last_frame_ts_ms,
+        frames_received: item.frames_received,
+        last_digest: item.last_digest.as_ref().map(|d| d.into()),
+        divergence: Some((&item.divergence).into()),
+        source_count: item.source_count,
+        sources: item.sources.iter().map(|s| s.into()).collect(),
+        signature_failures: item.signature_failures,
+        skew_seconds: item.skew_seconds,
         error: None,
     }
+});
+from!(item: &kaspa_rpc_core::GetUdpDigestsRequest, protowire::GetUdpDigestsRequestMessage, {
+    Self { from_epoch: item.from_epoch, limit: item.limit, auth_token: item.auth_token.clone() }
+});
+from!(item: RpcResult<&kaspa_rpc_core::GetUdpDigestsResponse>, protowire::GetUdpDigestsResponseMessage, {
+    Self { digests: item.digests.iter().map(|d| d.into()).collect(), error: None }
 });
 
 from!(item: &kaspa_rpc_core::UdpEnableRequest, protowire::UdpEnableRequestMessage, {
@@ -1025,6 +1065,43 @@ try_from!(item: &protowire::RpcUdpQueueSnapshot, kaspa_rpc_core::RpcUdpQueueSnap
 try_from!(item: &protowire::RpcUdpMetricEntry, kaspa_rpc_core::RpcUdpMetricEntry, {
     Self { label: item.label.clone(), value: item.value }
 });
+try_from!(item: &protowire::RpcUdpDigestSummary, kaspa_rpc_core::RpcUdpDigestSummary, {
+    Self {
+        epoch: item.epoch,
+        pruning_point: item.pruning_point.clone(),
+        pruning_proof_commitment: item.pruning_proof_commitment.clone(),
+        utxo_muhash: item.utxo_muhash.clone(),
+        virtual_selected_parent: item.virtual_selected_parent.clone(),
+        virtual_blue_score: item.virtual_blue_score,
+        daa_score: item.daa_score,
+        blue_work_hex: item.blue_work_hex.clone(),
+        kept_headers_mmr_root: item.kept_headers_mmr_root.clone(),
+        signer_id: item.signer_id as u16,
+        signature_valid: item.signature_valid,
+        recv_ts_ms: item.recv_ts_ms,
+        source_id: item.source_id as u16,
+    }
+});
+try_from!(item: &protowire::RpcUdpSourceInfo, kaspa_rpc_core::RpcUdpSourceInfo, {
+    Self {
+        source_id: item.source_id as u16,
+        last_epoch: item.last_epoch,
+        last_ts_ms: item.last_ts_ms,
+        signer_id: item.signer_id as u16,
+        signature_valid: item.signature_valid,
+    }
+});
+try_from!(item: &protowire::RpcUdpDivergenceInfo, kaspa_rpc_core::RpcUdpDivergenceInfo, {
+    Self { detected: item.detected, last_mismatch_epoch: item.last_mismatch_epoch }
+});
+try_from!(item: &protowire::RpcUdpDigestRecord, kaspa_rpc_core::RpcUdpDigestRecord, {
+    Self {
+        epoch: item.epoch,
+        kind: item.kind.clone(),
+        summary: item.summary.as_ref().ok_or_else(|| RpcError::MissingRpcFieldError("RpcUdpDigestRecord".to_string(), "summary".to_string()))?.try_into()?,
+        verified: item.verified,
+    }
+});
 try_from!(item: &protowire::GetUdpIngestInfoRequestMessage, kaspa_rpc_core::GetUdpIngestInfoRequest, {
     Self { auth_token: item.auth_token.clone().filter(|token| !token.is_empty()) }
 });
@@ -1041,7 +1118,11 @@ try_from!(item: &protowire::GetUdpIngestInfoResponseMessage, RpcResult<kaspa_rpc
         .try_into()?;
     let frames = item.frames.iter().map(|entry| entry.try_into()).collect::<Result<Vec<_>, _>>()?;
     let drops = item.drops.iter().map(|entry| entry.try_into()).collect::<Result<Vec<_>, _>>()?;
+    let last_digest = item.last_digest.as_ref().map(|d| d.try_into()).transpose()?;
+    let divergence = item.divergence.as_ref().ok_or_else(|| RpcError::MissingRpcFieldError("GetUdpIngestInfoResponseMessage".to_string(), "divergence".to_string()))?.try_into()?;
+    let sources = item.sources.iter().map(|s| s.try_into()).collect::<Result<Vec<_>, _>>()?;
     Self {
+        rpc_version: item.rpc_version as u16,
         enabled: item.enabled,
         bind_address: item.bind_address.clone().filter(|addr| !addr.is_empty()),
         bind_unix: item.bind_unix.clone().filter(|path| !path.is_empty()),
@@ -1053,7 +1134,22 @@ try_from!(item: &protowire::GetUdpIngestInfoResponseMessage, RpcResult<kaspa_rpc
         frames,
         drops,
         bytes_total: item.bytes_total,
+        rx_kbps: item.rx_kbps,
+        last_frame_ts_ms: item.last_frame_ts_ms,
+        frames_received: item.frames_received,
+        last_digest,
+        divergence,
+        source_count: item.source_count,
+        sources,
+        signature_failures: item.signature_failures,
+        skew_seconds: item.skew_seconds,
     }
+});
+try_from!(item: &protowire::GetUdpDigestsRequestMessage, kaspa_rpc_core::GetUdpDigestsRequest, {
+    Self { from_epoch: item.from_epoch, limit: item.limit, auth_token: item.auth_token.clone().filter(|token| !token.is_empty()) }
+});
+try_from!(item: &protowire::GetUdpDigestsResponseMessage, RpcResult<kaspa_rpc_core::GetUdpDigestsResponse>, {
+    Self { digests: item.digests.iter().map(|d| d.try_into()).collect::<Result<Vec<_>, _>>()? }
 });
 try_from!(item: &protowire::UdpEnableRequestMessage, kaspa_rpc_core::UdpEnableRequest, {
     Self { auth_token: item.auth_token.clone().filter(|token| !token.is_empty()) }

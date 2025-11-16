@@ -65,6 +65,7 @@ pub enum DatabaseStorePrefixes {
     // ---- Components ----
     Addresses = 128,
     BannedAddresses = 129,
+    UdpDigest = 130,
 
     // ---- Indexes ----
     UtxoIndex = 192,

@@ -395,6 +395,14 @@ impl RpcApi for RpcCoreMock {
         Err(RpcError::NotImplemented)
     }
 
+    async fn get_udp_digests_call(
+        &self,
+        _connection: Option<&DynRpcConnection>,
+        _request: GetUdpDigestsRequest,
+    ) -> RpcResult<GetUdpDigestsResponse> {
+        Err(RpcError::NotImplemented)
+    }
+
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Notification API
 

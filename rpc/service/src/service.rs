@@ -67,10 +67,12 @@ use kaspa_rpc_core::{
     Notification, RpcError, RpcResult,
 };
 use kaspa_txscript::{extract_script_pub_key_address, pay_to_address_script};
-use kaspa_udp_sidechannel::{config::UdpMode, QueueSnapshot, UdpIngestService, UdpIngestSnapshot};
+use kaspa_udp_sidechannel::{
+    config::UdpMode, DigestReport, DigestVariant, QueueSnapshot, UdpDigestManager, UdpIngestService, UdpIngestSnapshot,
+};
 use kaspa_utils::expiring_cache::ExpiringCache;
 use kaspa_utils::sysinfo::SystemInfo;
-use kaspa_utils::{channel::Channel, triggers::SingleTrigger};
+use kaspa_utils::{channel::Channel, hex::ToHex, triggers::SingleTrigger};
 use kaspa_utils_tower::counters::TowerConnectionCounters;
 use kaspa_utxoindex::api::UtxoIndexProxy;
 use std::time::Duration;
@@ -130,6 +132,7 @@ pub struct RpcCoreService {
     fee_estimate_verbose_cache: ExpiringCache<kaspa_mining::errors::MiningManagerResult<GetFeeEstimateExperimentalResponse>>,
     mining_rule_engine: Arc<MiningRuleEngine>,
     udp_service: Arc<UdpIngestService>,
+    udp_digest: Option<Arc<UdpDigestManager>>,
     udp_admin_policy: UdpAdminPolicy,
 }
 
@@ -158,6 +161,7 @@ impl RpcCoreService {
         system_info: SystemInfo,
         mining_rule_engine: Arc<MiningRuleEngine>,
         udp_service: Arc<UdpIngestService>,
+        udp_digest: Option<Arc<UdpDigestManager>>,
         udp_admin_policy: UdpAdminPolicy,
     ) -> Self {
         // This notifier UTXOs subscription granularity to index-processor or consensus notifier
@@ -239,6 +243,7 @@ impl RpcCoreService {
             fee_estimate_verbose_cache: ExpiringCache::new(Duration::from_millis(500), Duration::from_millis(1000)),
             mining_rule_engine,
             udp_service,
+            udp_digest,
             udp_admin_policy,
         }
     }
@@ -431,7 +436,8 @@ NOTE: This error usually indicates an RPC conversion error between the node and 
     ) -> RpcResult<GetUdpIngestInfoResponse> {
         self.ensure_udp_admin_authorized(connection, &request.auth_token)?;
         let snapshot = self.udp_service.snapshot();
-        Ok(Self::snapshot_to_udp_response(snapshot))
+        let report = self.udp_digest.as_ref().map(|mgr| mgr.report());
+        Ok(Self::build_udp_ingest_response(snapshot, report))
     }
 
     async fn udp_enable_call(&self, connection: Option<&DynRpcConnection>, request: UdpEnableRequest) -> RpcResult<UdpEnableResponse> {
@@ -462,6 +468,21 @@ NOTE: This error usually indicates an RPC conversion error between the node and 
             enabled: false,
             note: if was_enabled { Some("UDP ingest disabled".into()) } else { Some("already disabled".into()) },
         })
+    }
+
+    async fn get_udp_digests_call(
+        &self,
+        connection: Option<&DynRpcConnection>,
+        request: GetUdpDigestsRequest,
+    ) -> RpcResult<GetUdpDigestsResponse> {
+        self.ensure_udp_admin_authorized(connection, &request.auth_token)?;
+        let Some(manager) = self.udp_digest.as_ref() else {
+            return Ok(GetUdpDigestsResponse { digests: Vec::new() });
+        };
+        let limit = request.limit.unwrap_or(100).clamp(1, 1000) as usize;
+        let digests = manager.fetch_digests(request.from_epoch, limit).map_err(|err| RpcError::General(err.to_string()))?;
+        let records = digests.into_iter().map(Self::digest_variant_to_record).collect();
+        Ok(GetUdpDigestsResponse { digests: records })
     }
 
     async fn get_block_call(&self, _connection: Option<&DynRpcConnection>, request: GetBlockRequest) -> RpcResult<GetBlockResponse> {
@@ -1444,8 +1465,33 @@ impl RpcCoreService {
         entries.iter().map(|(label, value)| RpcUdpMetricEntry { label: (*label).to_string(), value: *value }).collect()
     }
 
-    fn snapshot_to_udp_response(snapshot: UdpIngestSnapshot) -> GetUdpIngestInfoResponse {
+    fn build_udp_ingest_response(snapshot: UdpIngestSnapshot, report: Option<DigestReport>) -> GetUdpIngestInfoResponse {
+        let frames_received = snapshot.frames.iter().map(|(_, value)| *value).sum();
+        let sources: Vec<RpcUdpSourceInfo> = report
+            .as_ref()
+            .map(|r| {
+                r.sources
+                    .iter()
+                    .map(|source| RpcUdpSourceInfo {
+                        source_id: source.source_id,
+                        last_epoch: source.last_epoch,
+                        last_ts_ms: source.last_timestamp_ms,
+                        signer_id: source.signer_id,
+                        signature_valid: source.signature_valid,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let source_count = sources.len() as u32;
+        let signature_failures = report.as_ref().map(|r| r.signature_failures).unwrap_or(snapshot.signature_failures);
+        let skew_seconds = report.as_ref().map(|r| r.skew_seconds).unwrap_or(snapshot.skew_seconds);
+        let last_digest = report.as_ref().and_then(|r| r.last_digest.as_ref()).map(Self::digest_variant_to_summary);
+        let divergence = report
+            .as_ref()
+            .map(|r| RpcUdpDivergenceInfo { detected: r.divergence.detected, last_mismatch_epoch: r.divergence.last_mismatch_epoch })
+            .unwrap_or_default();
         GetUdpIngestInfoResponse {
+            rpc_version: 1,
             enabled: snapshot.enabled,
             bind_address: snapshot.listen.map(|addr| addr.to_string()),
             bind_unix: snapshot.listen_unix.as_ref().map(|p| p.display().to_string()),
@@ -1457,27 +1503,136 @@ impl RpcCoreService {
             frames: Self::udp_metrics_to_rpc(snapshot.frames),
             drops: Self::udp_metrics_to_rpc(snapshot.drops),
             bytes_total: snapshot.bytes_total,
+            rx_kbps: snapshot.rx_kbps,
+            last_frame_ts_ms: snapshot.last_frame_ts_ms,
+            frames_received,
+            last_digest,
+            divergence,
+            source_count,
+            sources,
+            signature_failures,
+            skew_seconds,
         }
     }
 
     fn ensure_udp_admin_authorized(&self, connection: Option<&DynRpcConnection>, auth_token: &Option<String>) -> RpcResult<()> {
-        if let Some(expected) = self.udp_admin_policy.token.as_ref() {
-            match auth_token {
-                Some(provided) if provided == expected => return Ok(()),
-                _ => {
-                    return Err(RpcError::General("valid UDP admin token required".to_string()));
-                }
-            }
-        } else if !self.udp_admin_policy.allow_remote {
-            if let Some(conn) = connection {
-                if let Some(addr) = conn.peer_address() {
-                    if !addr.ip().is_loopback() {
-                        return Err(RpcError::General("remote UDP admin RPCs are disabled".to_string()));
-                    }
+        ensure_udp_admin_authorized_impl(&self.udp_admin_policy, connection, auth_token)
+    }
+
+    fn digest_variant_to_record(variant: DigestVariant) -> RpcUdpDigestRecord {
+        let kind = match &variant {
+            DigestVariant::Snapshot(_) => "snapshot",
+            DigestVariant::Delta(_) => "delta",
+        };
+        let summary = Self::digest_variant_to_summary(&variant);
+        RpcUdpDigestRecord { epoch: variant.epoch(), kind: kind.into(), summary, verified: variant.signature_valid() }
+    }
+
+    fn digest_variant_to_summary(variant: &DigestVariant) -> RpcUdpDigestSummary {
+        match variant {
+            DigestVariant::Snapshot(snapshot) => RpcUdpDigestSummary {
+                epoch: snapshot.epoch,
+                pruning_point: snapshot.pruning_point.to_string(),
+                pruning_proof_commitment: snapshot.pruning_proof_commitment.to_string(),
+                utxo_muhash: snapshot.utxo_muhash.to_string(),
+                virtual_selected_parent: snapshot.virtual_selected_parent.to_string(),
+                virtual_blue_score: snapshot.virtual_blue_score,
+                daa_score: snapshot.daa_score,
+                blue_work_hex: snapshot.blue_work.to_vec().to_hex(),
+                kept_headers_mmr_root: snapshot.kept_headers_mmr_root.as_ref().map(|hash| hash.to_string()),
+                signer_id: snapshot.signer_id,
+                signature_valid: snapshot.signature_valid,
+                recv_ts_ms: snapshot.recv_timestamp_ms,
+                source_id: snapshot.source_id,
+            },
+            DigestVariant::Delta(delta) => RpcUdpDigestSummary {
+                epoch: delta.epoch,
+                pruning_point: String::new(),
+                pruning_proof_commitment: String::new(),
+                utxo_muhash: String::new(),
+                virtual_selected_parent: delta.virtual_selected_parent.to_string(),
+                virtual_blue_score: delta.virtual_blue_score,
+                daa_score: delta.daa_score,
+                blue_work_hex: delta.blue_work.to_vec().to_hex(),
+                kept_headers_mmr_root: None,
+                signer_id: delta.signer_id,
+                signature_valid: delta.signature_valid,
+                recv_ts_ms: delta.recv_timestamp_ms,
+                source_id: delta.source_id,
+            },
+        }
+    }
+}
+
+fn ensure_udp_admin_authorized_impl(
+    policy: &UdpAdminPolicy,
+    connection: Option<&DynRpcConnection>,
+    auth_token: &Option<String>,
+) -> RpcResult<()> {
+    if let Some(expected) = policy.token.as_ref() {
+        match auth_token {
+            Some(provided) if provided == expected => Ok(()),
+            _ => Err(RpcError::General("valid UDP admin token required".to_string())),
+        }
+    } else if !policy.allow_remote {
+        if let Some(conn) = connection {
+            if let Some(addr) = conn.peer_address() {
+                if !addr.ip().is_loopback() {
+                    return Err(RpcError::General("remote UDP admin RPCs are disabled".to_string()));
                 }
             }
         }
-
         Ok(())
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use kaspa_rpc_core::api::connection::RpcConnection;
+    use std::net::SocketAddr;
+
+    struct TestConnection(SocketAddr);
+
+    impl RpcConnection for TestConnection {
+        fn id(&self) -> u64 {
+            0
+        }
+
+        fn peer_address(&self) -> Option<SocketAddr> {
+            Some(self.0)
+        }
+    }
+
+    fn make_connection(addr: &str) -> DynRpcConnection {
+        let socket: SocketAddr = addr.parse().unwrap();
+        Arc::new(TestConnection(socket))
+    }
+
+    #[test]
+    fn local_only_admin() {
+        let policy = UdpAdminPolicy { allow_remote: false, token: None };
+        let connection = make_connection("127.0.0.1:12345");
+        ensure_udp_admin_authorized_impl(&policy, Some(&connection), &None).expect("loopback allowed");
+    }
+
+    #[test]
+    fn remote_rejected_by_default() {
+        let policy = UdpAdminPolicy { allow_remote: false, token: None };
+        let connection = make_connection("192.0.2.5:12345");
+        let err = ensure_udp_admin_authorized_impl(&policy, Some(&connection), &None).expect_err("remote must be rejected");
+        assert!(matches!(err, RpcError::General(msg) if msg.contains("remote UDP admin RPCs are disabled")));
+    }
+
+    #[test]
+    fn allow_remote_with_flag_and_token() {
+        let policy = UdpAdminPolicy { allow_remote: true, token: Some("secret".into()) };
+        let connection = make_connection("198.51.100.10:12345");
+        ensure_udp_admin_authorized_impl(&policy, Some(&connection), &Some("secret".into()))
+            .expect("remote allowed when flag+token set");
+        let err = ensure_udp_admin_authorized_impl(&policy, Some(&connection), &None).expect_err("token required");
+        assert!(matches!(err, RpcError::General(msg) if msg.contains("valid UDP admin token")));
     }
 }
