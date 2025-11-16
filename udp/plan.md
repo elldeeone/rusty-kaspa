@@ -227,31 +227,31 @@ Quality bars apply to every phase and must be tracked explicitly (validated by t
 - Divergence signalling implemented (metrics + RPC field) satisfying requirement; admin kill-switch verified.
 
 **Delivered (Phase 3 snapshot):**
-- Digest pipeline (`components/udp-sidechannel/src/digest/{manager.rs,store.rs,types.rs}`) consumes frames from the ingest service and persists them with retention/pruning; golden vectors live in `components/udp-sidechannel/tests/vectors.rs`.
-- RPCs / locality guard implemented in `rpc/service/src/service.rs` with protowire/model/client coverage under `rpc/grpc/*` and exercised via `testing/integration/src/rpc_tests.rs`.
+- Digest pipeline (`components/udp-sidechannel/src/digest/{manager.rs,store.rs,types.rs}`) consumes frames from the ingest service and persists them with retention/pruning; golden vectors (valid Snapshot/Delta plus tampered cases: bit-flip, wrong network ID, non-monotonic epoch) live in `components/udp-sidechannel/tests/vectors.rs` and the wire-format doc now explicitly calls out the `KUDP` magic.
+- RPCs / locality guard implemented in `rpc/service/src/service.rs` with protowire/model/client coverage under `rpc/grpc/*` and exercised via `testing/integration/src/rpc_tests.rs`; the guard blocks remote callers unless `--udp.admin_remote_allowed=true` and, when configured, a valid admin token is supplied. `getMetrics` now surfaces `udp_digest_sig_fail_total`, `udp_digest_skew_seconds`, and `udp_divergence_detected` via custom metrics.
 - Divergence monitor + metrics (`kaspad/src/udp.rs`, `components/udp-sidechannel/src/metrics.rs`) expose `udp_divergence_detected`, signature/skew counters, and bounded drop reasons guarded by `components/udp-sidechannel/tests/hygiene.rs`.
-- RocksDB CF `udp_digest` registered (`database/src/udp_digest.rs`, `database/src/registry.rs`), tests cover count/days pruning and disabled-mode safety.
+- RocksDB CF `udp_digest` registered (`database/src/udp_digest.rs`, `database/src/registry.rs`) with a schema metadata gate controlled by `--udp.db_migrate`. Retention pruning runs every 60s honoring both record count and age, and tests cover count/days pruning and disabled-mode safety.
 
 **Tasks**
-- [ ] **Digest parser + signature verifier**  
+- [x] **Digest parser + signature verifier**  
   - What: Implement `DigestFrame` structures (snapshot + delta), parsing/bounds checks, Schnorr verification using allowed signer cache; enforce sender timestamp sanity (drop frames > 2 min future or > 10 min stale, increment skew metric).  
   - Where: `components/udp-sidechannel/src/digest/mod.rs`, `crypto` crate (if helper functions required).  
   - Artefacts: `DigestRecord`, `DigestVariant`, `SignerRegistry`, skew metric `udp_digest_skew_seconds`.  
   - Tests: `cargo test -p components-udp-sidechannel digest::tests::{snapshot_roundtrip, delta_epoch_guard}` with vector fixtures; property test for epoch monotonicity; time skew fixtures.  
   - DoD: Invalid signatures rejected with `udp_digest_sig_fail_total` incrementing; valid fixtures stored; future-timestamp frames logged/dropped.
-- [ ] **Wire-format spec + golden vectors**  
+- [x] **Wire-format spec + golden vectors**  
   - What: Produce a concise wire-format spec for `DigestV1` (field order, endianness, domain tag for signatures, `source_id` binding) and publish golden test vectors (hex payload + expected hash/signature) consumed by unit tests (and shareable with external implementations).  
   - Where: `docs/udp/digest-wire-format.md`, `components/udp-sidechannel/tests/vectors.rs`.  
   - Artefacts: Documented spec, serialized fixtures, cross-check test ensuring parser/verifier accept vectors and reject tampered versions.  
   - Tests: `cargo test -p components-udp-sidechannel digest::tests::golden_vectors`.  
   - DoD: Spec checked into repo, tests enforce stability, and signature domain separation string documented.
-- [ ] **Persistence layer (RocksDB CF)**  
+- [x] **Persistence layer (RocksDB CF)**  
   - What: Register `udp_digest` CF and accessors, add retention/pruning (rolling window, default 10,000 records or 7 days), introduce schema version bump + `--udp.db_migrate=true` guard for first creation/downgrade safety, and ensure feature-disabled startup ignores CF.  
   - Where: `database/src/registry.rs`, `database/src/access.rs`, new `database/src/udp_digest.rs`.  
   - Artefacts: `UdpDigestStore` trait impl, retention config (count/time), background prune timer, helper tool `udp/tools/cleanup_cf.rs`.  
   - Tests: `cargo test -p database udp_digest::tests::{insert_fetch, retention_prunes, disabled_startup}`.  
   - DoD: Node start-up migrates CF only when flag set; rerun without feature/flag succeeds even if CF exists; offline tool documented for drop.
-- [ ] **RPCs & metrics surface**  
+- [x] **RPCs & metrics surface**  
   - What: Add operator/admin RPCs: `getUdpIngestInfo`, `getUdpDigests`, `udp.enable`, `udp.disable`, `udp.updateSigners`; enforce local-only access by default (loopback/Unix). If a global admin RPC flag exists (e.g., `--rpc.allow_admin_remote=true`), reuse it; otherwise gate remote access behind UDP-specific knobs `--udp.admin_remote_allowed` (default false) and optional bearer-token auth via `--udp.admin_token_file`. Extend Prometheus gauges/counters (per PRD §9) while keeping label sets bounded. `getUdpIngestInfo` returns `bind_unix`, `source_count`, `sources: [{source_id, last_epoch, last_ts_ms, signer_id}]`.  
   - Where: `rpc/service/src/service.rs`, `rpc/core/src/api.rs`, `metrics/perf_monitor/src/lib.rs`, `kaspad/src/daemon.rs` wiring.  
   - Artefacts: Request/response structs with fields: status, mode, bind/bind_unix, rx_kbps, frames_received/dropped per bounded reason, last digest summary, divergence status, digest list with `epoch, pruning_point, pruning_proof_commitment, utxo_muhash, virtual_selected_parent, virtual_blue_score, daa_score, blue_work, kept_headers_mmr_root?, signer_id, sig_ok, recv_ts_ms, source_id`, admin RPC request structs, hot-signers update path.  

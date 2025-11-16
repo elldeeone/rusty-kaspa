@@ -69,6 +69,8 @@ pub enum DigestInitError {
     Signers(super::SignerError),
     #[error("failed to start frame consumer: {0}")]
     Frame(#[from] FrameConsumerError),
+    #[error("digest store error: {0}")]
+    Store(#[from] DigestStoreError),
 }
 
 impl UdpDigestManager {
@@ -80,7 +82,10 @@ impl UdpDigestManager {
     ) -> Result<Arc<Self>, DigestInitError> {
         let registry = SignerRegistry::from_hex(&config.allowed_signers).map_err(DigestInitError::Signers)?;
         let parser = DigestParser::new(config.require_signature, registry, TimestampSkew::default());
-        let store = db.map(DigestStore::new);
+        let store = match db {
+            Some(db) => Some(DigestStore::open(db, config.db_migrate)?),
+            None => None,
+        };
         let manager = Arc::new(Self {
             parser,
             metrics,
@@ -140,7 +145,6 @@ impl UdpDigestManager {
         {
             let mut state = self.state.lock().expect("digest state poisoned");
             let source_id = variant.source_id();
-            state.last = Some(variant.clone());
             let entry = state.sources.entry(source_id).or_insert_with(|| SourceState {
                 last_epoch: 0,
                 last_timestamp_ms: 0,
@@ -149,12 +153,14 @@ impl UdpDigestManager {
             });
             if entry.last_epoch > 0 && variant.epoch() < entry.last_epoch {
                 warn!("udp.event=digest_drop reason=epoch source={} epoch={}", source_id, variant.epoch());
+                self.metrics.record_drop(DropReason::StaleSeq);
                 return;
             }
             entry.last_epoch = variant.epoch();
             entry.last_timestamp_ms = variant.recv_timestamp_ms();
             entry.signer_id = variant.signer_id();
             entry.signature_valid = variant.signature_valid();
+            state.last = Some(variant.clone());
         }
         if let Some(store) = &self.store {
             if let Err(err) = store.insert(&variant) {
@@ -290,7 +296,7 @@ mod tests {
     #[test]
     fn e2e_digest_path() {
         let (_guard, db) = create_temp_db!(ConnBuilder::default().with_files_limit(10));
-        let store = DigestStore::new(db);
+        let store = DigestStore::open(db, true).expect("store");
         let manager = UdpDigestManager {
             parser: DigestParser::new(false, SignerRegistry::empty(), TimestampSkew::default()),
             metrics: Arc::new(UdpMetrics::new()),

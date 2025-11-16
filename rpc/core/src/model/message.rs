@@ -2261,16 +2261,25 @@ impl Deserializer for StorageMetrics {
     }
 }
 
-// TODO: Custom metrics dictionary
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub enum CustomMetricValue {
-    Placeholder,
+    Counter(u64),
+    Gauge(f64),
 }
 
 impl Serializer for CustomMetricValue {
     fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         store!(u16, &1, writer)?;
-
+        match self {
+            CustomMetricValue::Counter(value) => {
+                store!(u8, &0, writer)?;
+                store!(u64, value, writer)?;
+            }
+            CustomMetricValue::Gauge(value) => {
+                store!(u8, &1, writer)?;
+                store!(f64, value, writer)?;
+            }
+        }
         Ok(())
     }
 }
@@ -2278,8 +2287,11 @@ impl Serializer for CustomMetricValue {
 impl Deserializer for CustomMetricValue {
     fn deserialize<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
         let _version = load!(u16, reader)?;
-
-        Ok(CustomMetricValue::Placeholder)
+        match load!(u8, reader)? {
+            0 => Ok(CustomMetricValue::Counter(load!(u64, reader)?)),
+            1 => Ok(CustomMetricValue::Gauge(load!(f64, reader)?)),
+            _ => Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid custom metric tag")),
+        }
     }
 }
 

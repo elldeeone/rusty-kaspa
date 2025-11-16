@@ -1,9 +1,10 @@
 use crate::error::Error;
 use crate::result::Result;
 use borsh::{BorshDeserialize, BorshSerialize};
-use kaspa_rpc_core::GetMetricsResponse;
+use kaspa_rpc_core::{CustomMetricValue, GetMetricsResponse};
 use separator::{separated_float, separated_int, separated_uint_with_output, Separatable};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use workflow_core::enums::Describe;
 
 #[derive(Describe, Debug, Clone, Copy, Eq, PartialEq, Hash, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
@@ -426,6 +427,7 @@ impl Metric {
 #[derive(Default, Debug, Clone, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
 pub struct MetricsData {
     pub unixtime_millis: f64,
+    pub custom_metrics: HashMap<String, CustomMetricValue>,
 
     // ---
     pub node_resident_set_size_bytes: u64,
@@ -494,7 +496,7 @@ impl TryFrom<GetMetricsResponse> for MetricsData {
             bandwidth_metrics,
             process_metrics,
             storage_metrics,
-            custom_metrics: _,
+            custom_metrics,
         } = response; //rpc.get_metrics(true, true, true, true, true, false).await?;
 
         let consensus_metrics = consensus_metrics.ok_or(Error::MissingData("Consensus Metrics"))?;
@@ -522,6 +524,8 @@ impl TryFrom<GetMetricsResponse> for MetricsData {
             network_past_median_time: consensus_metrics.network_past_median_time,
             network_virtual_parent_hashes_count: consensus_metrics.network_virtual_parent_hashes_count,
             network_virtual_daa_score: consensus_metrics.network_virtual_daa_score,
+
+            custom_metrics: custom_metrics.unwrap_or_default(),
 
             node_borsh_live_connections: connection_metrics.borsh_live_connections,
             node_borsh_connection_attempts: connection_metrics.borsh_connection_attempts,

@@ -9,7 +9,7 @@ the format so independent producers can interoperate with `rusty-kaspa`.
 All frames use the Phase‑2 header defined in `components/udp-sidechannel`:
 
 ```
-bytes 0‥3   : magic = "KUDP"
+bytes 0‥3   : magic = "KUDP" (0x4B 0x55 0x44 0x50)
 byte  4      : version = 1
 byte  5      : kind (0x01 = DigestV1, 0x02 = BlockV1)
 byte  6      : network_id tag (see `UdpConfig::network_tag`)
@@ -118,4 +118,9 @@ The header bit `flags.digest_snapshot()` (bit 3) distinguishes snapshots
   will use a different domain string and version byte to avoid collisions.
 * Golden interoperability vectors (valid + tampered cases) live in
   `components/udp-sidechannel/tests/vectors.rs`. Producers must match these
-  fixtures to be considered wire-format compatible.
+  fixtures to be considered wire-format compatible. The suite includes:
+  - `snapshot_roundtrip` and `signature_valid_and_invalid_vectors` for the
+    happy-path Snapshot + Delta fixtures.
+  - `wrong_network_id_is_dropped` covering header-level tampering.
+  - `non_monotonic_epoch_vector_is_rejected` ensuring digests that regress the
+    epoch are ignored even if they parse and verify successfully.

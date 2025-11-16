@@ -6,6 +6,8 @@ use std::{
     time::Instant,
 };
 
+const MAX_SKEW_SECONDS: u64 = 600;
+
 #[derive(Debug)]
 pub struct UdpMetrics {
     frames_total: [AtomicU64; FrameKind::ALL.len()],
@@ -49,7 +51,7 @@ impl UdpMetrics {
     }
 
     pub fn record_skew_seconds(&self, seconds: u64) {
-        self.skew_seconds.store(seconds, Ordering::Relaxed);
+        self.skew_seconds.store(seconds.min(MAX_SKEW_SECONDS), Ordering::Relaxed);
     }
 
     pub fn set_divergence_detected(&self, detected: bool) {

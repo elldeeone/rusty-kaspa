@@ -1,8 +1,9 @@
 use crate::{
-    prelude::{CachePolicy, CachedDbAccess, DirectDbWriter, StoreError, StoreResult},
+    prelude::{CachePolicy, CachedDbAccess, CachedDbItem, DirectDbWriter, StoreError, StoreResult},
     registry::DatabaseStorePrefixes,
 };
 use faster_hex::hex_string;
+use serde::{Deserialize, Serialize};
 use std::{
     fmt::{Display, Formatter},
     sync::{
@@ -12,6 +13,8 @@ use std::{
 };
 
 use super::prelude::DB;
+
+pub const UDP_DIGEST_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct DigestKey([u8; 16]);
@@ -46,6 +49,30 @@ pub struct DbUdpDigestStore {
     db: Arc<DB>,
     access: CachedDbAccess<DigestKey, Vec<u8>>,
     seq: Arc<AtomicU64>,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub struct UdpDigestMetadata {
+    pub schema_version: u32,
+}
+
+pub struct DbUdpDigestMetadataStore {
+    db: Arc<DB>,
+    access: CachedDbItem<UdpDigestMetadata>,
+}
+
+impl DbUdpDigestMetadataStore {
+    pub fn new(db: Arc<DB>) -> Self {
+        Self { db: Arc::clone(&db), access: CachedDbItem::new(db, DatabaseStorePrefixes::UdpDigestMetadata.into()) }
+    }
+
+    pub fn read(&self) -> Result<UdpDigestMetadata, StoreError> {
+        self.access.read()
+    }
+
+    pub fn write(&mut self, metadata: UdpDigestMetadata) -> Result<(), StoreError> {
+        self.access.write(DirectDbWriter::new(&self.db), &metadata)
+    }
 }
 
 impl DbUdpDigestStore {

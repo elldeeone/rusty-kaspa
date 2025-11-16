@@ -1248,7 +1248,17 @@ NOTE: This error usually indicates an RPC conversion error between the node and 
 
         let storage_metrics = req.storage_metrics.then_some(StorageMetrics { storage_size_bytes: 0 });
 
-        let custom_metrics: Option<HashMap<String, CustomMetricValue>> = None;
+        let custom_metrics = if req.custom_metrics {
+            let ingest_snapshot = self.udp_service.snapshot();
+            let mut metrics = HashMap::new();
+            metrics.insert("udp_digest_sig_fail_total".to_string(), CustomMetricValue::Counter(ingest_snapshot.signature_failures));
+            metrics.insert("udp_digest_skew_seconds".to_string(), CustomMetricValue::Gauge(ingest_snapshot.skew_seconds as f64));
+            let divergence_flag = if ingest_snapshot.divergence_detected { 1.0 } else { 0.0 };
+            metrics.insert("udp_divergence_detected".to_string(), CustomMetricValue::Gauge(divergence_flag));
+            Some(metrics)
+        } else {
+            None
+        };
 
         let server_time = unix_now();
 
@@ -1532,9 +1542,9 @@ impl RpcCoreService {
         match variant {
             DigestVariant::Snapshot(snapshot) => RpcUdpDigestSummary {
                 epoch: snapshot.epoch,
-                pruning_point: snapshot.pruning_point.to_string(),
-                pruning_proof_commitment: snapshot.pruning_proof_commitment.to_string(),
-                utxo_muhash: snapshot.utxo_muhash.to_string(),
+                pruning_point: Some(snapshot.pruning_point.to_string()),
+                pruning_proof_commitment: Some(snapshot.pruning_proof_commitment.to_string()),
+                utxo_muhash: Some(snapshot.utxo_muhash.to_string()),
                 virtual_selected_parent: snapshot.virtual_selected_parent.to_string(),
                 virtual_blue_score: snapshot.virtual_blue_score,
                 daa_score: snapshot.daa_score,
@@ -1547,9 +1557,9 @@ impl RpcCoreService {
             },
             DigestVariant::Delta(delta) => RpcUdpDigestSummary {
                 epoch: delta.epoch,
-                pruning_point: String::new(),
-                pruning_proof_commitment: String::new(),
-                utxo_muhash: String::new(),
+                pruning_point: None,
+                pruning_proof_commitment: None,
+                utxo_muhash: None,
                 virtual_selected_parent: delta.virtual_selected_parent.to_string(),
                 virtual_blue_score: delta.virtual_blue_score,
                 daa_score: delta.daa_score,
@@ -1569,23 +1579,26 @@ fn ensure_udp_admin_authorized_impl(
     connection: Option<&DynRpcConnection>,
     auth_token: &Option<String>,
 ) -> RpcResult<()> {
+    let is_remote = connection.and_then(|conn| conn.peer_address()).map(|addr| !addr.ip().is_loopback()).unwrap_or(false);
+
+    if is_remote && !policy.allow_remote {
+        return Err(RpcError::General("remote UDP admin RPCs are disabled".to_string()));
+    }
+
     if let Some(expected) = policy.token.as_ref() {
-        match auth_token {
-            Some(provided) if provided == expected => Ok(()),
-            _ => Err(RpcError::General("valid UDP admin token required".to_string())),
-        }
-    } else if !policy.allow_remote {
-        if let Some(conn) = connection {
-            if let Some(addr) = conn.peer_address() {
-                if !addr.ip().is_loopback() {
-                    return Err(RpcError::General("remote UDP admin RPCs are disabled".to_string()));
-                }
+        if is_remote {
+            match auth_token {
+                Some(provided) if provided == expected => {}
+                _ => return Err(RpcError::General("valid UDP admin token required".to_string())),
+            }
+        } else if let Some(provided) = auth_token {
+            if provided != expected {
+                return Err(RpcError::General("valid UDP admin token required".to_string()));
             }
         }
-        Ok(())
-    } else {
-        Ok(())
     }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1627,7 +1640,38 @@ mod tests {
     }
 
     #[test]
-    fn rpc_allow_remote_with_flag_and_token() {
+    fn rpc_local_with_token_does_not_require_auth() {
+        let policy = UdpAdminPolicy { allow_remote: false, token: Some("secret".into()) };
+        let connection = make_connection("127.0.0.1:12345");
+        ensure_udp_admin_authorized_impl(&policy, Some(&connection), &None).expect("loopback allowed without token");
+    }
+
+    #[test]
+    fn rpc_remote_requires_flag_even_with_token() {
+        let policy = UdpAdminPolicy { allow_remote: false, token: Some("secret".into()) };
+        let connection = make_connection("198.51.100.11:4000");
+        let err = ensure_udp_admin_authorized_impl(&policy, Some(&connection), &Some("secret".into()))
+            .expect_err("flag required for remote");
+        assert!(matches!(err, RpcError::General(msg) if msg.contains("remote UDP admin RPCs are disabled")));
+    }
+
+    #[test]
+    fn rpc_remote_requires_token_when_configured() {
+        let policy = UdpAdminPolicy { allow_remote: true, token: Some("secret".into()) };
+        let connection = make_connection("198.51.100.12:4000");
+        let err = ensure_udp_admin_authorized_impl(&policy, Some(&connection), &None).expect_err("token required remotely");
+        assert!(matches!(err, RpcError::General(msg) if msg.contains("valid UDP admin token")));
+    }
+
+    #[test]
+    fn rpc_remote_allowed_without_token_when_flag_set() {
+        let policy = UdpAdminPolicy { allow_remote: true, token: None };
+        let connection = make_connection("203.0.113.10:4000");
+        ensure_udp_admin_authorized_impl(&policy, Some(&connection), &None).expect("remote allowed when guard enabled");
+    }
+
+    #[test]
+    fn rpc_remote_allowed_with_flag_and_token() {
         let policy = UdpAdminPolicy { allow_remote: true, token: Some("secret".into()) };
         let connection = make_connection("198.51.100.10:12345");
         ensure_udp_admin_authorized_impl(&policy, Some(&connection), &Some("secret".into()))
