@@ -12,9 +12,9 @@ use crate::{
     task::spawn_detached,
 };
 use bytes::Bytes;
+use kaspa_connectionmanager::PeerMessageInjector;
 use kaspa_core::task::service::{AsyncService, AsyncServiceError, AsyncServiceFuture, AsyncServiceResult};
 use kaspa_core::{debug, error, info, trace, warn};
-use kaspa_p2p_lib::PeerMessageInjector;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::{
     future::Future,

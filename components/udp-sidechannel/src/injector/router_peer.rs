@@ -3,11 +3,9 @@ use crate::{
     frame::DropReason,
     metrics::UdpMetrics,
 };
+use kaspa_connectionmanager::{InjectError, PeerMessageInjector};
 use kaspa_core::{debug, warn};
-use kaspa_p2p_lib::{
-    pb::{self, kaspad_message::Payload as KaspadPayload, KaspadMessage},
-    InjectError, PeerMessageInjector,
-};
+use kaspa_p2p_lib::pb::{self, kaspad_message::Payload as KaspadPayload, KaspadMessage};
 use prost::Message;
 use std::sync::Arc;
 use tokio::sync::mpsc;
