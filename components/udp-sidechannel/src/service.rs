@@ -7,6 +7,7 @@ use crate::{
     },
     metrics::UdpMetrics,
     runtime::{DropClass, FrameRuntime, RuntimeConfig, RuntimeDecision},
+    task::spawn_detached,
 };
 use bytes::Bytes;
 use kaspa_core::task::service::{AsyncService, AsyncServiceError, AsyncServiceFuture, AsyncServiceResult};
@@ -89,7 +90,7 @@ impl UdpIngestService {
         Fut: Future<Output = ()> + Send + 'static,
     {
         let rx = self.take_reassembled_rx().ok_or(FrameConsumerError::AlreadyTaken)?;
-        tokio::spawn(async move {
+        spawn_detached("frame-consumer", async move {
             let mut rx = rx;
             while let Some(frame) = rx.recv().await {
                 let (header, payload) = frame.into_parts();

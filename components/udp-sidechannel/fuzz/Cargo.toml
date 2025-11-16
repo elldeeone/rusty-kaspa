@@ -1,0 +1,28 @@
+[package]
+name = "kaspa-udp-sidechannel-fuzz"
+edition = "2021"
+publish = false
+version = "0.0.0"
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+members = []
+
+[dependencies]
+libfuzzer-sys = "0.4"
+once_cell = "1.19"
+kaspa-udp-sidechannel = { path = ".." }
+
+[[bin]]
+name = "frame_header"
+path = "fuzz_targets/frame_header.rs"
+doc = false
+test = false
+
+[[bin]]
+name = "digest_frame"
+path = "fuzz_targets/digest_frame.rs"
+doc = false
+test = false

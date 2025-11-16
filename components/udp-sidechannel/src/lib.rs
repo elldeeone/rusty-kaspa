@@ -1,9 +1,11 @@
 pub mod config;
 pub mod digest;
+pub mod fixtures;
 pub mod frame;
 pub mod metrics;
 pub mod runtime;
 pub mod service;
+mod task;
 
 pub use config::{BindTarget, UdpConfig, UdpMode};
 pub use digest::{

@@ -62,6 +62,10 @@ members = [
     "metrics/core",
     "metrics/perf_monitor",
     "utils/alloc",
+    "udp/tools/generator",
+]
+exclude = [
+    "components/udp-sidechannel/fuzz",
 ]
 
 [workspace.package]
