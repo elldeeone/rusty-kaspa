@@ -99,10 +99,14 @@ async fn udp_block_equivalence() {
     assert_eq!(udp_info.sink, block_hash, "udp node tip differs");
 
     let ingest_info = udp_client.get_udp_ingest_info(None).await.unwrap();
+    println!("ingest_total {}", ingest_info.block_injected_total);
     assert_eq!(ingest_info.block_injected_total, 1, "block injector metric did not increment");
 
+    println!("disconnecting control node");
     miner_client.disconnect().await.unwrap();
+    println!("disconnecting udp node");
     udp_client.disconnect().await.unwrap();
+    println!("shutting down daemons");
     miner.shutdown();
     udp_node.shutdown();
 }

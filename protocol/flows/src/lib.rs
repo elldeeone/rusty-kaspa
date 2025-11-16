@@ -1,3 +1,4 @@
+mod block_injector;
 pub mod flow_context;
 pub mod flow_trait;
 pub mod flowcontext;
