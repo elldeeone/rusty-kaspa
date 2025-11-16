@@ -251,6 +251,9 @@ impl UdpDigestManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::digest::types::DIGEST_SIGNATURE_LEN;
+    use crate::DigestDelta;
+    use kaspa_database::{create_temp_db, prelude::ConnBuilder};
     use kaspa_hashes::Hash;
 
     #[test]
@@ -282,6 +285,53 @@ mod tests {
         manager.record_variant(older);
         let state = manager.report();
         assert_eq!(state.sources[0].last_epoch, 1, "older epoch ignored");
+    }
+
+    #[test]
+    fn e2e_digest_path() {
+        let (_guard, db) = create_temp_db!(ConnBuilder::default().with_files_limit(10));
+        let store = DigestStore::new(db);
+        let manager = UdpDigestManager {
+            parser: DigestParser::new(false, SignerRegistry::empty(), TimestampSkew::default()),
+            metrics: Arc::new(UdpMetrics::new()),
+            state: Mutex::new(DigestState::default()),
+            store: Some(store),
+            retention_count: 10,
+            retention_days: 0,
+        };
+        manager.record_variant(sample_snapshot(1));
+        manager.record_variant(sample_delta(2));
+        let digests = manager.fetch_digests(None, 10).unwrap();
+        assert_eq!(digests.len(), 2);
+        assert_eq!(digests[0].epoch(), 2);
+        assert_eq!(digests[1].epoch(), 1);
+        let filtered = manager.fetch_digests(Some(2), 10).unwrap();
+        assert_eq!(filtered.len(), 1, "from_epoch filter keeps newest entries only");
+        let report = manager.report();
+        assert!(report.last_digest.is_some(), "last digest tracked");
+        assert!(matches!(report.last_digest.unwrap(), DigestVariant::Delta(_)), "latest digest is the delta");
+        assert_eq!(report.sources.len(), 1);
+        assert!(report.sources[0].signature_valid);
+    }
+
+    fn sample_snapshot(epoch: u64) -> DigestVariant {
+        DigestVariant::Snapshot(DigestSnapshot {
+            epoch,
+            pruning_point: Hash::from_bytes([epoch as u8; 32]),
+            pruning_proof_commitment: Hash::from_bytes([1; 32]),
+            utxo_muhash: Hash::from_bytes([2; 32]),
+            virtual_selected_parent: Hash::from_bytes([3; 32]),
+            virtual_blue_score: epoch * 5,
+            daa_score: epoch * 7,
+            blue_work: [4; 32],
+            kept_headers_mmr_root: None,
+            signer_id: 0,
+            signature: [0u8; DIGEST_SIGNATURE_LEN],
+            signature_valid: true,
+            frame_timestamp_ms: epoch,
+            recv_timestamp_ms: epoch,
+            source_id: 1,
+        })
     }
 
     fn sample_delta(epoch: u64) -> DigestVariant {

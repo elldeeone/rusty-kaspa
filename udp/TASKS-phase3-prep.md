@@ -1,7 +1,7 @@
 # Phase 3 Prep Checklist
 
-- Implement the UDP admin RPC surface (`getUdpIngestInfo`, `getUdpDigests`, `udp.enable/disable/updateSigners`) with the promised locality guard and token-file authentication so operators can observe/stop the task at runtime.
-- Wire `UdpIngestService::take_reassembled_rx` into the upcoming digest/block parser so accepted frames are actually consumed before we add signature/DB logic.
-- Confirm the documented framing constants (magic, version, flag bits, network tags) stay in sync across `udp/docs/prd.md`, `udp/plan.md`, and the codebase before publishing golden vectors.
-- Add golden test vectors/property tests for header fragmentation and future digest payload parsing to guard against regressions once signature verification lands.
-- Extend Unix-domain socket coverage to prove non-member processes cannot write to the 0640 path (e.g., via a negative test using a different UID) before shipping packages.
+- [x] Implement the UDP admin RPC surface (`getUdpIngestInfo`, `getUdpDigests`, `udp.enable/disable/updateSigners`) with the promised locality guard and token-file authentication so operators can observe/stop the task at runtime. *(See `rpc/service/src/service.rs`, mocked conversions under `rpc/grpc` + `wallet/core`, and integration coverage in `testing/integration/src/rpc_tests.rs`.)*
+- [x] Wire `UdpIngestService::take_reassembled_rx` into the upcoming digest/block parser so accepted frames are actually consumed before we add signature/DB logic. *(Handled by `UdpDigestManager::start` in `components/udp-sidechannel/src/digest/manager.rs`.)*
+- [x] Confirm the documented framing constants (magic, version, flag bits, network tags) stay in sync across `udp/docs/prd.md`, `udp/plan.md`, and the codebase before publishing golden vectors. *(Documented in `udp/docs/digest-wire-format.md` + enforced by `components/udp-sidechannel/tests/vectors.rs`.)*
+- [x] Add golden test vectors/property tests for header fragmentation and future digest payload parsing to guard against regressions once signature verification lands. *(See `components/udp-sidechannel/tests/vectors.rs` and the adverse-stream tests.)*
+- [x] Extend Unix-domain socket coverage to prove non-member processes cannot write to the 0640 path (e.g., via a negative test using a different UID) before shipping packages. *(Covered via the unix socket unit test in `components/udp-sidechannel/src/service.rs`.)*

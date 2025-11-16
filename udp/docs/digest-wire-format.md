@@ -116,3 +116,6 @@ The header bit `flags.digest_snapshot()` (bit 3) distinguishes snapshots
   it verbatim.
 * The signature domain is fixed at `kaspa/udp-digest/v1`. Any future format
   will use a different domain string and version byte to avoid collisions.
+* Golden interoperability vectors (valid + tampered cases) live in
+  `components/udp-sidechannel/tests/vectors.rs`. Producers must match these
+  fixtures to be considered wire-format compatible.

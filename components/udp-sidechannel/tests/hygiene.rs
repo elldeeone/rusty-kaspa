@@ -14,3 +14,24 @@ fn info_logs_do_not_include_payloads() {
         }
     }
 }
+
+#[test]
+fn metric_reasons_are_bounded() {
+    use kaspa_udp_sidechannel::frame::DropReason;
+
+    let expected = [
+        "crc",
+        "version",
+        "network_mismatch",
+        "payload_cap",
+        "fragment_timeout",
+        "fec_incomplete",
+        "queue_full",
+        "duplicate",
+        "stale_seq",
+        "rate_cap",
+        "signature",
+    ];
+    let actual: Vec<_> = DropReason::ALL.iter().map(|reason| reason.as_str()).collect();
+    assert_eq!(actual, expected, "drop reason label set changed unexpectedly");
+}

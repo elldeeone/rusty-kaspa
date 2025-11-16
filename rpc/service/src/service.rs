@@ -1612,14 +1612,14 @@ mod tests {
     }
 
     #[test]
-    fn local_only_admin() {
+    fn rpc_local_only_info() {
         let policy = UdpAdminPolicy { allow_remote: false, token: None };
         let connection = make_connection("127.0.0.1:12345");
         ensure_udp_admin_authorized_impl(&policy, Some(&connection), &None).expect("loopback allowed");
     }
 
     #[test]
-    fn remote_rejected_by_default() {
+    fn rpc_remote_rejected_by_default() {
         let policy = UdpAdminPolicy { allow_remote: false, token: None };
         let connection = make_connection("192.0.2.5:12345");
         let err = ensure_udp_admin_authorized_impl(&policy, Some(&connection), &None).expect_err("remote must be rejected");
@@ -1627,7 +1627,7 @@ mod tests {
     }
 
     #[test]
-    fn allow_remote_with_flag_and_token() {
+    fn rpc_allow_remote_with_flag_and_token() {
         let policy = UdpAdminPolicy { allow_remote: true, token: Some("secret".into()) };
         let connection = make_connection("198.51.100.10:12345");
         ensure_udp_admin_authorized_impl(&policy, Some(&connection), &Some("secret".into()))
