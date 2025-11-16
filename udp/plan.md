@@ -330,24 +330,30 @@ Quality bars apply to every phase and must be tracked explicitly (validated by t
 - CPU overhead measured (document). Digest divergence metrics unaffected.
 
 **Tasks**
-- [ ] **BlockV1 parser + queue**  
+- [x] **BlockV1 parser + queue**  
   - What: Support `BlockV1` framing (full block or header+compact body) with size caps, queueing, and drop metrics.  
   - Where: `components/udp-sidechannel/src/block/mod.rs`.  
   - Artefacts: `BlockPayload` enum, `block_queue` ring buffer, config toggles.  
   - Tests: `cargo test -p components-udp-sidechannel block::tests::{payload_cap, queue_backpressure}`.  
   - DoD: Oversized payload dropped with log + metric; valid block forwarded to injector stub.
-- [ ] **Virtual Router peer implementation**  
+- [x] **Virtual Router peer implementation**  
   - What: Implement `SatVirtualPeer` that fabricates handshake, registers to Router, and delivers `pb::KaspadMessage` instances.  
   - Where: `components/udp-sidechannel/src/injector/router_peer.rs`, interacts with `components/connectionmanager`.  
   - Artefacts: Router handle acquisition, low-priority channel sizes mirroring `txrelay::invs_channel_size`, flag disabling peer count increment.  
   - Tests: Integration test spawning Router + synthetic block to ensure flows receive message; `cargo test -p kaspa-p2p-lib sat_virtual_peer::tests::inject_block`; fairness test ensuring external peers maintain throughput under block floods.  
   - DoD: Devnet harness sees satellite-injected block propagate; metrics `udp_block_injected_total` increments; peer count unaffected and fairness test passes.
-- [ ] **Dev/test gating + documentation**  
+- [x] **Dev/test gating + documentation**  
   - What: Add explicit config guard (e.g., `udp.mode=blocks` + `--danger-accept-blocks`) and mark feature experimental in docs.  
   - Where: `docs/udp/block-mode.md`, `kaspad/src/args.rs`, plan updates.  
   - Artefacts: Warning logs, CLI confirmation prompt (if interactive).  
   - Tests: CLI test verifying enabling requires explicit flag; doc lint.  
   - DoD: Block mode cannot be enabled unintentionally; documentation highlights risks.
+
+**Delivered:** BlockV1 parsing + bounded queues, SatVirtualPeer injection (hidden, low-priority), config/doc gating, metrics wiring, and integration coverage
+(`testing/integration/src/udp_block_tests.rs::udp_block_equivalence` and
+`udp_block_fairness`). Docs: `docs/udp/block-mode.md`. Metrics: `udp_block_injected_total`,
+`udp_queue_occupancy{queue="block"}`. Config knobs: `--udp.danger_accept_blocks`,
+`--udp.block_max_bytes`, `--udp.block_mainnet_override`.
 
 ### Phase 6 — Operator Docs & Dashboards; Hardening; Testnet Enablement Plan
 **Objective:** Finalise operator experience, dashboards, hardening checklist, and document the plan for enabling on devnet/testnet including signer distribution.

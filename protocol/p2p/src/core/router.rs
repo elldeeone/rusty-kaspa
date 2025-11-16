@@ -110,6 +110,8 @@ impl RouterMutableState {
     }
 }
 
+const OUTGOING_ROUTE_CAPACITY: usize = (1 << 17) + 256;
+
 /// A router object for managing the communication to a network peer. It is named a router because it's responsible
 /// for internally routing messages to P2P flows based on registration and message types
 #[derive(Debug)]
@@ -173,6 +175,26 @@ fn message_summary(msg: &KaspadMessage) -> impl Debug {
 }
 
 impl Router {
+    pub fn new_virtual(net_address: SocketAddr) -> Arc<Self> {
+        let (hub_sender, mut hub_receiver) = mpsc_channel(1);
+        tokio::spawn(async move { while hub_receiver.recv().await.is_some() {} });
+
+        let (outgoing_route, mut outgoing_rx) = mpsc_channel(OUTGOING_ROUTE_CAPACITY);
+        tokio::spawn(async move { while outgoing_rx.recv().await.is_some() {} });
+
+        Arc::new(Router {
+            identity: Default::default(),
+            net_address,
+            is_outbound: false,
+            connection_started: Instant::now(),
+            routing_map_by_type: RwLock::new(HashMap::new()),
+            routing_map_by_id: RwLock::new(HashMap::new()),
+            outgoing_route,
+            hub_sender,
+            mutable_state: Mutex::new(RouterMutableState::new(None, None)),
+        })
+    }
+
     pub(crate) async fn new(
         net_address: SocketAddr,
         is_outbound: bool,

@@ -3,6 +3,7 @@ use crate::flowcontext::{
     process_queue::ProcessQueue,
     transactions::TransactionsSpread,
 };
+use crate::sat_virtual_peer::SatVirtualPeerInjector;
 use crate::{v5, v6, v7, v8};
 use async_trait::async_trait;
 use futures::future::join_all;
@@ -36,7 +37,7 @@ use kaspa_p2p_lib::{
     convert::model::version::Version,
     make_message,
     pb::{kaspad_message::Payload, InvRelayBlockMessage},
-    ConnectionInitializer, Hub, KaspadHandshake, PeerKey, PeerProperties, Router,
+    ConnectionInitializer, Hub, KaspadHandshake, PeerKey, PeerMessageInjector, PeerProperties, Router,
 };
 use kaspa_p2p_mining::rule_engine::MiningRuleEngine;
 use kaspa_utils::iter::IterExtensions;
@@ -733,6 +734,31 @@ impl FlowContext {
     /// after a predefined interval or when the queue length is larger than the Inv message capacity.
     pub async fn broadcast_transactions<I: IntoIterator<Item = TransactionId>>(&self, transaction_ids: I, should_throttle: bool) {
         self.transactions_spread.write().await.broadcast_transactions(transaction_ids, should_throttle).await
+    }
+
+    pub fn create_sat_virtual_peer(&self) -> Result<Arc<dyn PeerMessageInjector>, ProtocolError> {
+        SatVirtualPeerInjector::start(self.clone()).map(|injector| injector as Arc<dyn PeerMessageInjector>)
+    }
+
+    pub(crate) fn register_virtual_router(&self, router: Arc<Router>) -> Result<(), ProtocolError> {
+        router.start();
+        let peer_id = PeerId::new(Uuid::new_v4());
+        router.set_identity(peer_id);
+        let peer_properties = Arc::new(PeerProperties {
+            user_agent: format!("sat-virtual/{}", version()),
+            advertised_protocol_version: PROTOCOL_VERSION,
+            protocol_version: PROTOCOL_VERSION,
+            disable_relay_tx: false,
+            subnetwork_id: None,
+            time_offset: 0,
+        });
+        router.set_properties(peer_properties);
+
+        let flows = v8::register(self.clone(), router.clone());
+        for flow in flows {
+            flow.launch();
+        }
+        Ok(())
     }
 }
 

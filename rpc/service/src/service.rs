@@ -1539,6 +1539,7 @@ impl RpcCoreService {
             sources,
             signature_failures,
             skew_seconds,
+            block_injected_total: snapshot.block_injected_total,
         }
     }
 

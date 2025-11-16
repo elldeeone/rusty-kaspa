@@ -21,10 +21,15 @@ pub enum DropReason {
     RateCap,
     Signature,
     SourceSignerMismatch,
+    BlockOversize,
+    BlockQueueFull,
+    BlockUnsupportedFormat,
+    BlockMalformed,
+    Panic,
 }
 
 impl DropReason {
-    pub const ALL: [DropReason; 12] = [
+    pub const ALL: [DropReason; 17] = [
         DropReason::Crc,
         DropReason::Version,
         DropReason::NetworkMismatch,
@@ -37,6 +42,11 @@ impl DropReason {
         DropReason::RateCap,
         DropReason::Signature,
         DropReason::SourceSignerMismatch,
+        DropReason::BlockOversize,
+        DropReason::BlockQueueFull,
+        DropReason::BlockUnsupportedFormat,
+        DropReason::BlockMalformed,
+        DropReason::Panic,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -53,6 +63,11 @@ impl DropReason {
             DropReason::RateCap => "rate_cap",
             DropReason::Signature => "signature",
             DropReason::SourceSignerMismatch => "source_signer_mismatch",
+            DropReason::BlockOversize => "block_oversize",
+            DropReason::BlockQueueFull => "block_queue_full",
+            DropReason::BlockUnsupportedFormat => "block_unsupported_format",
+            DropReason::BlockMalformed => "block_malformed",
+            DropReason::Panic => "panic",
         }
     }
 
@@ -70,6 +85,11 @@ impl DropReason {
             DropReason::RateCap => 9,
             DropReason::Signature => 10,
             DropReason::SourceSignerMismatch => 11,
+            DropReason::BlockOversize => 12,
+            DropReason::BlockQueueFull => 13,
+            DropReason::BlockUnsupportedFormat => 14,
+            DropReason::BlockMalformed => 15,
+            DropReason::Panic => 16,
         }
     }
 }

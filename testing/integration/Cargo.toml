@@ -38,6 +38,8 @@ kaspa-utxoindex.workspace = true
 kaspa-wrpc-server.workspace = true
 kaspad.workspace = true
 kaspa-udp-sidechannel.workspace = true
+kaspa-p2p-lib.workspace = true
+prost.workspace = true
 
 async-channel.workspace = true
 async-trait.workspace = true

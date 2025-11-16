@@ -397,6 +397,7 @@ impl RpcApi for RpcCoreMock {
             sources: Vec::new(),
             signature_failures: 0,
             skew_seconds: 0,
+            block_injected_total: 0,
         })
     }
 

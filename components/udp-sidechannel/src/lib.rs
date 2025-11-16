@@ -1,12 +1,15 @@
+pub mod block;
 pub mod config;
 pub mod digest;
 pub mod fixtures;
 pub mod frame;
+pub mod injector;
 pub mod metrics;
 pub mod runtime;
 pub mod service;
 mod task;
 
+pub use block::{BlockChannel, BlockChannelError, BlockFrame, BlockParser, BlockPayload, BlockQueue, BlockQueueError};
 pub use config::{BindTarget, UdpConfig, UdpMode};
 pub use digest::{
     DigestDelta, DigestError, DigestInitError, DigestReport, DigestSnapshot, DigestStore, DigestStoreError, DigestVariant,

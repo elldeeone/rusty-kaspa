@@ -6,6 +6,7 @@ pub mod pb {
 pub mod common;
 pub mod convert;
 pub mod echo;
+pub mod virtual_peer;
 
 mod core;
 mod handshake;
@@ -17,3 +18,4 @@ pub use crate::core::payload_type::KaspadMessagePayloadType;
 pub use crate::core::peer::{Peer, PeerKey, PeerProperties};
 pub use crate::core::router::{IncomingRoute, Router, SharedIncomingRoute, BLANK_ROUTE_ID};
 pub use handshake::KaspadHandshake;
+pub use virtual_peer::{InjectError, PeerMessageInjector};

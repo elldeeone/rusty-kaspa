@@ -1,10 +1,12 @@
 use crate::{
+    block::{BlockChannel, BlockChannelError, BlockParser, BlockQueue, BlockQueueError},
     config::{BindTarget, UdpConfig, UdpMode},
     frame::{
         assembler::{FrameAssembler, FrameAssemblerConfig, ReassembledFrame},
         header::{HeaderParseContext, SatFrameHeader, HEADER_LEN},
         DropEvent, DropReason, FrameKind,
     },
+    injector::router_peer::spawn_block_injector,
     metrics::UdpMetrics,
     runtime::{DropClass, FrameRuntime, RuntimeConfig, RuntimeDecision},
     task::spawn_detached,
@@ -12,6 +14,7 @@ use crate::{
 use bytes::Bytes;
 use kaspa_core::task::service::{AsyncService, AsyncServiceError, AsyncServiceFuture, AsyncServiceResult};
 use kaspa_core::{debug, error, info, trace, warn};
+use kaspa_p2p_lib::PeerMessageInjector;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::{
     future::Future,
@@ -50,12 +53,13 @@ pub struct UdpIngestService {
     drop_logger: Arc<DropLogger>,
     #[cfg(unix)]
     unix_guard: Mutex<Option<UnixSocketGuard>>,
+    block_channel: Option<BlockChannel>,
 }
 
 impl UdpIngestService {
     pub const IDENT: &'static str = "udp-ingest";
 
-    pub fn new(config: UdpConfig, metrics: Arc<UdpMetrics>) -> Self {
+    pub fn new(config: UdpConfig, metrics: Arc<UdpMetrics>, block_injector: Option<Arc<dyn PeerMessageInjector>>) -> Self {
         let initially_enabled = config.initially_enabled();
         let (digest_cap, block_cap) = queue_caps(&config);
         let total_cap = digest_cap.saturating_add(block_cap).max(1);
@@ -64,6 +68,22 @@ impl UdpIngestService {
         let (shutdown, _) = watch::channel(false);
         let (enabled_tx, _) = watch::channel(initially_enabled);
         let drop_logger = Arc::new(DropLogger::new(metrics.clone()));
+        let block_channel = if config.blocks_allowed() {
+            if let Some(peer) = block_injector.clone() {
+                let parser = BlockParser::new(config.block_max_bytes as usize);
+                let queue = Arc::new(BlockQueue::new(config.block_queue.max(1), metrics.clone()));
+                let channel = BlockChannel::new(parser, queue);
+                if let Some(rx) = channel.take_rx() {
+                    spawn_block_injector(rx, peer, metrics.clone());
+                }
+                Some(channel)
+            } else {
+                warn!("udp.event=block_channel_disabled reason=no_virtual_peer");
+                None
+            }
+        } else {
+            None
+        };
 
         Self {
             config,
@@ -77,7 +97,12 @@ impl UdpIngestService {
             drop_logger,
             #[cfg(unix)]
             unix_guard: Mutex::new(None),
+            block_channel,
         }
+    }
+
+    pub fn block_queue(&self) -> Option<Arc<BlockQueue>> {
+        self.block_channel.as_ref().map(|channel| channel.queue())
     }
 
     pub fn take_reassembled_rx(&self) -> Option<mpsc::Receiver<QueuedFrame>> {
@@ -115,6 +140,12 @@ impl UdpIngestService {
 
     pub fn snapshot(&self) -> UdpIngestSnapshot {
         let (digest_depth, block_depth) = self.queue_depth.snapshot();
+        let block_snapshot = if let Some(channel) = &self.block_channel {
+            let (capacity, depth) = channel.snapshot();
+            QueueSnapshot { capacity, depth }
+        } else {
+            block_depth
+        };
         UdpIngestSnapshot {
             enabled: self.is_enabled(),
             listen: self.config.listen,
@@ -123,7 +154,7 @@ impl UdpIngestService {
             mode: self.config.mode,
             max_kbps: self.config.max_kbps,
             digest_queue: digest_depth,
-            block_queue: block_depth,
+            block_queue: block_snapshot,
             frames: self.metrics.frames_snapshot(),
             drops: self.metrics.drops_snapshot(),
             bytes_total: self.metrics.bytes_total(),
@@ -132,6 +163,7 @@ impl UdpIngestService {
             signature_failures: self.metrics.signature_failures(),
             skew_seconds: self.metrics.skew_seconds(),
             divergence_detected: self.metrics.divergence_detected(),
+            block_injected_total: self.metrics.block_injected_total(),
         }
     }
 
@@ -235,7 +267,14 @@ impl UdpIngestService {
         enabled_rx: &mut watch::Receiver<bool>,
     ) -> AsyncServiceResult<()> {
         let mut buf = vec![0u8; self.max_datagram_len()];
-        let mut processor = FrameProcessor::new(&self.config, &self.metrics, &self.drop_logger, &self.queue_depth, &self.tx);
+        let mut processor = FrameProcessor::new(
+            &self.config,
+            &self.metrics,
+            &self.drop_logger,
+            &self.queue_depth,
+            &self.tx,
+            self.block_channel.clone(),
+        );
         loop {
             tokio::select! {
                 _ = shutdown.changed() => break,
@@ -270,7 +309,14 @@ impl UdpIngestService {
         enabled_rx: &mut watch::Receiver<bool>,
     ) -> AsyncServiceResult<()> {
         let mut buf = vec![0u8; self.max_datagram_len()];
-        let mut processor = FrameProcessor::new(&self.config, &self.metrics, &self.drop_logger, &self.queue_depth, &self.tx);
+        let mut processor = FrameProcessor::new(
+            &self.config,
+            &self.metrics,
+            &self.drop_logger,
+            &self.queue_depth,
+            &self.tx,
+            self.block_channel.clone(),
+        );
         loop {
             tokio::select! {
                 _ = shutdown.changed() => break,
@@ -421,6 +467,7 @@ pub struct UdpIngestSnapshot {
     pub signature_failures: u64,
     pub skew_seconds: u64,
     pub divergence_detected: bool,
+    pub block_injected_total: u64,
 }
 
 struct QueueDepth {
@@ -610,6 +657,7 @@ struct FrameProcessor {
     queue_depth: Arc<QueueDepth>,
     tx: mpsc::Sender<QueuedFrame>,
     drop_buffer: Vec<DropEvent>,
+    block_channel: Option<BlockChannel>,
 }
 
 impl FrameProcessor {
@@ -619,6 +667,7 @@ impl FrameProcessor {
         drop_logger: &Arc<DropLogger>,
         queue_depth: &Arc<QueueDepth>,
         tx: &mpsc::Sender<QueuedFrame>,
+        block_channel: Option<BlockChannel>,
     ) -> Self {
         let header_ctx = HeaderParseContext { network_tag: config.network_tag(), payload_caps: config.payload_caps() };
         let assembler = FrameAssembler::new(FrameAssemblerConfig {
@@ -642,6 +691,7 @@ impl FrameProcessor {
             queue_depth: Arc::clone(queue_depth),
             tx: tx.clone(),
             drop_buffer: Vec::with_capacity(4),
+            block_channel,
         }
     }
 
@@ -673,33 +723,64 @@ impl FrameProcessor {
     fn handle_frame(&mut self, frame: ReassembledFrame, remote: RemoteLabel, now: Instant, datagram_len: usize) {
         match self.runtime.evaluate(&frame.header, &frame.payload, now) {
             RuntimeDecision::Accept => {
-                let header = frame.header;
                 let bytes = frame.payload.len() + HEADER_LEN;
-                let seq = header.seq;
-                let kind = header.kind;
-                if let Some(slot) = self.queue_depth.try_reserve(kind) {
-                    let queued = QueuedFrame::new(frame, slot);
-                    match self.tx.try_send(queued) {
-                        Ok(()) => {
-                            self.metrics.record_frame(kind, bytes);
-                            trace!(
-                                "udp.event=frame_accept kind={} seq={} bytes={} remote={}",
-                                kind.as_str(),
-                                seq,
-                                bytes,
-                                remote.as_str()
-                            );
-                        }
-                        Err(err) => self.handle_queue_error(err, remote, now, datagram_len),
-                    }
-                } else {
-                    let event = header.as_drop_event(DropReason::QueueFull, frame.payload.len());
-                    self.drop_logger.record(event, remote, None, now, datagram_len, false);
+                match frame.header.kind {
+                    FrameKind::Block => self.handle_block_frame(frame, remote, now, datagram_len, bytes),
+                    _ => self.enqueue_digest_frame(frame, remote, now, datagram_len, bytes),
                 }
             }
             RuntimeDecision::Drop { reason, drop_class } => {
                 let event = frame.header.as_drop_event(reason, frame.payload.len());
                 self.drop_logger.record(event, remote, drop_class, now, datagram_len, false);
+            }
+        }
+    }
+
+    fn enqueue_digest_frame(&mut self, frame: ReassembledFrame, remote: RemoteLabel, now: Instant, datagram_len: usize, bytes: usize) {
+        let header = frame.header;
+        let seq = header.seq;
+        let kind = header.kind;
+        let payload_len = frame.payload.len();
+        if let Some(slot) = self.queue_depth.try_reserve(kind) {
+            let queued = QueuedFrame::new(frame, slot);
+            match self.tx.try_send(queued) {
+                Ok(()) => {
+                    self.metrics.record_frame(kind, bytes);
+                    trace!("udp.event=frame_accept kind={} seq={} bytes={} remote={}", kind.as_str(), seq, bytes, remote.as_str());
+                }
+                Err(err) => self.handle_queue_error(err, remote, now, datagram_len),
+            }
+        } else {
+            let event = header.as_drop_event(DropReason::QueueFull, payload_len);
+            self.drop_logger.record(event, remote, None, now, datagram_len, false);
+        }
+    }
+
+    fn handle_block_frame(&mut self, frame: ReassembledFrame, remote: RemoteLabel, now: Instant, datagram_len: usize, bytes: usize) {
+        let header = frame.header;
+        let payload = frame.payload;
+        let Some(channel) = &self.block_channel else {
+            trace!("udp.event=frame_ignore kind=block seq={} remote={}", header.seq, remote.as_str());
+            return;
+        };
+
+        match channel.enqueue(header, payload) {
+            Ok(()) => {
+                self.metrics.record_frame(FrameKind::Block, bytes);
+                trace!("udp.event=frame_accept kind=block seq={} bytes={} remote={}", header.seq, bytes, remote.as_str());
+            }
+            Err(BlockChannelError::Parse(err)) => {
+                let event = header.as_drop_event(err.reason(), bytes.saturating_sub(HEADER_LEN));
+                self.drop_logger.record(event, remote, None, now, datagram_len, false);
+            }
+            Err(BlockChannelError::Queue(BlockQueueError::Full)) => {
+                let event = header.as_drop_event(DropReason::BlockQueueFull, bytes.saturating_sub(HEADER_LEN));
+                self.drop_logger.record(event, remote, None, now, datagram_len, false);
+            }
+            Err(BlockChannelError::Queue(BlockQueueError::Closed)) => {
+                let event = header.as_drop_event(DropReason::Panic, bytes.saturating_sub(HEADER_LEN));
+                self.drop_logger.record(event, remote, None, now, datagram_len, false);
+                warn!("udp.event=block_queue_closed seq={} remote={}", header.seq, remote.as_str());
             }
         }
     }
@@ -738,7 +819,7 @@ impl RemoteLabel {
 
 fn queue_caps(config: &UdpConfig) -> (usize, usize) {
     let digest_cap = if config.mode.allows_digest() { config.digest_queue } else { 0 };
-    let block_cap = if config.mode.allows_blocks() { config.block_queue } else { 0 };
+    let block_cap = if config.blocks_allowed() { config.block_queue } else { 0 };
     (digest_cap, block_cap)
 }
 
@@ -762,12 +843,15 @@ mod tests {
             allowed_signers: vec![],
             digest_queue: 16,
             block_queue: 8,
+            danger_accept_blocks: false,
+            block_mainnet_override: false,
             discard_unsigned: true,
             db_migrate: false,
             retention_count: 1,
             retention_days: 1,
             max_digest_payload_bytes: 2048,
             max_block_payload_bytes: 131_072,
+            block_max_bytes: 131_072,
             log_verbosity: "info".into(),
             admin_remote_allowed: false,
             admin_token_file: None,
@@ -779,7 +863,7 @@ mod tests {
     async fn rejects_non_loopback_without_override() {
         let mut cfg = base_config();
         cfg.listen = Some("0.0.0.0:0".parse().unwrap());
-        let service = Arc::new(UdpIngestService::new(cfg, Arc::new(UdpMetrics::new())));
+        let service = Arc::new(UdpIngestService::new(cfg, Arc::new(UdpMetrics::new()), None));
         let err = service.bind_listener().await.expect_err("expected bind failure");
         matches!(err, UdpIngestError::NonLocalBind(_));
     }
@@ -794,7 +878,7 @@ mod tests {
         let mut cfg = base_config();
         cfg.listen = None;
         cfg.listen_unix = Some(path.clone());
-        let service = Arc::new(UdpIngestService::new(cfg, Arc::new(UdpMetrics::new())));
+        let service = Arc::new(UdpIngestService::new(cfg, Arc::new(UdpMetrics::new()), None));
         let listener = service.bind_listener().await.expect("bind unix");
         drop(listener);
         let metadata = fs::metadata(&path).expect("metadata");
@@ -809,7 +893,7 @@ mod tests {
         let mut cfg = base_config();
         cfg.listen = None;
         cfg.listen_unix = Some(PathBuf::from("/tmp/does-not-matter.sock"));
-        let service = Arc::new(UdpIngestService::new(cfg, Arc::new(UdpMetrics::new())));
+        let service = Arc::new(UdpIngestService::new(cfg, Arc::new(UdpMetrics::new()), None));
         let err = service.bind_listener().await.expect_err("expected unix support error");
         matches!(err, UdpIngestError::UnixSocketsUnsupported(_));
     }

@@ -633,7 +633,18 @@ do you confirm? (answer y/n or pass --yes to the Kaspad command line to confirm 
     ));
     let udp_config = args.udp.to_runtime_config(network);
     let udp_metrics = Arc::new(UdpMetrics::new());
-    let udp_service = Arc::new(UdpIngestService::new(udp_config.clone(), udp_metrics.clone()));
+    let block_peer_injector = if udp_config.blocks_allowed() {
+        match flow_context.create_sat_virtual_peer() {
+            Ok(peer) => Some(peer),
+            Err(err) => {
+                warn!("failed to start satellite virtual peer: {}", err);
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let udp_service = Arc::new(UdpIngestService::new(udp_config.clone(), udp_metrics.clone(), block_peer_injector.clone()));
     let udp_digest_manager = if udp_config.mode.allows_digest() {
         match UdpDigestManager::start(&udp_config, udp_service.clone(), udp_metrics.clone(), Some(meta_db.clone())) {
             Ok(manager) => Some(manager),

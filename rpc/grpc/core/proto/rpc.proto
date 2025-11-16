@@ -1031,6 +1031,7 @@ message GetUdpIngestInfoResponseMessage {
   repeated RpcUdpSourceInfo sources = 19;
   uint64 signature_failures = 20;
   uint64 skew_seconds = 21;
+  uint64 block_injected_total = 22;
   RPCError error = 1000;
 }
 
