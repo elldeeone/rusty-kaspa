@@ -4,6 +4,7 @@ use crate::{
     frame::{DropReason, FrameKind, SatFrameHeader},
     metrics::UdpMetrics,
     service::{FrameConsumerError, UdpIngestService},
+    task::spawn_detached,
 };
 use bytes::Bytes;
 use kaspa_core::{debug, info, trace, warn};
@@ -104,7 +105,7 @@ impl UdpDigestManager {
             return;
         }
         let this = Arc::clone(self);
-        tokio::spawn(async move {
+        spawn_detached("digest-pruner", async move {
             loop {
                 sleep(Duration::from_secs(60)).await;
                 if let Some(store) = &this.store {
