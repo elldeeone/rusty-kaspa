@@ -989,6 +989,8 @@ build_wrpc_wasm_bindgen_interface!(
         GetCurrentNetwork,
         /// Retrieves UDP ingest subsystem status and counters.
         GetUdpIngestInfo,
+        /// Retrieves stored UDP digest records (most recent first).
+        GetUdpDigests,
     ],
     [
         // functions with `request` argument
@@ -1051,6 +1053,8 @@ build_wrpc_wasm_bindgen_interface!(
         UdpEnable,
         /// Disables the UDP ingest subsystem.
         UdpDisable,
+        /// Updates the allowed UDP signer set for digest verification.
+        UdpUpdateSigners,
         /// Resolves a finality conflict in the Kaspa BlockDAG.
         /// Returned information: None.
         ResolveFinalityConflict,

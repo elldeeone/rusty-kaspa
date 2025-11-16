@@ -20,10 +20,11 @@ pub enum DropReason {
     StaleSeq,
     RateCap,
     Signature,
+    SourceSignerMismatch,
 }
 
 impl DropReason {
-    pub const ALL: [DropReason; 11] = [
+    pub const ALL: [DropReason; 12] = [
         DropReason::Crc,
         DropReason::Version,
         DropReason::NetworkMismatch,
@@ -35,6 +36,7 @@ impl DropReason {
         DropReason::StaleSeq,
         DropReason::RateCap,
         DropReason::Signature,
+        DropReason::SourceSignerMismatch,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -50,6 +52,7 @@ impl DropReason {
             DropReason::StaleSeq => "stale_seq",
             DropReason::RateCap => "rate_cap",
             DropReason::Signature => "signature",
+            DropReason::SourceSignerMismatch => "source_signer_mismatch",
         }
     }
 
@@ -66,6 +69,7 @@ impl DropReason {
             DropReason::StaleSeq => 8,
             DropReason::RateCap => 9,
             DropReason::Signature => 10,
+            DropReason::SourceSignerMismatch => 11,
         }
     }
 }

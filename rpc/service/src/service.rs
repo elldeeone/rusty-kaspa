@@ -470,6 +470,19 @@ NOTE: This error usually indicates an RPC conversion error between the node and 
         })
     }
 
+    async fn udp_update_signers_call(
+        &self,
+        connection: Option<&DynRpcConnection>,
+        request: UdpUpdateSignersRequest,
+    ) -> RpcResult<UdpUpdateSignersResponse> {
+        self.ensure_udp_admin_authorized(connection, &request.auth_token)?;
+        let manager = self.udp_digest.as_ref().ok_or_else(|| RpcError::General("UDP digest manager is not running".to_string()))?;
+        let signer_count =
+            manager.update_signers(&request.keys).map_err(|err| RpcError::General(format!("failed to update UDP signers: {err}")))?;
+        info!("udp.event=admin_update_signers signer_count={signer_count}");
+        Ok(UdpUpdateSignersResponse { applied: true, applied_at_ms: unix_now(), signer_count: signer_count as u32 })
+    }
+
     async fn get_udp_digests_call(
         &self,
         connection: Option<&DynRpcConnection>,

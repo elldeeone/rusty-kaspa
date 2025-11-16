@@ -395,6 +395,14 @@ impl RpcApi for RpcCoreMock {
         Err(RpcError::NotImplemented)
     }
 
+    async fn udp_update_signers_call(
+        &self,
+        _connection: Option<&DynRpcConnection>,
+        request: UdpUpdateSignersRequest,
+    ) -> RpcResult<UdpUpdateSignersResponse> {
+        Ok(UdpUpdateSignersResponse { applied: true, applied_at_ms: 0, signer_count: request.keys.len() as u32 })
+    }
+
     async fn get_udp_digests_call(
         &self,
         _connection: Option<&DynRpcConnection>,

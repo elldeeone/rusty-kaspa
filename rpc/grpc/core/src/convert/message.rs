@@ -530,6 +530,17 @@ from!(item: RpcResult<&kaspa_rpc_core::UdpDisableResponse>, protowire::UdpDisabl
         error: None,
     }
 });
+from!(item: &kaspa_rpc_core::UdpUpdateSignersRequest, protowire::UdpUpdateSignersRequestMessage, {
+    Self { keys: item.keys.clone(), auth_token: item.auth_token.clone() }
+});
+from!(item: RpcResult<&kaspa_rpc_core::UdpUpdateSignersResponse>, protowire::UdpUpdateSignersResponseMessage, {
+    Self {
+        applied: item.applied,
+        applied_at_ms: item.applied_at_ms,
+        signer_count: item.signer_count,
+        error: None,
+    }
+});
 
 from!(&kaspa_rpc_core::PingRequest, protowire::PingRequestMessage);
 from!(RpcResult<&kaspa_rpc_core::PingResponse>, protowire::PingResponseMessage);
@@ -1169,6 +1180,16 @@ try_from!(item: &protowire::UdpDisableResponseMessage, RpcResult<kaspa_rpc_core:
         previous_enabled: item.previous_enabled,
         enabled: item.enabled,
         note: item.note.clone().filter(|note| !note.is_empty()),
+    }
+});
+try_from!(item: &protowire::UdpUpdateSignersRequestMessage, kaspa_rpc_core::UdpUpdateSignersRequest, {
+    Self { keys: item.keys.clone(), auth_token: item.auth_token.clone().filter(|token| !token.is_empty()) }
+});
+try_from!(item: &protowire::UdpUpdateSignersResponseMessage, RpcResult<kaspa_rpc_core::UdpUpdateSignersResponse>, {
+    Self {
+        applied: item.applied,
+        applied_at_ms: item.applied_at_ms,
+        signer_count: item.signer_count,
     }
 });
 

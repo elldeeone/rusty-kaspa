@@ -1093,3 +1093,15 @@ message GetCurrentBlockColorResponseMessage {
 
   RPCError error = 1000;
 }
+
+message UdpUpdateSignersRequestMessage {
+  repeated string keys = 1;
+  optional string auth_token = 2;
+}
+
+message UdpUpdateSignersResponseMessage {
+  bool applied = 1;
+  uint64 applied_at_ms = 2;
+  uint32 signer_count = 3;
+  RPCError error = 1000;
+}

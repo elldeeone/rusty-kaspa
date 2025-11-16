@@ -474,6 +474,15 @@ pub trait RpcApi: Sync + Send + AnySync {
         request: UdpDisableRequest,
     ) -> RpcResult<UdpDisableResponse>;
 
+    async fn udp_update_signers(&self, keys: Vec<String>, auth_token: Option<String>) -> RpcResult<UdpUpdateSignersResponse> {
+        self.udp_update_signers_call(None, UdpUpdateSignersRequest { keys, auth_token }).await
+    }
+    async fn udp_update_signers_call(
+        &self,
+        connection: Option<&DynRpcConnection>,
+        request: UdpUpdateSignersRequest,
+    ) -> RpcResult<UdpUpdateSignersResponse>;
+
     async fn get_udp_digests(
         &self,
         from_epoch: Option<u64>,
