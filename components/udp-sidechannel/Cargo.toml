@@ -13,6 +13,7 @@ kaspa-core.workspace = true
 kaspa-consensus-core.workspace = true
 kaspa-hashes.workspace = true
 kaspa-p2p-lib.workspace = true
+kaspa-connectionmanager.workspace = true
 faster-hex.workspace = true
 kaspa-database.workspace = true
 secp256k1.workspace = true
@@ -33,6 +34,12 @@ prost.workspace = true
 default = []
 
 [dev-dependencies]
+kaspa-addressmanager.workspace = true
+kaspa-consensus.workspace = true
+kaspa-consensusmanager.workspace = true
+kaspa-p2p-flows = { workspace = true, features = ["test-utils"] }
+kaspa-mining.workspace = true
+kaspa-p2p-mining.workspace = true
 tempfile.workspace = true
 
 [lints]

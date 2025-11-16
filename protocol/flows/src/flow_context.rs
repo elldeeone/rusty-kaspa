@@ -9,6 +9,7 @@ use async_trait::async_trait;
 use futures::future::join_all;
 use kaspa_addressmanager::AddressManager;
 use kaspa_connectionmanager::ConnectionManager;
+use kaspa_connectionmanager::PeerMessageInjector;
 use kaspa_consensus_core::block::Block;
 use kaspa_consensus_core::config::Config;
 use kaspa_consensus_core::errors::block::RuleError;
@@ -37,7 +38,7 @@ use kaspa_p2p_lib::{
     convert::model::version::Version,
     make_message,
     pb::{kaspad_message::Payload, InvRelayBlockMessage},
-    ConnectionInitializer, Hub, KaspadHandshake, PeerKey, PeerMessageInjector, PeerProperties, Router,
+    ConnectionInitializer, Hub, KaspadHandshake, PeerKey, PeerProperties, Router,
 };
 use kaspa_p2p_mining::rule_engine::MiningRuleEngine;
 use kaspa_utils::iter::IterExtensions;
@@ -759,6 +760,11 @@ impl FlowContext {
             flow.launch();
         }
         Ok(())
+    }
+
+    #[cfg(feature = "test-utils")]
+    pub fn register_virtual_router_for_tests(&self, router: Arc<Router>) -> Result<(), ProtocolError> {
+        self.register_virtual_router(router)
     }
 }
 

@@ -19,6 +19,8 @@ Additional tuning flags:
 - `--udp.block_queue=<N>`: bounded queue depth (default 32).
 - `--udp.block_max_bytes=<N>`: hard payload cap for fully reassembled blocks
   (default 1 MiB).
+- **Current payload shape:** BlockV1 carries full blocks only. Compact bodies
+  remain a TODO and are intentionally deferred to a later phase.
 
 When disabled, the node behaves exactly like the Phase‑4 digest build.
 
@@ -65,9 +67,22 @@ kaspad --simnet --enable-unsynced-mining \
 kasparpc-cli getUdpIngestInfo | jq '.blockInjectedTotal'
 ```
 
-For automated regression coverage, run `cargo test -p kaspa-testing-integration
-udp_block_tests::udp_block_equivalence` (block parity) and
-`udp_block_tests::udp_block_fairness` (low-priority guard).
+## FlowHarness tests
+
+Phase 5 adds a fast, in-process FlowHarness that wires consensus, the
+connection manager injector, and the UDP queue together. The CI-safe suite runs
+in well under a minute and asserts both `udp_block_injected_total` and
+`udp_queue_occupancy{queue="block"}` metrics:
+
+```
+cargo test -p kaspa-udp-sidechannel udp_block_equivalence_fast
+cargo test -p kaspa-udp-sidechannel udp_block_fairness_fast
+```
+
+The original end-to-end soak tests still exist for manual validation and remain
+behind `--ignored` (run via `cargo test -p kaspa-testing-integration \
+  udp_block_tests::udp_block_equivalence -- --ignored --test-threads=1` and its
+fairness counterpart).
 
 ## Safety notes
 
