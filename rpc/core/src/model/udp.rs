@@ -56,9 +56,9 @@ impl Deserializer for RpcUdpMetricEntry {
 #[serde(rename_all = "camelCase")]
 pub struct RpcUdpDigestSummary {
     pub epoch: u64,
-    pub pruning_point: String,
-    pub pruning_proof_commitment: String,
-    pub utxo_muhash: String,
+    pub pruning_point: Option<String>,
+    pub pruning_proof_commitment: Option<String>,
+    pub utxo_muhash: Option<String>,
     pub virtual_selected_parent: String,
     pub virtual_blue_score: u64,
     pub daa_score: u64,
@@ -74,9 +74,27 @@ impl Serializer for RpcUdpDigestSummary {
     fn serialize<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
         store!(u16, &0, writer)?;
         store!(u64, &self.epoch, writer)?;
-        store!(String, &self.pruning_point, writer)?;
-        store!(String, &self.pruning_proof_commitment, writer)?;
-        store!(String, &self.utxo_muhash, writer)?;
+        match &self.pruning_point {
+            Some(value) => {
+                store!(bool, &true, writer)?;
+                store!(String, value, writer)?;
+            }
+            None => store!(bool, &false, writer)?,
+        }
+        match &self.pruning_proof_commitment {
+            Some(value) => {
+                store!(bool, &true, writer)?;
+                store!(String, value, writer)?;
+            }
+            None => store!(bool, &false, writer)?,
+        }
+        match &self.utxo_muhash {
+            Some(value) => {
+                store!(bool, &true, writer)?;
+                store!(String, value, writer)?;
+            }
+            None => store!(bool, &false, writer)?,
+        }
         store!(String, &self.virtual_selected_parent, writer)?;
         store!(u64, &self.virtual_blue_score, writer)?;
         store!(u64, &self.daa_score, writer)?;
@@ -100,9 +118,9 @@ impl Deserializer for RpcUdpDigestSummary {
     fn deserialize<R: Read>(reader: &mut R) -> std::io::Result<Self> {
         let _version = load!(u16, reader)?;
         let epoch = load!(u64, reader)?;
-        let pruning_point = load!(String, reader)?;
-        let pruning_proof_commitment = load!(String, reader)?;
-        let utxo_muhash = load!(String, reader)?;
+        let pruning_point = if load!(bool, reader)? { Some(load!(String, reader)?) } else { None };
+        let pruning_proof_commitment = if load!(bool, reader)? { Some(load!(String, reader)?) } else { None };
+        let utxo_muhash = if load!(bool, reader)? { Some(load!(String, reader)?) } else { None };
         let virtual_selected_parent = load!(String, reader)?;
         let virtual_blue_score = load!(u64, reader)?;
         let daa_score = load!(u64, reader)?;

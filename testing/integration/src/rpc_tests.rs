@@ -542,6 +542,8 @@ async fn sanity_test() {
                         .unwrap();
                     assert!(get_metrics_call_response.process_metrics.is_some());
                     assert!(get_metrics_call_response.consensus_metrics.is_some());
+                    let custom_metrics = get_metrics_call_response.custom_metrics.expect("custom metrics requested");
+                    assert!(custom_metrics.contains_key("udp_digest_sig_fail_total"));
 
                     let get_metrics_call_response = rpc_client
                         .get_metrics_call(
@@ -696,7 +698,7 @@ async fn sanity_test() {
                     assert_eq!(snapshot.mode, "digest");
                     assert!(snapshot.bind_address.is_some());
                     assert_eq!(snapshot.max_kbps, 10);
-                    assert!(snapshot.frames_received >= 0);
+                    assert!(!snapshot.frames.is_empty(), "expected UDP metrics to include frame counters");
                     assert_eq!(snapshot.source_count as usize, snapshot.sources.len());
                 })
             }

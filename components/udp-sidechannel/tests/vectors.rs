@@ -104,6 +104,22 @@ fn wrong_network_id_is_dropped() {
     assert_eq!(err.reason, DropReason::NetworkMismatch);
 }
 
+#[test]
+fn non_monotonic_epoch_vector_is_rejected() {
+    let parser = build_parser();
+    let first = delta_fields(unix_now());
+    let (header1, payload1) = build_delta_vector(&first);
+    let variant1 = parser.parse(&header1, &payload1).expect("first delta parsed");
+    let mut last_epoch = None;
+    assert!(accept_variant(&mut last_epoch, &variant1));
+
+    let mut tampered = delta_fields(unix_now());
+    tampered.epoch = variant1.epoch() - 1;
+    let (header2, payload2) = build_delta_vector(&tampered);
+    let variant2 = parser.parse(&header2, &payload2).expect("second delta parsed");
+    assert!(!accept_variant(&mut last_epoch, &variant2), "non-monotonic epoch must be rejected");
+}
+
 fn build_parser() -> DigestParser {
     let registry = SignerRegistry::from_hex(&[test_signer_hex().to_string()]).expect("registry");
     DigestParser::new(true, registry, TimestampSkew::default())
@@ -281,4 +297,14 @@ fn sign_preimage(bytes: &[u8]) -> [u8; DIGEST_SIGNATURE_LEN] {
 fn push_hash(buf: &mut Vec<u8>, hash: Hash) {
     let bytes = hash.as_bytes();
     buf.extend_from_slice(&bytes);
+}
+
+fn accept_variant(state: &mut Option<u64>, variant: &DigestVariant) -> bool {
+    if let Some(prev) = *state {
+        if variant.epoch() < prev {
+            return false;
+        }
+    }
+    *state = Some(variant.epoch());
+    true
 }

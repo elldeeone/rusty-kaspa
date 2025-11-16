@@ -5,7 +5,7 @@ use bincode::{deserialize, serialize};
 use kaspa_database::prelude::DB;
 use kaspa_database::{
     prelude::StoreError,
-    udp_digest::{DbUdpDigestStore, DigestKey},
+    udp_digest::{DbUdpDigestMetadataStore, DbUdpDigestStore, DigestKey, UdpDigestMetadata, UDP_DIGEST_SCHEMA_VERSION},
 };
 use std::{cmp::Reverse, sync::Arc};
 
@@ -20,11 +20,37 @@ pub enum DigestStoreError {
     Store(#[from] StoreError),
     #[error("serialization error: {0}")]
     Codec(#[from] Box<bincode::ErrorKind>),
+    #[error("udp digest store requires --udp.db_migrate=true to initialize")]
+    MigrationRequired,
+    #[error("udp digest schema mismatch (found {found}, expected {expected}); rerun with --udp.db_migrate=true")]
+    SchemaMismatch { found: u32, expected: u32 },
 }
 
 impl DigestStore {
-    pub fn new(db: Arc<DB>) -> Self {
-        Self { inner: DbUdpDigestStore::new(db) }
+    pub fn open(db: Arc<DB>, allow_create: bool) -> Result<Self, DigestStoreError> {
+        let mut metadata = DbUdpDigestMetadataStore::new(db.clone());
+        match metadata.read() {
+            Ok(record) => {
+                if record.schema_version != UDP_DIGEST_SCHEMA_VERSION {
+                    if !allow_create {
+                        return Err(DigestStoreError::SchemaMismatch {
+                            found: record.schema_version,
+                            expected: UDP_DIGEST_SCHEMA_VERSION,
+                        });
+                    }
+                    metadata.write(UdpDigestMetadata { schema_version: UDP_DIGEST_SCHEMA_VERSION })?;
+                }
+            }
+            Err(StoreError::KeyNotFound(_)) => {
+                if !allow_create {
+                    return Err(DigestStoreError::MigrationRequired);
+                }
+                metadata.write(UdpDigestMetadata { schema_version: UDP_DIGEST_SCHEMA_VERSION })?;
+            }
+            Err(err) => return Err(DigestStoreError::Store(err)),
+        }
+
+        Ok(Self { inner: DbUdpDigestStore::new(db) })
     }
 
     pub fn insert(&self, variant: &DigestVariant) -> Result<DigestKey, DigestStoreError> {
@@ -113,7 +139,7 @@ mod tests {
     #[test]
     fn insert_fetch_and_prune_by_count() {
         let (_guard, db) = create_temp_db!(ConnBuilder::default().with_files_limit(10));
-        let store = DigestStore::new(db);
+        let store = DigestStore::open(db, true).expect("store");
         for epoch in 0..3 {
             store.insert(&dummy_variant(epoch)).unwrap();
         }
@@ -128,7 +154,7 @@ mod tests {
     #[test]
     fn insert_fetch_and_prune_by_days() {
         let (_guard, db) = create_temp_db!(ConnBuilder::default().with_files_limit(10));
-        let store = DigestStore::new(db);
+        let store = DigestStore::open(db, true).expect("store");
         let mut old = dummy_variant(1);
         if let DigestVariant::Snapshot(snapshot) = &mut old {
             snapshot.recv_timestamp_ms = 0;
@@ -149,10 +175,18 @@ mod tests {
     fn disabled_startup_is_safe() {
         let (_guard, db) = create_temp_db!(ConnBuilder::default().with_files_limit(10));
         {
-            let store = DigestStore::new(db.clone());
+            let store = DigestStore::open(db.clone(), true).expect("store");
             store.insert(&dummy_variant(1)).unwrap();
         }
-        // Simulate a restart where the feature is disabled; simply re-opening the DB must not panic.
-        let _db = db;
+        // Simulate a restart where migration flag is off but schema exists.
+        let reopened = DigestStore::open(db.clone(), false).expect("existing schema should open");
+        assert_eq!(reopened.fetch_recent(None, 10).unwrap().len(), 1);
+
+        // Fresh DB without schema should require migration.
+        let (_guard2, db2) = create_temp_db!(ConnBuilder::default().with_files_limit(10));
+        match DigestStore::open(db2, false) {
+            Ok(_) => panic!("expected migration guard"),
+            Err(err) => assert!(matches!(err, DigestStoreError::MigrationRequired)),
+        }
     }
 }

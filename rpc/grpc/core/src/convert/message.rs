@@ -24,11 +24,11 @@ use kaspa_consensus_core::{network::NetworkId, Hash};
 use kaspa_core::debug;
 use kaspa_notify::subscription::Command;
 use kaspa_rpc_core::{
-    RpcContextualPeerAddress, RpcError, RpcExtraData, RpcHash, RpcIpAddress, RpcNetworkType, RpcPeerAddress, RpcResult,
-    SubmitBlockRejectReason, SubmitBlockReport,
+    CustomMetricValue, RpcContextualPeerAddress, RpcError, RpcExtraData, RpcHash, RpcIpAddress, RpcNetworkType, RpcPeerAddress,
+    RpcResult, SubmitBlockRejectReason, SubmitBlockReport,
 };
 use kaspa_utils::hex::*;
-use std::str::FromStr;
+use std::{collections::HashMap, str::FromStr};
 
 macro_rules! from {
     // Response capture
@@ -442,7 +442,7 @@ from!(item: RpcResult<&kaspa_rpc_core::GetUtxoReturnAddressResponse>, protowire:
 });
 
 from!(item: &kaspa_rpc_core::GetUdpIngestInfoRequest, protowire::GetUdpIngestInfoRequestMessage, {
-    Self { auth_token: item.auth_token.clone() }
+    Self { auth_token: item.auth_token.clone().filter(|token| !token.is_empty()) }
 });
 from!(item: &kaspa_rpc_core::RpcUdpDigestSummary, protowire::RpcUdpDigestSummary, {
     Self {
@@ -503,14 +503,14 @@ from!(item: RpcResult<&kaspa_rpc_core::GetUdpIngestInfoResponse>, protowire::Get
     }
 });
 from!(item: &kaspa_rpc_core::GetUdpDigestsRequest, protowire::GetUdpDigestsRequestMessage, {
-    Self { from_epoch: item.from_epoch, limit: item.limit, auth_token: item.auth_token.clone() }
+    Self { from_epoch: item.from_epoch, limit: item.limit, auth_token: item.auth_token.clone().filter(|token| !token.is_empty()) }
 });
 from!(item: RpcResult<&kaspa_rpc_core::GetUdpDigestsResponse>, protowire::GetUdpDigestsResponseMessage, {
     Self { digests: item.digests.iter().map(|d| d.into()).collect(), error: None }
 });
 
 from!(item: &kaspa_rpc_core::UdpEnableRequest, protowire::UdpEnableRequestMessage, {
-    Self { auth_token: item.auth_token.clone() }
+    Self { auth_token: item.auth_token.clone().filter(|token| !token.is_empty()) }
 });
 from!(item: RpcResult<&kaspa_rpc_core::UdpEnableResponse>, protowire::UdpEnableResponseMessage, {
     Self {
@@ -522,7 +522,7 @@ from!(item: RpcResult<&kaspa_rpc_core::UdpEnableResponse>, protowire::UdpEnableR
 });
 
 from!(item: &kaspa_rpc_core::UdpDisableRequest, protowire::UdpDisableRequestMessage, {
-    Self { auth_token: item.auth_token.clone() }
+    Self { auth_token: item.auth_token.clone().filter(|token| !token.is_empty()) }
 });
 from!(item: RpcResult<&kaspa_rpc_core::UdpDisableResponse>, protowire::UdpDisableResponseMessage, {
     Self {
@@ -554,8 +554,22 @@ from!(item: RpcResult<&kaspa_rpc_core::GetMetricsResponse>, protowire::GetMetric
         bandwidth_metrics: item.bandwidth_metrics.as_ref().map(|x| x.into()),
         consensus_metrics: item.consensus_metrics.as_ref().map(|x| x.into()),
         storage_metrics: item.storage_metrics.as_ref().map(|x| x.into()),
-        // TODO
-        // custom_metrics : None,
+        custom_metrics: item
+            .custom_metrics
+            .as_ref()
+            .map(|metrics| {
+                metrics
+                    .iter()
+                    .map(|(name, value)| protowire::RpcCustomMetric {
+                        name: name.clone(),
+                        value: Some(match value {
+                            CustomMetricValue::Counter(v) => protowire::rpc_custom_metric::Value::Counter(*v),
+                            CustomMetricValue::Gauge(v) => protowire::rpc_custom_metric::Value::Gauge(*v),
+                        }),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
         error: None,
     }
 });
@@ -1156,6 +1170,25 @@ try_from!(item: &protowire::GetMetricsRequestMessage, kaspa_rpc_core::GetMetrics
     }
 });
 try_from!(item: &protowire::GetMetricsResponseMessage, RpcResult<kaspa_rpc_core::GetMetricsResponse>, {
+    let custom_metrics = if item.custom_metrics.is_empty() {
+        None
+    } else {
+        let mut map = HashMap::new();
+        for metric in &item.custom_metrics {
+            let Some(value) = metric.value.as_ref() else {
+                return Err(RpcError::MissingRpcFieldError(
+                    "RpcCustomMetric".to_string(),
+                    "value".to_string()
+                ));
+            };
+            let value = match value {
+                protowire::rpc_custom_metric::Value::Counter(v) => CustomMetricValue::Counter(*v),
+                protowire::rpc_custom_metric::Value::Gauge(v) => CustomMetricValue::Gauge(*v),
+            };
+            map.insert(metric.name.clone(), value);
+        }
+        Some(map)
+    };
     Self {
         server_time: item.server_time,
         process_metrics: item.process_metrics.as_ref().map(|x| x.try_into()).transpose()?,
@@ -1163,8 +1196,7 @@ try_from!(item: &protowire::GetMetricsResponseMessage, RpcResult<kaspa_rpc_core:
         bandwidth_metrics: item.bandwidth_metrics.as_ref().map(|x| x.try_into()).transpose()?,
         consensus_metrics: item.consensus_metrics.as_ref().map(|x| x.try_into()).transpose()?,
         storage_metrics: item.storage_metrics.as_ref().map(|x| x.try_into()).transpose()?,
-        // TODO
-        custom_metrics: None,
+        custom_metrics,
     }
 });
 

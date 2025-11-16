@@ -876,7 +876,16 @@ message GetMetricsResponseMessage{
   BandwidthMetrics bandwidthMetrics = 13;
   ConsensusMetrics consensusMetrics = 14;
   StorageMetrics storageMetrics = 15;
+  repeated RpcCustomMetric customMetrics = 16;
   RPCError error = 1000;
+}
+
+message RpcCustomMetric{
+  string name = 1;
+  oneof value {
+    uint64 counter = 2;
+    double gauge = 3;
+  }
 }
 
 message GetServerInfoRequestMessage{
@@ -1027,9 +1036,9 @@ message GetUdpIngestInfoResponseMessage {
 
 message RpcUdpDigestSummary {
   uint64 epoch = 1;
-  string pruning_point = 2;
-  string pruning_proof_commitment = 3;
-  string utxo_muhash = 4;
+  optional string pruning_point = 2;
+  optional string pruning_proof_commitment = 3;
+  optional string utxo_muhash = 4;
   string virtual_selected_parent = 5;
   uint64 virtual_blue_score = 6;
   uint64 daa_score = 7;
