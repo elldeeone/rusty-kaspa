@@ -226,6 +226,12 @@ Quality bars apply to every phase and must be tracked explicitly (validated by t
 - CPU overhead measured at 10 kbps with signature verification; document ≤15% delta.
 - Divergence signalling implemented (metrics + RPC field) satisfying requirement; admin kill-switch verified.
 
+**Delivered (Phase 3 snapshot):**
+- Digest pipeline (`components/udp-sidechannel/src/digest/{manager.rs,store.rs,types.rs}`) consumes frames from the ingest service and persists them with retention/pruning; golden vectors live in `components/udp-sidechannel/tests/vectors.rs`.
+- RPCs / locality guard implemented in `rpc/service/src/service.rs` with protowire/model/client coverage under `rpc/grpc/*` and exercised via `testing/integration/src/rpc_tests.rs`.
+- Divergence monitor + metrics (`kaspad/src/udp.rs`, `components/udp-sidechannel/src/metrics.rs`) expose `udp_divergence_detected`, signature/skew counters, and bounded drop reasons guarded by `components/udp-sidechannel/tests/hygiene.rs`.
+- RocksDB CF `udp_digest` registered (`database/src/udp_digest.rs`, `database/src/registry.rs`), tests cover count/days pruning and disabled-mode safety.
+
 **Tasks**
 - [ ] **Digest parser + signature verifier**  
   - What: Implement `DigestFrame` structures (snapshot + delta), parsing/bounds checks, Schnorr verification using allowed signer cache; enforce sender timestamp sanity (drop frames > 2 min future or > 10 min stale, increment skew metric).  

@@ -1,4 +1,6 @@
-use super::{DigestSnapshot, DigestVariant, DIGEST_SIGNATURE_LEN};
+use super::DigestVariant;
+#[cfg(test)]
+use super::{DigestSnapshot, DIGEST_SIGNATURE_LEN};
 use bincode::{deserialize, serialize};
 use kaspa_database::prelude::DB;
 use kaspa_database::{
@@ -21,7 +23,7 @@ pub enum DigestStoreError {
 }
 
 impl DigestStore {
-pub fn new(db: Arc<DB>) -> Self {
+    pub fn new(db: Arc<DB>) -> Self {
         Self { inner: DbUdpDigestStore::new(db) }
     }
 
@@ -128,12 +130,15 @@ mod tests {
         let (_guard, db) = create_temp_db!(ConnBuilder::default().with_files_limit(10));
         let store = DigestStore::new(db);
         let mut old = dummy_variant(1);
-        match &mut old {
-            DigestVariant::Snapshot(snapshot) => snapshot.recv_timestamp_ms = 0,
-            _ => {}
+        if let DigestVariant::Snapshot(snapshot) = &mut old {
+            snapshot.recv_timestamp_ms = 0;
+        }
+        let mut recent = dummy_variant(2);
+        if let DigestVariant::Snapshot(snapshot) = &mut recent {
+            snapshot.recv_timestamp_ms = kaspa_core::time::unix_now();
         }
         store.insert(&old).unwrap();
-        store.insert(&dummy_variant(2)).unwrap();
+        store.insert(&recent).unwrap();
         store.prune(10, 1).unwrap();
         let remaining = store.fetch_recent(None, 10).unwrap();
         assert_eq!(remaining.len(), 1);

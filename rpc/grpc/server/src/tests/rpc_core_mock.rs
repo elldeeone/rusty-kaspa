@@ -375,7 +375,29 @@ impl RpcApi for RpcCoreMock {
         _connection: Option<&DynRpcConnection>,
         _request: GetUdpIngestInfoRequest,
     ) -> RpcResult<GetUdpIngestInfoResponse> {
-        Err(RpcError::NotImplemented)
+        Ok(GetUdpIngestInfoResponse {
+            rpc_version: 1,
+            enabled: false,
+            bind_address: None,
+            bind_unix: None,
+            allow_non_local: false,
+            mode: "digest".into(),
+            max_kbps: 0,
+            digest_queue: RpcUdpQueueSnapshot { capacity: 0, depth: 0 },
+            block_queue: RpcUdpQueueSnapshot { capacity: 0, depth: 0 },
+            frames: Vec::new(),
+            drops: Vec::new(),
+            bytes_total: 0,
+            rx_kbps: 0.0,
+            last_frame_ts_ms: None,
+            frames_received: 0,
+            last_digest: None,
+            divergence: RpcUdpDivergenceInfo::default(),
+            source_count: 0,
+            sources: Vec::new(),
+            signature_failures: 0,
+            skew_seconds: 0,
+        })
     }
 
     async fn udp_enable_call(
@@ -383,7 +405,7 @@ impl RpcApi for RpcCoreMock {
         _connection: Option<&DynRpcConnection>,
         _request: UdpEnableRequest,
     ) -> RpcResult<UdpEnableResponse> {
-        Err(RpcError::NotImplemented)
+        Ok(UdpEnableResponse { previous_enabled: false, enabled: true, note: Some("udp ingest enabled (mock)".into()) })
     }
 
     async fn udp_disable_call(
@@ -391,7 +413,7 @@ impl RpcApi for RpcCoreMock {
         _connection: Option<&DynRpcConnection>,
         _request: UdpDisableRequest,
     ) -> RpcResult<UdpDisableResponse> {
-        Err(RpcError::NotImplemented)
+        Ok(UdpDisableResponse { previous_enabled: true, enabled: false, note: Some("udp ingest disabled (mock)".into()) })
     }
 
     async fn get_udp_digests_call(
@@ -399,7 +421,7 @@ impl RpcApi for RpcCoreMock {
         _connection: Option<&DynRpcConnection>,
         _request: GetUdpDigestsRequest,
     ) -> RpcResult<GetUdpDigestsResponse> {
-        Err(RpcError::NotImplemented)
+        Ok(GetUdpDigestsResponse { digests: Vec::new() })
     }
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

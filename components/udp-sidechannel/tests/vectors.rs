@@ -1,28 +1,41 @@
+use faster_hex::hex_string;
 use kaspa_core::time::unix_now;
 use kaspa_hashes::Hash;
 use kaspa_udp_sidechannel::{
-    digest::{DigestParser, DigestVariant, SignerRegistry, TimestampSkew, DIGEST_SIG_DOMAIN, DIGEST_SIGNATURE_LEN},
+    digest::{DigestParser, DigestVariant, SignerRegistry, TimestampSkew, DIGEST_SIGNATURE_LEN, DIGEST_SIG_DOMAIN},
     frame::{FrameFlags, FrameKind, SatFrameHeader},
+    DigestError,
 };
-use kaspa_utils::hex::ToHex;
-use once_cell::sync::Lazy;
-use secp256k1::{KeyPair, Message, Secp256k1, SecretKey, XOnlyPublicKey};
+use secp256k1::{Keypair, Message, Secp256k1, SecretKey, XOnlyPublicKey};
 use sha2::{Digest as ShaDigest, Sha256};
+use std::sync::OnceLock;
 
 const TEST_SOURCE_ID: u16 = 7;
 const TEST_SIGNER_ID: u16 = 0;
 const SEQ_SNAPSHOT: u64 = 10;
 const SEQ_DELTA: u64 = 20;
 
-static SECP: Lazy<Secp256k1<secp256k1::All>> = Lazy::new(Secp256k1::new);
-static TEST_KEYPAIR: Lazy<KeyPair> = Lazy::new(|| {
-    let sk = SecretKey::from_slice(&[0x11; 32]).unwrap();
-    KeyPair::from_secret_key(&SECP, &sk)
-});
-static TEST_SIGNER_HEX: Lazy<String> = Lazy::new(|| {
-    let (xonly, _) = XOnlyPublicKey::from_keypair(&SECP, &TEST_KEYPAIR);
-    xonly.serialize().to_vec().to_hex()
-});
+static SECP: OnceLock<Secp256k1<secp256k1::All>> = OnceLock::new();
+static TEST_KEYPAIR: OnceLock<Keypair> = OnceLock::new();
+static TEST_SIGNER_HEX: OnceLock<String> = OnceLock::new();
+
+fn secp() -> &'static Secp256k1<secp256k1::All> {
+    SECP.get_or_init(Secp256k1::new)
+}
+
+fn test_keypair() -> &'static Keypair {
+    TEST_KEYPAIR.get_or_init(|| {
+        let sk = SecretKey::from_slice(&[0x11; 32]).unwrap();
+        Keypair::from_secret_key(secp(), &sk)
+    })
+}
+
+fn test_signer_hex() -> &'static String {
+    TEST_SIGNER_HEX.get_or_init(|| {
+        let (xonly, _) = XOnlyPublicKey::from_keypair(test_keypair());
+        hex_string(&xonly.serialize())
+    })
+}
 
 #[test]
 fn snapshot_roundtrip() {
@@ -43,13 +56,13 @@ fn snapshot_roundtrip() {
 #[test]
 fn signature_valid_and_invalid_vectors() {
     let parser = build_parser();
-    let delta_fields = delta_fields(unix_now());
-    let (header, payload) = build_delta_vector(&delta_fields);
+    let first_delta = delta_fields(unix_now());
+    let (header, payload) = build_delta_vector(&first_delta);
     let variant = parser.parse(&header, &payload).expect("delta parsed");
     match variant {
         DigestVariant::Delta(delta) => {
             assert!(delta.signature_valid);
-            assert_eq!(delta.epoch, delta_fields.epoch);
+            assert_eq!(delta.epoch, first_delta.epoch);
         }
         _ => panic!("expected delta"),
     }
@@ -57,7 +70,18 @@ fn signature_valid_and_invalid_vectors() {
     let mut tampered = payload.clone();
     *tampered.last_mut().unwrap() ^= 0x01;
     let err = parser.parse(&header, &tampered).expect_err("invalid signature rejected");
-    assert!(matches!(err, crate::digest::DigestError::SignatureVerificationFailed));
+    assert!(matches!(err, DigestError::SignatureVerificationFailed));
+
+    let second_delta = delta_fields(unix_now() + 100);
+    let (header2, payload2) = build_delta_vector(&second_delta);
+    let variant2 = parser.parse(&header2, &payload2).expect("second delta parsed");
+    match variant2 {
+        DigestVariant::Delta(delta) => {
+            assert!(delta.signature_valid);
+            assert_eq!(delta.epoch, second_delta.epoch);
+        }
+        _ => panic!("expected delta"),
+    }
 }
 
 #[test]
@@ -81,7 +105,7 @@ fn wrong_network_id_is_dropped() {
 }
 
 fn build_parser() -> DigestParser {
-    let registry = SignerRegistry::from_hex(&[TEST_SIGNER_HEX.clone()]).expect("registry");
+    let registry = SignerRegistry::from_hex(&[test_signer_hex().to_string()]).expect("registry");
     DigestParser::new(true, registry, TimestampSkew::default())
 }
 
@@ -175,16 +199,16 @@ fn snapshot_payload(fields: &SnapshotFields, signature: &[u8; DIGEST_SIGNATURE_L
     let mut buf = Vec::new();
     buf.extend_from_slice(&fields.epoch.to_le_bytes());
     buf.extend_from_slice(&fields.frame_ts_ms.to_le_bytes());
-    buf.extend_from_slice(fields.pruning_point.as_bytes());
-    buf.extend_from_slice(fields.pruning_proof_commitment.as_bytes());
-    buf.extend_from_slice(fields.utxo_muhash.as_bytes());
-    buf.extend_from_slice(fields.virtual_selected_parent.as_bytes());
+    push_hash(&mut buf, fields.pruning_point);
+    push_hash(&mut buf, fields.pruning_proof_commitment);
+    push_hash(&mut buf, fields.utxo_muhash);
+    push_hash(&mut buf, fields.virtual_selected_parent);
     buf.extend_from_slice(&fields.virtual_blue_score.to_le_bytes());
     buf.extend_from_slice(&fields.daa_score.to_le_bytes());
     buf.extend_from_slice(&fields.blue_work);
     if let Some(root) = fields.kept_headers_mmr_root {
         buf.push(1);
-        buf.extend_from_slice(root.as_bytes());
+        push_hash(&mut buf, root);
     } else {
         buf.push(0);
     }
@@ -197,7 +221,7 @@ fn delta_payload(fields: &DeltaFields, signature: &[u8; DIGEST_SIGNATURE_LEN]) -
     let mut buf = Vec::new();
     buf.extend_from_slice(&fields.epoch.to_le_bytes());
     buf.extend_from_slice(&fields.frame_ts_ms.to_le_bytes());
-    buf.extend_from_slice(fields.virtual_selected_parent.as_bytes());
+    push_hash(&mut buf, fields.virtual_selected_parent);
     buf.extend_from_slice(&fields.virtual_blue_score.to_le_bytes());
     buf.extend_from_slice(&fields.daa_score.to_le_bytes());
     buf.extend_from_slice(&fields.blue_work);
@@ -213,16 +237,16 @@ fn sign_snapshot(header: &SatFrameHeader, fields: &SnapshotFields) -> [u8; DIGES
     buf.extend_from_slice(&header.seq.to_le_bytes());
     buf.extend_from_slice(&fields.epoch.to_le_bytes());
     buf.extend_from_slice(&fields.frame_ts_ms.to_le_bytes());
-    buf.extend_from_slice(fields.pruning_point.as_bytes());
-    buf.extend_from_slice(fields.pruning_proof_commitment.as_bytes());
-    buf.extend_from_slice(fields.utxo_muhash.as_bytes());
-    buf.extend_from_slice(fields.virtual_selected_parent.as_bytes());
+    push_hash(&mut buf, fields.pruning_point);
+    push_hash(&mut buf, fields.pruning_proof_commitment);
+    push_hash(&mut buf, fields.utxo_muhash);
+    push_hash(&mut buf, fields.virtual_selected_parent);
     buf.extend_from_slice(&fields.virtual_blue_score.to_le_bytes());
     buf.extend_from_slice(&fields.daa_score.to_le_bytes());
     buf.extend_from_slice(&fields.blue_work);
     if let Some(root) = fields.kept_headers_mmr_root {
         buf.push(1);
-        buf.extend_from_slice(root.as_bytes());
+        push_hash(&mut buf, root);
     } else {
         buf.push(0);
     }
@@ -237,7 +261,7 @@ fn sign_delta(header: &SatFrameHeader, fields: &DeltaFields) -> [u8; DIGEST_SIGN
     buf.extend_from_slice(&header.seq.to_le_bytes());
     buf.extend_from_slice(&fields.epoch.to_le_bytes());
     buf.extend_from_slice(&fields.frame_ts_ms.to_le_bytes());
-    buf.extend_from_slice(fields.virtual_selected_parent.as_bytes());
+    push_hash(&mut buf, fields.virtual_selected_parent);
     buf.extend_from_slice(&fields.virtual_blue_score.to_le_bytes());
     buf.extend_from_slice(&fields.daa_score.to_le_bytes());
     buf.extend_from_slice(&fields.blue_work);
@@ -248,6 +272,13 @@ fn sign_delta(header: &SatFrameHeader, fields: &DeltaFields) -> [u8; DIGEST_SIGN
 fn sign_preimage(bytes: &[u8]) -> [u8; DIGEST_SIGNATURE_LEN] {
     let hash = Sha256::digest(bytes);
     let msg = Message::from_digest_slice(&hash).unwrap();
-    let sig = SECP.sign_schnorr(&msg, &TEST_KEYPAIR);
-    sig.as_ref().try_into().unwrap()
+    let sig = secp().sign_schnorr(&msg, test_keypair());
+    let mut out = [0u8; DIGEST_SIGNATURE_LEN];
+    out.copy_from_slice(sig.as_ref());
+    out
+}
+
+fn push_hash(buf: &mut Vec<u8>, hash: Hash) {
+    let bytes = hash.as_bytes();
+    buf.extend_from_slice(&bytes);
 }
