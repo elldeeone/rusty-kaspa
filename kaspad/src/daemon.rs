@@ -43,8 +43,9 @@ use kaspa_mining::{
     MiningCounters,
 };
 use kaspa_p2p_flows::{flow_context::FlowContext, service::P2pService};
-use kaspa_udp_sidechannel::{UdpIngestService, UdpMetrics};
+use kaspa_udp_sidechannel::{UdpDigestManager, UdpIngestService, UdpMetrics};
 
+use crate::udp::UdpDivergenceMonitor;
 use itertools::Itertools;
 use kaspa_perf_monitor::{builder::Builder as PerfMonitorBuilder, counters::CountersSnapshot};
 use kaspa_utxoindex::{api::UtxoIndexProxy, UtxoIndex};
@@ -582,7 +583,7 @@ do you confirm? (answer y/n or pass --yes to the Kaspad command line to confirm 
         None
     };
 
-    let (address_manager, port_mapping_extender_svc) = AddressManager::new(config.clone(), meta_db, tick_service.clone());
+    let (address_manager, port_mapping_extender_svc) = AddressManager::new(config.clone(), meta_db.clone(), tick_service.clone());
 
     let mining_manager = MiningManagerProxy::new(Arc::new(MiningManager::new_with_extended_config(
         config.target_time_per_block(),
@@ -633,6 +634,19 @@ do you confirm? (answer y/n or pass --yes to the Kaspad command line to confirm 
     let udp_config = args.udp.to_runtime_config(network);
     let udp_metrics = Arc::new(UdpMetrics::new());
     let udp_service = Arc::new(UdpIngestService::new(udp_config.clone(), udp_metrics.clone()));
+    let udp_digest_manager = if udp_config.mode.allows_digest() {
+        match UdpDigestManager::start(&udp_config, udp_service.clone(), udp_metrics.clone(), Some(meta_db.clone())) {
+            Ok(manager) => Some(manager),
+            Err(err) => {
+                warn!("failed to start UDP digest manager: {err}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let udp_divergence_monitor =
+        udp_digest_manager.as_ref().map(|manager| UdpDivergenceMonitor::new(consensus_manager.clone(), manager.clone()));
     let udp_admin_token = match args.udp.admin_token_file.as_ref() {
         Some(path) => match fs::read_to_string(path) {
             Ok(contents) => {
@@ -672,6 +686,7 @@ do you confirm? (answer y/n or pass --yes to the Kaspad command line to confirm 
         system_info,
         mining_rule_engine.clone(),
         udp_service.clone(),
+        udp_digest_manager.clone(),
         udp_admin_policy.clone(),
     ));
     let grpc_service_broadcasters: usize = 3; // TODO: add a command line argument or derive from other arg/config/host-related fields
@@ -708,6 +723,9 @@ do you confirm? (answer y/n or pass --yes to the Kaspad command line to confirm 
     async_runtime.register(perf_monitor);
     async_runtime.register(mining_rule_engine);
     async_runtime.register(udp_service.clone());
+    if let Some(monitor) = udp_divergence_monitor {
+        async_runtime.register(monitor);
+    }
 
     let wrpc_service_tasks: usize = 2; // num_cpus::get() / 2;
                                        // Register wRPC servers based on command line arguments

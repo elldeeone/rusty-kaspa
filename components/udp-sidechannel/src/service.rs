@@ -13,6 +13,7 @@ use kaspa_core::task::service::{AsyncService, AsyncServiceError, AsyncServiceFut
 use kaspa_core::{debug, error, info, trace, warn};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::{
+    future::Future,
     net::SocketAddr,
     path::PathBuf,
     sync::{Arc, Mutex},
@@ -82,6 +83,23 @@ impl UdpIngestService {
         self.rx.lock().ok().and_then(|mut guard| guard.take())
     }
 
+    pub fn spawn_frame_consumer<F, Fut>(self: &Arc<Self>, mut handler: F) -> Result<(), FrameConsumerError>
+    where
+        F: FnMut(SatFrameHeader, Bytes) -> Fut + Send + 'static,
+        Fut: Future<Output = ()> + Send + 'static,
+    {
+        let rx = self.take_reassembled_rx().ok_or(FrameConsumerError::AlreadyTaken)?;
+        tokio::spawn(async move {
+            let mut rx = rx;
+            while let Some(frame) = rx.recv().await {
+                let (header, payload) = frame.into_parts();
+                handler(header, payload).await;
+            }
+            trace!("udp.event=frame_consumer_stopped");
+        });
+        Ok(())
+    }
+
     pub fn is_enabled(&self) -> bool {
         self.enabled_flag.load(Ordering::SeqCst)
     }
@@ -108,6 +126,11 @@ impl UdpIngestService {
             frames: self.metrics.frames_snapshot(),
             drops: self.metrics.drops_snapshot(),
             bytes_total: self.metrics.bytes_total(),
+            rx_kbps: self.metrics.rx_kbps(),
+            last_frame_ts_ms: self.metrics.last_frame_ts_ms(),
+            signature_failures: self.metrics.signature_failures(),
+            skew_seconds: self.metrics.skew_seconds(),
+            divergence_detected: self.metrics.divergence_detected(),
         }
     }
 
@@ -392,6 +415,11 @@ pub struct UdpIngestSnapshot {
     pub frames: Vec<(&'static str, u64)>,
     pub drops: Vec<(&'static str, u64)>,
     pub bytes_total: u64,
+    pub rx_kbps: f64,
+    pub last_frame_ts_ms: Option<u64>,
+    pub signature_failures: u64,
+    pub skew_seconds: u64,
+    pub divergence_detected: bool,
 }
 
 struct QueueDepth {
@@ -784,4 +812,9 @@ mod tests {
         let err = service.bind_listener().await.expect_err("expected unix support error");
         matches!(err, UdpIngestError::UnixSocketsUnsupported(_));
     }
+}
+#[derive(Debug, Error)]
+pub enum FrameConsumerError {
+    #[error("frame consumer already configured")]
+    AlreadyTaken,
 }

@@ -8,6 +8,7 @@ mod writer;
 
 pub mod registry;
 mod set_access;
+pub mod udp_digest;
 pub mod utils;
 
 pub mod prelude {

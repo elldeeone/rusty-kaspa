@@ -474,6 +474,20 @@ pub trait RpcApi: Sync + Send + AnySync {
         request: UdpDisableRequest,
     ) -> RpcResult<UdpDisableResponse>;
 
+    async fn get_udp_digests(
+        &self,
+        from_epoch: Option<u64>,
+        limit: Option<u32>,
+        auth_token: Option<String>,
+    ) -> RpcResult<GetUdpDigestsResponse> {
+        self.get_udp_digests_call(None, GetUdpDigestsRequest { from_epoch, limit, auth_token }).await
+    }
+    async fn get_udp_digests_call(
+        &self,
+        connection: Option<&DynRpcConnection>,
+        request: GetUdpDigestsRequest,
+    ) -> RpcResult<GetUdpDigestsResponse>;
+
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Fee estimation API
 

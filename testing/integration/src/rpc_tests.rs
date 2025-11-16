@@ -696,6 +696,16 @@ async fn sanity_test() {
                     assert_eq!(snapshot.mode, "digest");
                     assert!(snapshot.bind_address.is_some());
                     assert_eq!(snapshot.max_kbps, 10);
+                    assert!(snapshot.frames_received >= 0);
+                    assert_eq!(snapshot.source_count as usize, snapshot.sources.len());
+                })
+            }
+
+            KaspadPayloadOps::GetUdpDigests => {
+                let rpc_client = client.clone();
+                tst!(op, {
+                    let response = rpc_client.get_udp_digests(None, Some(10), None).await.unwrap();
+                    assert!(response.digests.len() <= 10);
                 })
             }
 

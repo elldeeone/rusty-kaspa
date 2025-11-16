@@ -1001,17 +1001,74 @@ message GetUdpIngestInfoRequestMessage {
 }
 
 message GetUdpIngestInfoResponseMessage {
-  bool enabled = 1;
-  optional string bind_address = 2;
-  optional string bind_unix = 3;
-  bool allow_non_local = 4;
-  string mode = 5;
-  uint32 max_kbps = 6;
-  RpcUdpQueueSnapshot digest_queue = 7;
-  RpcUdpQueueSnapshot block_queue = 8;
-  repeated RpcUdpMetricEntry frames = 9;
-  repeated RpcUdpMetricEntry drops = 10;
-  uint64 bytes_total = 11;
+  uint32 rpc_version = 1;
+  bool enabled = 2;
+  optional string bind_address = 3;
+  optional string bind_unix = 4;
+  bool allow_non_local = 5;
+  string mode = 6;
+  uint32 max_kbps = 7;
+  RpcUdpQueueSnapshot digest_queue = 8;
+  RpcUdpQueueSnapshot block_queue = 9;
+  repeated RpcUdpMetricEntry frames = 10;
+  repeated RpcUdpMetricEntry drops = 11;
+  uint64 bytes_total = 12;
+  double rx_kbps = 13;
+  optional uint64 last_frame_ts_ms = 14;
+  uint64 frames_received = 15;
+  optional RpcUdpDigestSummary last_digest = 16;
+  RpcUdpDivergenceInfo divergence = 17;
+  uint32 source_count = 18;
+  repeated RpcUdpSourceInfo sources = 19;
+  uint64 signature_failures = 20;
+  uint64 skew_seconds = 21;
+  RPCError error = 1000;
+}
+
+message RpcUdpDigestSummary {
+  uint64 epoch = 1;
+  string pruning_point = 2;
+  string pruning_proof_commitment = 3;
+  string utxo_muhash = 4;
+  string virtual_selected_parent = 5;
+  uint64 virtual_blue_score = 6;
+  uint64 daa_score = 7;
+  string blue_work_hex = 8;
+  optional string kept_headers_mmr_root = 9;
+  uint32 signer_id = 10;
+  bool signature_valid = 11;
+  uint64 recv_ts_ms = 12;
+  uint32 source_id = 13;
+}
+
+message RpcUdpSourceInfo {
+  uint32 source_id = 1;
+  uint64 last_epoch = 2;
+  uint64 last_ts_ms = 3;
+  uint32 signer_id = 4;
+  bool signature_valid = 5;
+}
+
+message RpcUdpDivergenceInfo {
+  bool detected = 1;
+  optional uint64 last_mismatch_epoch = 2;
+}
+
+message RpcUdpDigestRecord {
+  uint64 epoch = 1;
+  string kind = 2;
+  RpcUdpDigestSummary summary = 3;
+  bool verified = 4;
+}
+
+message GetUdpDigestsRequestMessage {
+  optional uint64 from_epoch = 1;
+  optional uint32 limit = 2;
+  optional string auth_token = 3;
+}
+
+message GetUdpDigestsResponseMessage {
+  repeated RpcUdpDigestRecord digests = 1;
   RPCError error = 1000;
 }
 

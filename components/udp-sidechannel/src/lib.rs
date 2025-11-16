@@ -1,10 +1,15 @@
 pub mod config;
+pub mod digest;
 pub mod frame;
 pub mod metrics;
 pub mod runtime;
 pub mod service;
 
 pub use config::{BindTarget, UdpConfig, UdpMode};
+pub use digest::{
+    DigestDelta, DigestError, DigestInitError, DigestReport, DigestSnapshot, DigestStore, DigestStoreError, DigestVariant,
+    UdpDigestManager,
+};
 pub use frame::{
     DropEvent, DropReason, FrameAssembler, FrameAssemblerConfig, FrameFlags, FrameKind, HeaderParseContext, PayloadCaps,
     ReassembledFrame, SatFrameHeader,

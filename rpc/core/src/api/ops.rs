@@ -144,6 +144,8 @@ pub enum RpcApiOps {
     UdpEnable = 152,
     /// Disable UDP ingest subsystem
     UdpDisable = 153,
+    /// Retrieve stored UDP digests
+    GetUdpDigests = 154,
 }
 
 impl RpcApiOps {

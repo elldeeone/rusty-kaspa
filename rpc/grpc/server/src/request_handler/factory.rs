@@ -83,6 +83,7 @@ impl Factory {
                 GetCurrentBlockColor,
                 GetUtxoReturnAddress,
                 GetUdpIngestInfo,
+                GetUdpDigests,
                 UdpEnable,
                 UdpDisable,
                 NotifyBlockAdded,

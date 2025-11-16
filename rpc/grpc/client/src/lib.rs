@@ -33,8 +33,8 @@ use kaspa_rpc_core::{
     error::RpcResult,
     model::message::*,
     notify::{collector::RpcCoreConverter, connection::ChannelConnection, mode::NotificationMode},
-    GetUdpIngestInfoRequest, GetUdpIngestInfoResponse, Notification, UdpDisableRequest, UdpDisableResponse, UdpEnableRequest,
-    UdpEnableResponse,
+    GetUdpDigestsRequest, GetUdpDigestsResponse, GetUdpIngestInfoRequest, GetUdpIngestInfoResponse, Notification, UdpDisableRequest,
+    UdpDisableResponse, UdpEnableRequest, UdpEnableResponse,
 };
 use kaspa_utils::{channel::Channel, triggers::DuplexTrigger};
 use kaspa_utils_tower::{
@@ -281,6 +281,7 @@ impl RpcApi for GrpcClient {
     route!(get_udp_ingest_info_call, GetUdpIngestInfo);
     route!(udp_enable_call, UdpEnable);
     route!(udp_disable_call, UdpDisable);
+    route!(get_udp_digests_call, GetUdpDigests);
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Notification API

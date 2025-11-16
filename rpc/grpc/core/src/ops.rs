@@ -89,6 +89,7 @@ pub enum KaspadPayloadOps {
     GetCurrentBlockColor,
     GetUtxoReturnAddress,
     GetUdpIngestInfo,
+    GetUdpDigests,
     UdpEnable,
     UdpDisable,
 
