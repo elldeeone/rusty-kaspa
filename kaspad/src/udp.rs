@@ -1,8 +1,12 @@
 use std::sync::Arc;
 
 use kaspa_consensusmanager::ConsensusManager;
-use kaspa_core::task::service::{AsyncService, AsyncServiceFuture};
+use kaspa_core::{
+    task::service::{AsyncService, AsyncServiceFuture},
+    trace,
+};
 use kaspa_udp_sidechannel::UdpDigestManager;
+use kaspa_utils::triggers::Listener;
 use tokio::{
     sync::watch,
     time::{interval, Duration as TokioDuration, MissedTickBehavior},
@@ -13,12 +17,13 @@ pub struct UdpDivergenceMonitor {
     consensus_manager: Arc<ConsensusManager>,
     digest_manager: Arc<UdpDigestManager>,
     shutdown: watch::Sender<bool>,
+    flow_shutdown: Listener,
 }
 
 impl UdpDivergenceMonitor {
-    pub fn new(consensus_manager: Arc<ConsensusManager>, digest_manager: Arc<UdpDigestManager>) -> Arc<Self> {
+    pub fn new(consensus_manager: Arc<ConsensusManager>, digest_manager: Arc<UdpDigestManager>, flow_shutdown: Listener) -> Arc<Self> {
         let (shutdown, _) = watch::channel(false);
-        Arc::new(Self { consensus_manager, digest_manager, shutdown })
+        Arc::new(Self { consensus_manager, digest_manager, shutdown, flow_shutdown })
     }
 
     async fn tick(&self) {
@@ -47,21 +52,25 @@ impl AsyncService for UdpDivergenceMonitor {
     fn start(self: Arc<Self>) -> AsyncServiceFuture {
         Box::pin(async move {
             let mut shutdown_rx = self.shutdown.subscribe();
+            let flow_shutdown = self.flow_shutdown.clone();
             let mut ticker = interval(TokioDuration::from_secs(5));
             ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
             loop {
                 tokio::select! {
                     _ = shutdown_rx.changed() => break,
+                    _ = flow_shutdown.clone() => break,
                     _ = ticker.tick() => {
                         self.tick().await;
                     }
                 }
             }
+            trace!("udp-divergence-monitor stopped");
             Ok(())
         })
     }
 
     fn signal_exit(self: Arc<Self>) {
+        trace!("udp-divergence-monitor signal_exit");
         let _ = self.shutdown.send(true);
     }
 

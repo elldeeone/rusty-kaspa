@@ -656,8 +656,9 @@ do you confirm? (answer y/n or pass --yes to the Kaspad command line to confirm 
     } else {
         None
     };
-    let udp_divergence_monitor =
-        udp_digest_manager.as_ref().map(|manager| UdpDivergenceMonitor::new(consensus_manager.clone(), manager.clone()));
+    let udp_divergence_monitor = udp_digest_manager
+        .as_ref()
+        .map(|manager| UdpDivergenceMonitor::new(consensus_manager.clone(), manager.clone(), flow_context.flow_shutdown_listener()));
     let udp_admin_token = match args.udp.admin_token_file.as_ref() {
         Some(path) => match fs::read_to_string(path) {
             Ok(contents) => {

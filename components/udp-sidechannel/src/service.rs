@@ -227,6 +227,7 @@ impl UdpIngestService {
             }
         }
 
+        trace!("udp.event=ingest_run_stopped");
         Ok(())
     }
 
@@ -370,7 +371,11 @@ impl AsyncService for UdpIngestService {
     }
 
     fn start(self: Arc<Self>) -> AsyncServiceFuture {
-        Box::pin(async move { self.run().await })
+        Box::pin(async move {
+            let result = self.run().await;
+            trace!("udp.event=ingest_service_start_returned");
+            result
+        })
     }
 
     fn signal_exit(self: Arc<Self>) {

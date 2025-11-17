@@ -1,9 +1,10 @@
 use crate::{flow_context::FlowContext, flow_trait::Flow};
 use itertools::Itertools;
 use kaspa_addressmanager::NetAddress;
+use kaspa_core::trace;
 use kaspa_p2p_lib::{
-    common::ProtocolError,
-    dequeue, dequeue_with_timeout, make_message,
+    common::{ProtocolError, DEFAULT_TIMEOUT},
+    dequeue, make_message,
     pb::{kaspad_message::Payload, AddressesMessage, RequestAddressesMessage},
     IncomingRoute, Router,
 };
@@ -41,6 +42,7 @@ impl ReceiveAddressesFlow {
     }
 
     async fn start_impl(&mut self) -> Result<(), ProtocolError> {
+        trace!("ReceiveAddressesFlow start peer {}", self.router);
         self.router
             .enqueue(make_message!(
                 Payload::RequestAddresses,
@@ -48,8 +50,24 @@ impl ReceiveAddressesFlow {
             ))
             .await?;
 
-        let msg = dequeue_with_timeout!(self.incoming_route, Payload::Addresses)?;
-        let address_list: Vec<(IpAddress, u16)> = msg.try_into()?;
+        let shutdown = self.ctx.flow_shutdown_listener();
+        let recv = tokio::select! {
+            _ = shutdown => {
+                trace!("ReceiveAddressesFlow shutdown before response peer {}", self.router);
+                return Err(ProtocolError::ConnectionClosed);
+            }
+            _ = tokio::time::sleep(DEFAULT_TIMEOUT) => {
+                return Err(ProtocolError::Timeout(DEFAULT_TIMEOUT));
+            }
+            msg = self.incoming_route.recv() => msg,
+        };
+        let msg = recv.ok_or(ProtocolError::ConnectionClosed)?;
+        let payload_type = msg.payload.as_ref().map(|payload| payload.into());
+        let addresses = match msg.payload {
+            Some(Payload::Addresses(addresses)) => addresses,
+            _ => return Err(ProtocolError::UnexpectedMessage("Payload::Addresses", payload_type)),
+        };
+        let address_list: Vec<(IpAddress, u16)> = addresses.try_into()?;
         if address_list.len() > MAX_ADDRESSES_RECEIVE {
             return Err(ProtocolError::OtherOwned(format!("address count {} exceeded {}", address_list.len(), MAX_ADDRESSES_RECEIVE)));
         }
@@ -57,6 +75,7 @@ impl ReceiveAddressesFlow {
         for (ip, port) in address_list {
             amgr_lock.add_address(NetAddress::new(ip, port))
         }
+        trace!("ReceiveAddressesFlow completed for peer {}", self.router);
 
         Ok(())
     }

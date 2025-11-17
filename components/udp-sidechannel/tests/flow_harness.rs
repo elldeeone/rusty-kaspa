@@ -1,5 +1,6 @@
 use bytes::Bytes;
 use kaspa_addressmanager::AddressManager;
+use kaspa_connectionmanager::InjectError;
 use kaspa_consensus::{
     config::{params::SIMNET_PARAMS, ConfigBuilder},
     consensus::test_consensus::{TestConsensus, TestConsensusFactory},
@@ -123,6 +124,24 @@ async fn udp_block_fairness_fast() -> Result<(), HarnessError> {
     Ok(())
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn udp_block_shutdown_lifecycle() -> Result<(), HarnessError> {
+    let harness = FlowHarnessBuilder::new().build().await?;
+    let injector = harness.flow_context().create_sat_virtual_peer().map_err(HarnessError::Protocol)?;
+    harness.flow_context().signal_flow_shutdown();
+    timeout(Duration::from_secs(5), async {
+        loop {
+            match injector.inject(pb::KaspadMessage::default()) {
+                Err(InjectError::Disconnected) => break,
+                _ => sleep(Duration::from_millis(10)).await,
+            }
+        }
+    })
+    .await
+    .expect("injector dropped after shutdown");
+    Ok(())
+}
+
 #[derive(Clone)]
 struct FlowHarness {
     inner: Arc<FlowHarnessInner>,
@@ -142,6 +161,7 @@ struct FlowHarnessInner {
 
 impl Drop for FlowHarnessInner {
     fn drop(&mut self) {
+        self.flow_context.signal_flow_shutdown();
         if let Some(handles) = self.consensus_handles.lock().take() {
             self.test_consensus.shutdown(handles);
         }
@@ -168,6 +188,10 @@ impl FlowHarness {
 
     fn queue_capacity(&self) -> usize {
         self.inner.queue_capacity
+    }
+
+    fn flow_context(&self) -> Arc<FlowContext> {
+        self.inner.flow_context.clone()
     }
 
     fn build_block_with_parents(&self, parents: Vec<Hash>) -> HarnessBlock {

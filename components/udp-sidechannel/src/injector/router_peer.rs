@@ -4,17 +4,38 @@ use crate::{
     metrics::UdpMetrics,
 };
 use kaspa_connectionmanager::{InjectError, PeerMessageInjector};
-use kaspa_core::{debug, warn};
+use kaspa_core::{debug, trace, warn};
 use kaspa_p2p_lib::pb::{self, kaspad_message::Payload as KaspadPayload, KaspadMessage};
 use prost::Message;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
 pub fn spawn_block_injector(mut rx: mpsc::Receiver<QueuedBlock>, injector: Arc<dyn PeerMessageInjector>, metrics: Arc<UdpMetrics>) {
+    let shutdown = injector.shutdown_listener();
     tokio::spawn(async move {
-        while let Some(item) = rx.recv().await {
-            handle_block(item, injector.as_ref(), &metrics);
+        trace!("udp.event=block_injector_start");
+        let mut reason = "channel_closed";
+        if let Some(listener) = shutdown {
+            loop {
+                tokio::select! {
+                    _ = listener.clone() => {
+                        reason = "shutdown";
+                        break;
+                    }
+                    item = rx.recv() => {
+                        match item {
+                            Some(item) => handle_block(item, injector.as_ref(), &metrics),
+                            None => break,
+                        }
+                    }
+                }
+            }
+        } else {
+            while let Some(item) = rx.recv().await {
+                handle_block(item, injector.as_ref(), &metrics);
+            }
         }
+        trace!("udp.event=block_injector_stop reason={}", reason);
     });
 }
 

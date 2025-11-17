@@ -348,6 +348,9 @@ Quality bars apply to every phase and must be tracked explicitly (validated by t
   - Artefacts: Warning logs, CLI confirmation prompt (if interactive).  
   - Tests: CLI test verifying enabling requires explicit flag; doc lint.  
   - DoD: Block mode cannot be enabled unintentionally; documentation highlights risks.
+- [x] **Integration gate shutdown fix**  
+  - What: Ensure the daemon-based slow gate exits cleanly; flows/injectors observe the shared shutdown signal.  
+  - Tests: `cargo test -p kaspa-testing-integration udp_block_tests::udp_block_equivalence -- --ignored --test-threads=1 --nocapture`.
 
 **Delivered:** BlockV1 parsing + bounded queues, SatVirtualPeer injection (hidden, low-priority), FlowHarness-based
 equivalence/fairness tests (`components/udp-sidechannel/tests/flow_harness.rs::{udp_block_equivalence_fast,
