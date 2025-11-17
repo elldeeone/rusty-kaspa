@@ -360,6 +360,15 @@ left behind `--ignored`. Docs: `docs/udp/block-mode.md` now reference the fast s
 coverage: `components/udp-sidechannel/src/config.rs::tests`. CLI flags: `--udp.danger_accept_blocks`,
 `--udp.block_max_bytes`, `--udp.block_mainnet_override`.
 
+**Delivered (Phase 5 shutdown gate):** slow integration gate exits cleanly with:
+
+```
+RUST_LOG=info,kaspa_core=trace,kaspa_p2p_flows=trace,kaspa_connectionmanager=trace,kaspa_udp_sidechannel=trace,kaspad::udp=trace \
+cargo test -p kaspa-testing-integration udp_block_tests::udp_block_equivalence -- --ignored --test-threads=1 --nocapture
+```
+
+The 2025-11-17 14:23 AEST trace (`/tmp/udp_slow_gate_phase5_after.log`) includes the expected `udp.event=ingest_signal_exit → udp.event=ingest_shutdown → udp.event=ingest_run_stopped` chain for both daemons, `udp.event=block_injector_stop reason=shutdown`, and the new `SendAddressesFlow shutdown for peer 127.0.0.1:0` line proving every long-lived loop observed the shared listener.
+
 ### Phase 6 — Operator Docs & Dashboards; Hardening; Testnet Enablement Plan
 **Objective:** Finalise operator experience, dashboards, hardening checklist, and document the plan for enabling on devnet/testnet including signer distribution.
 

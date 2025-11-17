@@ -3245,6 +3245,7 @@ dependencies = [
  "kaspa-p2p-flows",
  "kaspa-p2p-lib",
  "kaspa-p2p-mining",
+ "kaspa-utils",
  "log",
  "once_cell",
  "parking_lot",

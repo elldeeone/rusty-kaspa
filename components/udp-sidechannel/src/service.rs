@@ -15,6 +15,7 @@ use bytes::Bytes;
 use kaspa_connectionmanager::PeerMessageInjector;
 use kaspa_core::task::service::{AsyncService, AsyncServiceError, AsyncServiceFuture, AsyncServiceResult};
 use kaspa_core::{debug, error, info, trace, warn};
+use kaspa_utils::triggers::{Listener, SingleTrigger};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::{
     future::Future,
@@ -44,7 +45,7 @@ const DEDUP_RETENTION: Duration = Duration::from_secs(30);
 pub struct UdpIngestService {
     config: UdpConfig,
     metrics: Arc<UdpMetrics>,
-    shutdown: watch::Sender<bool>,
+    shutdown: SingleTrigger,
     enabled_flag: AtomicBool,
     enabled_tx: watch::Sender<bool>,
     queue_depth: Arc<QueueDepth>,
@@ -59,13 +60,18 @@ pub struct UdpIngestService {
 impl UdpIngestService {
     pub const IDENT: &'static str = "udp-ingest";
 
-    pub fn new(config: UdpConfig, metrics: Arc<UdpMetrics>, block_injector: Option<Arc<dyn PeerMessageInjector>>) -> Self {
+    pub fn new(
+        config: UdpConfig,
+        metrics: Arc<UdpMetrics>,
+        block_injector: Option<Arc<dyn PeerMessageInjector>>,
+        flow_shutdown: Option<Listener>,
+    ) -> Self {
         let initially_enabled = config.initially_enabled();
         let (digest_cap, block_cap) = queue_caps(&config);
         let total_cap = digest_cap.saturating_add(block_cap).max(1);
         let (tx, rx) = mpsc::channel(total_cap);
         let queue_depth = Arc::new(QueueDepth::new(digest_cap, block_cap));
-        let (shutdown, _) = watch::channel(false);
+        let shutdown = SingleTrigger::new();
         let (enabled_tx, _) = watch::channel(initially_enabled);
         let drop_logger = Arc::new(DropLogger::new(metrics.clone()));
         let block_channel = if config.blocks_allowed() {
@@ -85,6 +91,15 @@ impl UdpIngestService {
             None
         };
 
+        if let Some(listener) = flow_shutdown {
+            let trigger = shutdown.trigger.clone();
+            spawn_detached("ingest-flow-shutdown", async move {
+                listener.await;
+                trace!("udp.event=ingest_flow_shutdown");
+                trigger.trigger();
+            });
+        }
+
         Self {
             config,
             metrics,
@@ -101,6 +116,16 @@ impl UdpIngestService {
         }
     }
 
+    #[inline]
+    fn shutdown_listener(&self) -> Listener {
+        self.shutdown.listener.clone()
+    }
+
+    #[inline]
+    fn trigger_shutdown(&self) {
+        self.shutdown.trigger.trigger();
+    }
+
     pub fn block_queue(&self) -> Option<Arc<BlockQueue>> {
         self.block_channel.as_ref().map(|channel| channel.queue())
     }
@@ -115,11 +140,24 @@ impl UdpIngestService {
         Fut: Future<Output = ()> + Send + 'static,
     {
         let rx = self.take_reassembled_rx().ok_or(FrameConsumerError::AlreadyTaken)?;
+        let shutdown = self.shutdown_listener();
         spawn_detached("frame-consumer", async move {
             let mut rx = rx;
-            while let Some(frame) = rx.recv().await {
-                let (header, payload) = frame.into_parts();
-                handler(header, payload).await;
+            loop {
+                tokio::select! {
+                    _ = shutdown.clone() => {
+                        break;
+                    }
+                    maybe_frame = rx.recv() => {
+                        match maybe_frame {
+                            Some(frame) => {
+                                let (header, payload) = frame.into_parts();
+                                handler(header, payload).await;
+                            }
+                            None => break,
+                        }
+                    }
+                }
             }
             trace!("udp.event=frame_consumer_stopped");
         });
@@ -168,18 +206,25 @@ impl UdpIngestService {
     }
 
     async fn run(self: &Arc<Self>) -> AsyncServiceResult<()> {
-        let mut shutdown = self.shutdown.subscribe();
+        let shutdown = self.shutdown_listener();
         let mut enabled_rx = self.enabled_tx.subscribe();
         let mut logged_disabled = false;
 
         loop {
+            if self.shutdown.trigger.is_triggered() {
+                trace!("udp.event=ingest_shutdown");
+                break;
+            }
             if !self.is_enabled() {
                 if !logged_disabled {
                     info!("udp.event=disabled");
                     logged_disabled = true;
                 }
                 tokio::select! {
-                    _ = shutdown.changed() => break,
+                    _ = shutdown.clone() => {
+                        trace!("udp.event=ingest_shutdown");
+                        break;
+                    }
                     changed = enabled_rx.changed() => {
                         if changed.is_err() {
                             break;
@@ -196,7 +241,11 @@ impl UdpIngestService {
                     let bind_desc = socket.local_addr().map(|a| a.to_string()).unwrap_or_else(|_| "unknown".to_string());
                     info!("udp.event=bind_ok kind=udp addr={bind_desc}");
                     let mut pump_enabled = self.enabled_tx.subscribe();
-                    self.pump_udp(socket, &mut shutdown, &mut pump_enabled).await?;
+                    self.pump_udp(socket, shutdown.clone(), &mut pump_enabled).await?;
+                    if self.shutdown.trigger.is_triggered() {
+                        trace!("udp.event=ingest_shutdown");
+                        break;
+                    }
                 }
                 #[cfg(unix)]
                 Ok(BoundListener::Unix(socket)) => {
@@ -207,12 +256,19 @@ impl UdpIngestService {
                         .unwrap_or_else(|| "unknown".to_string());
                     info!("udp.event=bind_ok kind=unix path={bind_desc}");
                     let mut pump_enabled = self.enabled_tx.subscribe();
-                    self.pump_unix(socket, &mut shutdown, &mut pump_enabled).await?;
+                    self.pump_unix(socket, shutdown.clone(), &mut pump_enabled).await?;
+                    if self.shutdown.trigger.is_triggered() {
+                        trace!("udp.event=ingest_shutdown");
+                        break;
+                    }
                 }
                 Err(UdpIngestError::NotConfigured) => {
                     warn!("udp.event=bind_fail reason=not_configured");
                     tokio::select! {
-                        _ = shutdown.changed() => break,
+                        _ = shutdown.clone() => {
+                            trace!("udp.event=ingest_shutdown");
+                            break;
+                        }
                         changed = enabled_rx.changed() => {
                             if changed.is_err() {
                                 break;
@@ -261,12 +317,7 @@ impl UdpIngestService {
         }
     }
 
-    async fn pump_udp(
-        &self,
-        socket: UdpSocket,
-        shutdown: &mut watch::Receiver<bool>,
-        enabled_rx: &mut watch::Receiver<bool>,
-    ) -> AsyncServiceResult<()> {
+    async fn pump_udp(&self, socket: UdpSocket, shutdown: Listener, enabled_rx: &mut watch::Receiver<bool>) -> AsyncServiceResult<()> {
         let mut buf = vec![0u8; self.max_datagram_len()];
         let mut processor = FrameProcessor::new(
             &self.config,
@@ -278,7 +329,7 @@ impl UdpIngestService {
         );
         loop {
             tokio::select! {
-                _ = shutdown.changed() => break,
+                _ = shutdown.clone() => break,
                 changed = enabled_rx.changed() => {
                     if changed.is_err() || !self.is_enabled() {
                         break;
@@ -306,7 +357,7 @@ impl UdpIngestService {
     async fn pump_unix(
         &self,
         socket: UnixDatagram,
-        shutdown: &mut watch::Receiver<bool>,
+        shutdown: Listener,
         enabled_rx: &mut watch::Receiver<bool>,
     ) -> AsyncServiceResult<()> {
         let mut buf = vec![0u8; self.max_datagram_len()];
@@ -320,7 +371,7 @@ impl UdpIngestService {
         );
         loop {
             tokio::select! {
-                _ = shutdown.changed() => break,
+                _ = shutdown.clone() => break,
                 changed = enabled_rx.changed() => {
                     if changed.is_err() || !self.is_enabled() {
                         break;
@@ -379,12 +430,13 @@ impl AsyncService for UdpIngestService {
     }
 
     fn signal_exit(self: Arc<Self>) {
-        let _ = self.shutdown.send(true);
+        trace!("udp.event=ingest_signal_exit");
+        self.trigger_shutdown();
     }
 
     fn stop(self: Arc<Self>) -> AsyncServiceFuture {
         Box::pin(async move {
-            let _ = self.shutdown.send(true);
+            self.trigger_shutdown();
             #[cfg(unix)]
             {
                 self.unix_guard.lock().unwrap().take();
@@ -868,7 +920,7 @@ mod tests {
     async fn rejects_non_loopback_without_override() {
         let mut cfg = base_config();
         cfg.listen = Some("0.0.0.0:0".parse().unwrap());
-        let service = Arc::new(UdpIngestService::new(cfg, Arc::new(UdpMetrics::new()), None));
+        let service = Arc::new(UdpIngestService::new(cfg, Arc::new(UdpMetrics::new()), None, None));
         let err = service.bind_listener().await.expect_err("expected bind failure");
         matches!(err, UdpIngestError::NonLocalBind(_));
     }
@@ -883,7 +935,7 @@ mod tests {
         let mut cfg = base_config();
         cfg.listen = None;
         cfg.listen_unix = Some(path.clone());
-        let service = Arc::new(UdpIngestService::new(cfg, Arc::new(UdpMetrics::new()), None));
+        let service = Arc::new(UdpIngestService::new(cfg, Arc::new(UdpMetrics::new()), None, None));
         let listener = service.bind_listener().await.expect("bind unix");
         drop(listener);
         let metadata = fs::metadata(&path).expect("metadata");
@@ -898,7 +950,7 @@ mod tests {
         let mut cfg = base_config();
         cfg.listen = None;
         cfg.listen_unix = Some(PathBuf::from("/tmp/does-not-matter.sock"));
-        let service = Arc::new(UdpIngestService::new(cfg, Arc::new(UdpMetrics::new()), None));
+        let service = Arc::new(UdpIngestService::new(cfg, Arc::new(UdpMetrics::new()), None, None));
         let err = service.bind_listener().await.expect_err("expected unix support error");
         matches!(err, UdpIngestError::UnixSocketsUnsupported(_));
     }

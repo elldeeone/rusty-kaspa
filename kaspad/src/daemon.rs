@@ -644,7 +644,12 @@ do you confirm? (answer y/n or pass --yes to the Kaspad command line to confirm 
     } else {
         None
     };
-    let udp_service = Arc::new(UdpIngestService::new(udp_config.clone(), udp_metrics.clone(), block_peer_injector.clone()));
+    let udp_service = Arc::new(UdpIngestService::new(
+        udp_config.clone(),
+        udp_metrics.clone(),
+        block_peer_injector.clone(),
+        Some(flow_context.flow_shutdown_listener()),
+    ));
     let udp_digest_manager = if udp_config.mode.allows_digest() {
         match UdpDigestManager::start(&udp_config, udp_service.clone(), udp_metrics.clone(), Some(meta_db.clone())) {
             Ok(manager) => Some(manager),

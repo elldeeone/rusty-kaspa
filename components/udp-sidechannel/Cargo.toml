@@ -29,6 +29,7 @@ crc32fast.workspace = true
 blake3.workspace = true
 parking_lot.workspace = true
 prost.workspace = true
+kaspa-utils.workspace = true
 
 [features]
 default = []

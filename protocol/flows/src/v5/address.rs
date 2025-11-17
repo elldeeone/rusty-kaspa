@@ -4,7 +4,7 @@ use kaspa_addressmanager::NetAddress;
 use kaspa_core::trace;
 use kaspa_p2p_lib::{
     common::{ProtocolError, DEFAULT_TIMEOUT},
-    dequeue, make_message,
+    make_message,
     pb::{kaspad_message::Payload, AddressesMessage, RequestAddressesMessage},
     IncomingRoute, Router,
 };
@@ -104,8 +104,22 @@ impl SendAddressesFlow {
     }
 
     async fn start_impl(&mut self) -> Result<(), ProtocolError> {
+        let shutdown = self.ctx.flow_shutdown_listener();
         loop {
-            dequeue!(self.incoming_route, Payload::RequestAddresses)?;
+            let msg = tokio::select! {
+                _ = shutdown.clone() => {
+                    trace!("SendAddressesFlow shutdown for peer {}", self.router);
+                    return Err(ProtocolError::ConnectionClosed);
+                }
+                msg = self.incoming_route.recv() => msg,
+            };
+            let msg = msg.ok_or(ProtocolError::ConnectionClosed)?;
+            let payload = msg.payload;
+            let payload_type = payload.as_ref().map(|payload| payload.into());
+            match payload {
+                Some(Payload::RequestAddresses(_)) => {}
+                _ => return Err(ProtocolError::UnexpectedMessage("Payload::RequestAddresses", payload_type)),
+            }
             let addresses = self.ctx.address_manager.lock().iterate_addresses().collect_vec();
             let address_list = addresses
                 .choose_multiple(&mut rand::thread_rng(), MAX_ADDRESSES_SEND)
