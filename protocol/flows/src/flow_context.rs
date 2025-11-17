@@ -38,6 +38,7 @@ use kaspa_p2p_lib::{
 use kaspa_p2p_mining::rule_engine::MiningRuleEngine;
 use kaspa_utils::iter::IterExtensions;
 use kaspa_utils::networking::PeerId;
+use kaspa_utils::triggers::{Listener, SingleTrigger};
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::time::Instant;
@@ -237,6 +238,7 @@ pub struct FlowContextInner {
 
     // Mining rule engine
     mining_rule_engine: Arc<MiningRuleEngine>,
+    flow_shutdown: Arc<SingleTrigger>,
 }
 
 #[derive(Clone)]
@@ -340,6 +342,7 @@ impl FlowContext {
                 max_orphans,
                 config,
                 mining_rule_engine,
+                flow_shutdown: Arc::new(SingleTrigger::new()),
             }),
         }
     }
@@ -372,6 +375,14 @@ impl FlowContext {
 
     pub fn connection_manager(&self) -> Option<Arc<ConnectionManager>> {
         self.connection_manager.read().clone()
+    }
+
+    pub fn flow_shutdown_listener(&self) -> Listener {
+        self.flow_shutdown.listener.clone()
+    }
+
+    pub fn signal_flow_shutdown(&self) {
+        self.flow_shutdown.trigger.trigger();
     }
 
     pub fn consensus(&self) -> ConsensusInstance {

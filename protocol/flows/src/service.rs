@@ -102,12 +102,14 @@ impl AsyncService for P2pService {
 
     fn signal_exit(self: Arc<Self>) {
         trace!("sending an exit signal to {}", P2P_CORE_SERVICE);
+        self.flow_context.signal_flow_shutdown();
         self.shutdown.trigger.trigger();
     }
 
     fn stop(self: Arc<Self>) -> AsyncServiceFuture {
         Box::pin(async move {
             trace!("{} stopped", P2P_CORE_SERVICE);
+            self.flow_context.signal_flow_shutdown();
             Ok(())
         })
     }
