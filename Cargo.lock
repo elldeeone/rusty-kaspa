@@ -2978,6 +2978,11 @@ dependencies = [
 [[package]]
 name = "kaspa-p2p-libp2p"
 version = "1.0.1"
+dependencies = [
+ "kaspa-utils",
+ "serde",
+ "serde_with",
+]
 
 [[package]]
 name = "kaspa-p2p-mining"
