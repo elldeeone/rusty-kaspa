@@ -723,6 +723,7 @@ impl FlowContext {
 impl MetadataFactory for FlowContext {
     fn for_outbound(&self, reported_ip: IpAddress) -> TransportMetadata {
         TransportMetadata {
+            libp2p_peer_id: None,
             peer_id: None,
             reported_ip: Some(reported_ip),
             path: PathKind::Direct,
@@ -732,6 +733,7 @@ impl MetadataFactory for FlowContext {
 
     fn for_inbound(&self, reported_ip: IpAddress) -> TransportMetadata {
         TransportMetadata {
+            libp2p_peer_id: None,
             peer_id: None,
             reported_ip: Some(reported_ip),
             path: PathKind::Direct,
