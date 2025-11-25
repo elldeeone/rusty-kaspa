@@ -138,6 +138,8 @@ pub enum RpcApiOps {
     GetCurrentBlockColor = 149,
     /// Get UTXO Return Addresses
     GetUtxoReturnAddress = 150,
+    /// Get libp2p status (mode/identity/peer id)
+    GetLibp2pStatus = 151,
 }
 
 impl RpcApiOps {
