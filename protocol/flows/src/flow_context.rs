@@ -36,11 +36,12 @@ use kaspa_p2p_lib::{
     convert::model::version::Version,
     make_message,
     pb::{kaspad_message::Payload, InvRelayBlockMessage},
-    ConnectionInitializer, Hub, KaspadHandshake, PeerKey, PeerProperties, Router,
+    Capabilities, ConnectionInitializer, Hub, KaspadHandshake, MetadataFactory, PathKind, PeerKey, PeerProperties, Router,
+    TransportMetadata,
 };
 use kaspa_p2p_mining::rule_engine::MiningRuleEngine;
 use kaspa_utils::iter::IterExtensions;
-use kaspa_utils::networking::PeerId;
+use kaspa_utils::networking::{IpAddress, PeerId};
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::time::Instant;
@@ -708,6 +709,26 @@ impl FlowContext {
     /// after a predefined interval or when the queue length is larger than the Inv message capacity.
     pub async fn broadcast_transactions<I: IntoIterator<Item = TransactionId>>(&self, transaction_ids: I, should_throttle: bool) {
         self.transactions_spread.write().await.broadcast_transactions(transaction_ids, should_throttle).await
+    }
+}
+
+impl MetadataFactory for FlowContext {
+    fn for_outbound(&self, reported_ip: IpAddress) -> TransportMetadata {
+        TransportMetadata {
+            peer_id: Some(self.node_id),
+            reported_ip: Some(reported_ip),
+            path: PathKind::Direct,
+            capabilities: Capabilities::default(),
+        }
+    }
+
+    fn for_inbound(&self, reported_ip: IpAddress) -> TransportMetadata {
+        TransportMetadata {
+            peer_id: Some(self.node_id),
+            reported_ip: Some(reported_ip),
+            path: PathKind::Direct,
+            capabilities: Capabilities::default(),
+        }
     }
 }
 
