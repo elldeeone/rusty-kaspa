@@ -4,7 +4,7 @@ use std::{fs, path::PathBuf, process::exit, sync::Arc, time::Duration};
 
 use async_channel::unbounded;
 #[cfg(feature = "libp2p")]
-use kaspa_connectionmanager::Libp2pRoleConfig;
+use kaspa_connectionmanager::{set_libp2p_role_config, Libp2pRoleConfig};
 use kaspa_consensus_core::{
     config::ConfigBuilder,
     constants::TRANSIENT_BYTE_TO_MASS_FACTOR,
@@ -563,7 +563,7 @@ do you confirm? (answer y/n or pass --yes to the Kaspad command line to confirm 
     #[cfg(feature = "libp2p")]
     {
         let is_private = libp2p_config.mode.is_enabled() && matches!(libp2p_config.role, kaspa_p2p_libp2p::Role::Private);
-        kaspa_connectionmanager::set_libp2p_role_config(Libp2pRoleConfig {
+        set_libp2p_role_config(Libp2pRoleConfig {
             is_private,
             libp2p_inbound_cap_private: libp2p_config.libp2p_inbound_cap_private,
         });
