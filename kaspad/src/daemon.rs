@@ -563,10 +563,7 @@ do you confirm? (answer y/n or pass --yes to the Kaspad command line to confirm 
     #[cfg(feature = "libp2p")]
     {
         let is_private = libp2p_config.mode.is_enabled() && matches!(libp2p_config.role, kaspa_p2p_libp2p::Role::Private);
-        set_libp2p_role_config(Libp2pRoleConfig {
-            is_private,
-            libp2p_inbound_cap_private: libp2p_config.libp2p_inbound_cap_private,
-        });
+        set_libp2p_role_config(Libp2pRoleConfig { is_private, libp2p_inbound_cap_private: libp2p_config.libp2p_inbound_cap_private });
     }
 
     let core = Arc::new(Core::new());
