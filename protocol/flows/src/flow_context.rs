@@ -51,7 +51,7 @@ use std::{
     ops::Deref,
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc,
+        Arc, Weak,
     },
     time::Duration,
 };
@@ -230,7 +230,7 @@ pub struct FlowContextInner {
     ibd_metadata: Arc<RwLock<Option<IbdMetadata>>>,
     pub address_manager: Arc<Mutex<AddressManager>>,
     connection_manager: RwLock<Option<Arc<ConnectionManager>>>,
-    p2p_adaptor: RwLock<Option<Arc<Adaptor>>>,
+    p2p_adaptor: RwLock<Option<Weak<Adaptor>>>,
     mining_manager: MiningManagerProxy,
     pub(crate) tick_service: Arc<TickService>,
     notification_root: Arc<ConsensusNotificationRoot>,
@@ -398,11 +398,11 @@ impl FlowContext {
     }
 
     pub fn set_p2p_adaptor(&self, adaptor: Arc<Adaptor>) {
-        self.p2p_adaptor.write().replace(adaptor);
+        self.p2p_adaptor.write().replace(Arc::downgrade(&adaptor));
     }
 
     pub fn p2p_adaptor(&self) -> Option<Arc<Adaptor>> {
-        self.p2p_adaptor.read().clone()
+        self.p2p_adaptor.read().as_ref().and_then(|weak| weak.upgrade())
     }
 
     pub fn connection_handler(&self) -> Option<ConnectionHandler> {
