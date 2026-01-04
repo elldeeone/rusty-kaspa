@@ -1,0 +1,80 @@
+graph LR
+    %% =========================
+    %% Application Layer
+    %% =========================
+    subgraph Application
+        A[Adaptor]
+    end
+
+    %% =========================
+    %% Protocol / P2P Core
+    %% =========================
+    subgraph "protocol/p2p"
+        CH[ConnectionHandler]
+        OC{{OutboundConnector Trait}}
+        R[Router]
+        CI[ConnectionInitializer]
+    end
+
+    %% =========================
+    %% TCP Path
+    %% =========================
+    subgraph "Tonic/TCP"
+        direction TB
+        TC[TcpConnector]
+        gRPC_TCP[Tonic gRPC Client over TCP]
+    end
+
+    %% =========================
+    %% Libp2p Path
+    %% =========================
+    subgraph "components/p2p-libp2p"
+        direction TB
+        Lp2pOC[Libp2pOutboundConnector]
+        LSP{{Libp2pStreamProvider Trait}}
+        SSP[SwarmStreamProvider]
+        SD[SwarmDriver]
+        Swarm[Libp2p Swarm]
+    end
+
+    subgraph "Tonic/Libp2p"
+        direction TB
+        gRPC_Lp2p[Tonic gRPC Client over Libp2p Stream]
+    end
+
+    %% =========================
+    %% Common Entry
+    %% =========================
+    A -->|connect_peer| CH
+    CH -->|connect| OC
+
+    %% =========================
+    %% OutboundConnector Implementations
+    %% =========================
+    OC -->|is implemented by| TC
+    OC -->|is implemented by| Lp2pOC
+
+    %% =========================
+    %% TCP Flow
+    %% =========================
+    TC -->|connect_tcp| gRPC_TCP
+    gRPC_TCP -->|creates| R
+
+    %% =========================
+    %% Libp2p Flow
+    %% =========================
+    Lp2pOC -->|dial| LSP
+    LSP -->|is implemented by| SSP
+    SSP -->|sends Dial Command| SD
+    SD -->|controls| Swarm
+    Swarm -->|produces StreamEvent| SD
+    SD -->|returns stream to| SSP
+    SSP -->|returns stream to| Lp2pOC
+    Lp2pOC -->|connect_with_stream| CH
+    CH -->|creates client over stream| gRPC_Lp2p
+    gRPC_Lp2p -->|creates| R
+
+    %% =========================
+    %% Router Initialization
+    %% =========================
+    R -->|is initialized by| CI
