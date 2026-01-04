@@ -24,14 +24,14 @@ use kaspa_consensus_core::{network::NetworkId, Hash};
 use kaspa_core::debug;
 use kaspa_notify::subscription::Command;
 use kaspa_rpc_core::{
-    RpcContextualPeerAddress, RpcError, RpcExtraData, RpcHash, RpcIpAddress, RpcNetworkType, RpcPeerAddress, RpcResult,
-    SubmitBlockRejectReason, SubmitBlockReport,
+    RpcContextualPeerAddress, RpcDataVerbosityLevel, RpcError, RpcExtraData, RpcHash, RpcIpAddress, RpcNetworkType, RpcPeerAddress,
+    RpcResult, SubmitBlockRejectReason, SubmitBlockReport,
 };
 use kaspa_utils::hex::*;
-use std::str::FromStr;
+use std::{str::FromStr, sync::Arc};
 
 macro_rules! from {
-    // Response capture
+    // Pattern: bind response for custom Ok-path construction.
     ($name:ident : RpcResult<&$from_type:ty>, $to_type:ty, $ctor:block) => {
         impl From<RpcResult<&$from_type>> for $to_type {
             fn from(item: RpcResult<&$from_type>) -> Self {
@@ -47,7 +47,7 @@ macro_rules! from {
         }
     };
 
-    // Response without parameter capture
+    // Pattern: response-only conversion with no Ok payload access.
     (RpcResult<&$from_type:ty>, $to_type:ty) => {
         impl From<RpcResult<&$from_type>> for $to_type {
             fn from(item: RpcResult<&$from_type>) -> Self {
@@ -56,7 +56,7 @@ macro_rules! from {
         }
     };
 
-    // Request and other capture
+    // Pattern: bind request payload for custom conversion logic.
     ($name:ident : $from_type:ty, $to_type:ty, $body:block) => {
         impl From<$from_type> for $to_type {
             fn from($name: $from_type) -> Self {
@@ -65,7 +65,7 @@ macro_rules! from {
         }
     };
 
-    // Request and other without parameter capture
+    // Pattern: simple conversion where input is unused.
     ($from_type:ty, $to_type:ty) => {
         impl From<$from_type> for $to_type {
             fn from(_: $from_type) -> Self {
@@ -76,7 +76,7 @@ macro_rules! from {
 }
 
 macro_rules! try_from {
-    // Response capture
+    // Pattern: bind response for custom Ok-path construction.
     ($name:ident : $from_type:ty, RpcResult<$to_type:ty>, $ctor:block) => {
         impl TryFrom<$from_type> for $to_type {
             type Error = RpcError;
@@ -91,7 +91,7 @@ macro_rules! try_from {
         }
     };
 
-    // Response without parameter capture
+    // Pattern: response-only conversion with no Ok payload access.
     ($from_type:ty, RpcResult<$to_type:ty>) => {
         impl TryFrom<$from_type> for $to_type {
             type Error = RpcError;
@@ -101,7 +101,7 @@ macro_rules! try_from {
         }
     };
 
-    // Request and other capture
+    // Pattern: bind request payload for custom conversion logic.
     ($name:ident : $from_type:ty, $to_type:ty, $body:block) => {
         impl TryFrom<$from_type> for $to_type {
             type Error = RpcError;
@@ -112,7 +112,7 @@ macro_rules! try_from {
         }
     };
 
-    // Request and other without parameter capture
+    // Pattern: simple conversion where input is unused.
     ($from_type:ty, $to_type:ty) => {
         impl TryFrom<$from_type> for $to_type {
             type Error = RpcError;
@@ -263,8 +263,6 @@ from!(item: &kaspa_rpc_core::GetSubnetworkRequest, protowire::GetSubnetworkReque
 from!(item: RpcResult<&kaspa_rpc_core::GetSubnetworkResponse>, protowire::GetSubnetworkResponseMessage, {
     Self { gas_limit: item.gas_limit, error: None }
 });
-
-// ~~~
 
 from!(item: &kaspa_rpc_core::GetVirtualChainFromBlockRequest, protowire::GetVirtualChainFromBlockRequestMessage, {
     Self { start_hash: item.start_hash.to_string(), include_accepted_transaction_ids: item.include_accepted_transaction_ids, min_confirmation_count: item.min_confirmation_count }
@@ -462,8 +460,8 @@ from!(item: RpcResult<&kaspa_rpc_core::GetMetricsResponse>, protowire::GetMetric
         bandwidth_metrics: item.bandwidth_metrics.as_ref().map(|x| x.into()),
         consensus_metrics: item.consensus_metrics.as_ref().map(|x| x.into()),
         storage_metrics: item.storage_metrics.as_ref().map(|x| x.into()),
-        // TODO
-        // custom_metrics : None,
+        // TODO: map custom_metrics once protowire exposes the field.
+        // custom_metrics: None,
         error: None,
     }
 });
@@ -514,6 +512,23 @@ from!(&kaspa_rpc_core::GetSyncStatusRequest, protowire::GetSyncStatusRequestMess
 from!(item: RpcResult<&kaspa_rpc_core::GetSyncStatusResponse>, protowire::GetSyncStatusResponseMessage, {
     Self {
         is_synced: item.is_synced,
+        error: None,
+    }
+});
+
+from!(item: &kaspa_rpc_core::GetVirtualChainFromBlockV2Request, protowire::GetVirtualChainFromBlockV2RequestMessage, {
+    Self {
+        start_hash: item.start_hash.to_string(),
+        data_verbosity_level: item.data_verbosity_level.map(|v| v as i32),
+        min_confirmation_count: item.min_confirmation_count
+    }
+});
+
+from!(item: RpcResult<&kaspa_rpc_core::GetVirtualChainFromBlockV2Response>, protowire::GetVirtualChainFromBlockV2ResponseMessage, {
+    Self {
+        removed_chain_block_hashes: item.removed_chain_block_hashes.iter().map(|x| x.to_string()).collect(),
+        added_chain_block_hashes: item.added_chain_block_hashes.iter().map(|x| x.to_string()).collect(),
+        chain_block_accepted_transactions: item.chain_block_accepted_transactions.iter().map(|x| x.into()).collect(),
         error: None,
     }
 });
@@ -771,6 +786,21 @@ try_from!(item: &protowire::GetVirtualChainFromBlockResponseMessage, RpcResult<k
     }
 });
 
+try_from!(item: &protowire::GetVirtualChainFromBlockV2RequestMessage, kaspa_rpc_core::GetVirtualChainFromBlockV2Request, {
+    Self {
+        start_hash: RpcHash::from_str(&item.start_hash)?,
+        data_verbosity_level: item.data_verbosity_level.map(RpcDataVerbosityLevel::try_from).transpose()?,
+        min_confirmation_count: item.min_confirmation_count
+    }
+});
+try_from!(item: &protowire::GetVirtualChainFromBlockV2ResponseMessage, RpcResult<kaspa_rpc_core::GetVirtualChainFromBlockV2Response>, {
+    Self {
+        removed_chain_block_hashes: Arc::new(item.removed_chain_block_hashes.iter().map(|x| RpcHash::from_str(x)).collect::<Result<Vec<_>, _>>()?),
+        added_chain_block_hashes: Arc::new(item.added_chain_block_hashes.iter().map(|x| RpcHash::from_str(x)).collect::<Result<Vec<_>, _>>()?),
+        chain_block_accepted_transactions: Arc::new(item.chain_block_accepted_transactions.iter().map(|x| x.try_into()).collect::<Result<Vec<_>, _>>()?),
+    }
+});
+
 try_from!(item: &protowire::GetBlocksRequestMessage, kaspa_rpc_core::GetBlocksRequest, {
     Self {
         low_hash: if item.low_hash.is_empty() { None } else { Some(RpcHash::from_str(&item.low_hash)?) },
@@ -818,7 +848,7 @@ try_from!(item: &protowire::GetHeadersRequestMessage, kaspa_rpc_core::GetHeaders
     Self { start_hash: RpcHash::from_str(&item.start_hash)?, limit: item.limit, is_ascending: item.is_ascending }
 });
 try_from!(item: &protowire::GetHeadersResponseMessage, RpcResult<kaspa_rpc_core::GetHeadersResponse>, {
-    // TODO
+    // TODO: map headers once protowire provides full header payloads.
     Self { headers: vec![] }
 });
 
@@ -958,7 +988,7 @@ try_from!(item: &protowire::GetMetricsResponseMessage, RpcResult<kaspa_rpc_core:
         bandwidth_metrics: item.bandwidth_metrics.as_ref().map(|x| x.try_into()).transpose()?,
         consensus_metrics: item.consensus_metrics.as_ref().map(|x| x.try_into()).transpose()?,
         storage_metrics: item.storage_metrics.as_ref().map(|x| x.try_into()).transpose()?,
-        // TODO
+        // TODO: map custom_metrics once protowire exposes the field.
         custom_metrics: None,
     }
 });
@@ -1065,7 +1095,7 @@ try_from!(&protowire::NotifySinkBlueScoreChangedResponseMessage, RpcResult<kaspa
 // Unit tests
 // ----------------------------------------------------------------------------
 
-// TODO: tests
+// TODO: add conversion tests for error mapping and optional fields.
 
 #[cfg(test)]
 mod tests {

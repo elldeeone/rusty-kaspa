@@ -35,15 +35,9 @@ struct Inner {
     service_ctl: DuplexChannel<()>,
     connect_guard: AsyncMutex<()>,
     disconnect_guard: AsyncMutex<()>,
-    // ---
-    // The permanent url passed in the constructor
-    // (dominant, overrides Resolver if supplied).
+    // Track URL sources so reconnects can reapply precedence (connect override > ctor default > resolver).
     ctor_url: Mutex<Option<String>>,
-    // The url passed in the connect() method
-    // (overrides default URL and the Resolver).
     default_url: Mutex<Option<String>>,
-    // The current url wRPC is connected to
-    // (possibly acquired via the Resolver).
     current_url: Mutex<Option<String>>,
     resolver: Mutex<Option<Resolver>>,
     network_id: Mutex<Option<NetworkId>>,
@@ -61,9 +55,7 @@ impl Inner {
         let notification_relay_channel = Channel::unbounded();
         let notification_intake_channel = Mutex::new(Channel::unbounded());
 
-        // The `Interface` struct can be used to register for server-side
-        // notifications. All notification methods have to be created at
-        // this stage.
+        // Register notification handlers before any connection starts so no events are missed.
         let mut interface = Interface::<RpcApiOps>::new();
 
         [
@@ -112,7 +104,6 @@ impl Inner {
             background_services_running: Arc::new(AtomicBool::new(false)),
             connect_guard: async_std::sync::Mutex::new(()),
             disconnect_guard: async_std::sync::Mutex::new(()),
-            // ---
             ctor_url: Mutex::new(url.map(|s| s.to_string())),
             default_url: Mutex::new(None),
             current_url: Mutex::new(None),
@@ -285,7 +276,7 @@ impl KaspaRpcClient {
         subscription_context: Option<SubscriptionContext>,
     ) -> Result<KaspaRpcClient> {
         Self::new_with_args(encoding, url, resolver, network_id, subscription_context)
-        // FIXME
+        // TODO: restore the shorthand constructor if NotificationMode is reintroduced.
         // pub fn new(encoding: Encoding, url: &str, ) -> Result<KaspaRpcClient> {
         //     Self::new_with_args(encoding, NotificationMode::Direct, url, subscription_context)
     }
@@ -372,6 +363,10 @@ impl KaspaRpcClient {
         Ok(())
     }
 
+    pub fn network_id(&self) -> Option<NetworkId> {
+        *self.inner.network_id.lock().unwrap()
+    }
+
     pub fn set_network_id(&self, network_id: &NetworkId) -> Result<()> {
         self.inner.network_id.lock().unwrap().replace(*network_id);
         Ok(())
@@ -437,6 +432,11 @@ impl KaspaRpcClient {
 
         self.inner.set_default_url(options.url.as_deref());
         self.inner.rpc_ctl.set_descriptor(options.url.clone());
+
+        // current url is populated by a an implemented trait when not forced in options
+        if let Some(ref url) = options.url {
+            self.inner.set_current_url(Some(url));
+        }
 
         // 1Gb message and frame size limits (on native and NodeJs platforms)
         let ws_config = WebSocketConfig {
@@ -647,6 +647,7 @@ impl RpcApi for KaspaRpcClient {
             GetUtxoReturnAddress,
             GetUtxosByAddresses,
             GetVirtualChainFromBlock,
+            GetVirtualChainFromBlockV2,
             ResolveFinalityConflict,
             Shutdown,
             SubmitBlock,
