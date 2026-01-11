@@ -462,8 +462,8 @@ from!(item: RpcResult<&kaspa_rpc_core::GetMetricsResponse>, protowire::GetMetric
         bandwidth_metrics: item.bandwidth_metrics.as_ref().map(|x| x.into()),
         consensus_metrics: item.consensus_metrics.as_ref().map(|x| x.into()),
         storage_metrics: item.storage_metrics.as_ref().map(|x| x.into()),
-        // TODO
-        // custom_metrics : None,
+        // TODO: wire custom_metrics once protowire adds the field.
+        // custom_metrics: None,
         error: None,
     }
 });
@@ -688,12 +688,16 @@ try_from!(item: &protowire::GetCurrentNetworkResponseMessage, RpcResult<kaspa_rp
     Self { network: RpcNetworkType::from_str(&item.current_network.to_lowercase())? }
 });
 
-try_from!(&protowire::GetPeerAddressesRequestMessage, kaspa_rpc_core::GetPeerAddressesRequest);
+try_from!(item: &protowire::GetPeerAddressesRequestMessage, kaspa_rpc_core::GetPeerAddressesRequest, {
+    let _ = item;
+    kaspa_rpc_core::GetPeerAddressesRequest::new()
+});
 try_from!(item: &protowire::GetPeerAddressesResponseMessage, RpcResult<kaspa_rpc_core::GetPeerAddressesResponse>, {
-    Self {
-        known_addresses: item.addresses.iter().map(RpcPeerAddress::try_from).collect::<Result<Vec<_>, _>>()?,
-        banned_addresses: item.banned_addresses.iter().map(RpcIpAddress::try_from).collect::<Result<Vec<_>, _>>()?,
-    }
+    kaspa_rpc_core::GetPeerAddressesResponse::new(
+        item.addresses.iter().map(RpcPeerAddress::try_from).collect::<Result<Vec<_>, _>>()?,
+        item.banned_addresses.iter().map(RpcIpAddress::try_from).collect::<Result<Vec<_>, _>>()?,
+        2,
+    )
 });
 
 try_from!(&protowire::GetSinkRequestMessage, kaspa_rpc_core::GetSinkRequest);
@@ -725,9 +729,15 @@ try_from!(item: &protowire::GetMempoolEntriesResponseMessage, RpcResult<kaspa_rp
     Self { mempool_entries: item.entries.iter().map(kaspa_rpc_core::RpcMempoolEntry::try_from).collect::<Result<Vec<_>, _>>()? }
 });
 
-try_from!(&protowire::GetConnectedPeerInfoRequestMessage, kaspa_rpc_core::GetConnectedPeerInfoRequest);
+try_from!(item: &protowire::GetConnectedPeerInfoRequestMessage, kaspa_rpc_core::GetConnectedPeerInfoRequest, {
+    let _ = item;
+    kaspa_rpc_core::GetConnectedPeerInfoRequest::new()
+});
 try_from!(item: &protowire::GetConnectedPeerInfoResponseMessage, RpcResult<kaspa_rpc_core::GetConnectedPeerInfoResponse>, {
-    Self { peer_info: item.infos.iter().map(kaspa_rpc_core::RpcPeerInfo::try_from).collect::<Result<Vec<_>, _>>()? }
+    kaspa_rpc_core::GetConnectedPeerInfoResponse::new(
+        item.infos.iter().map(kaspa_rpc_core::RpcPeerInfo::try_from).collect::<Result<Vec<_>, _>>()?,
+        2,
+    )
 });
 
 try_from!(item: &protowire::AddPeerRequestMessage, kaspa_rpc_core::AddPeerRequest, {
@@ -838,7 +848,7 @@ try_from!(item: &protowire::GetHeadersRequestMessage, kaspa_rpc_core::GetHeaders
     Self { start_hash: RpcHash::from_str(&item.start_hash)?, limit: item.limit, is_ascending: item.is_ascending }
 });
 try_from!(item: &protowire::GetHeadersResponseMessage, RpcResult<kaspa_rpc_core::GetHeadersResponse>, {
-    // TODO
+    // TODO: map headers once protowire exposes them.
     Self { headers: vec![] }
 });
 
@@ -978,7 +988,7 @@ try_from!(item: &protowire::GetMetricsResponseMessage, RpcResult<kaspa_rpc_core:
         bandwidth_metrics: item.bandwidth_metrics.as_ref().map(|x| x.try_into()).transpose()?,
         consensus_metrics: item.consensus_metrics.as_ref().map(|x| x.try_into()).transpose()?,
         storage_metrics: item.storage_metrics.as_ref().map(|x| x.try_into()).transpose()?,
-        // TODO
+        // TODO: map custom_metrics once protowire includes it.
         custom_metrics: None,
     }
 });

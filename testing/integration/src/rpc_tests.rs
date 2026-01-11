@@ -308,7 +308,7 @@ async fn sanity_test() {
             KaspadPayloadOps::GetConnectedPeerInfo => {
                 let rpc_client = client.clone();
                 tst!(op, {
-                    let response = rpc_client.get_connected_peer_info_call(None, GetConnectedPeerInfoRequest {}).await.unwrap();
+                    let response = rpc_client.get_connected_peer_info_call(None, GetConnectedPeerInfoRequest::new()).await.unwrap();
                     assert!(response.peer_info.is_empty());
                 })
             }
@@ -322,7 +322,7 @@ async fn sanity_test() {
                     // Add peer only adds the IP to a connection request. It will only be added to known_addresses if it
                     // actually can be connected to. So in this test we can't expect it to be added unless we set up an
                     // actual peer.
-                    let response = rpc_client.get_peer_addresses_call(None, GetPeerAddressesRequest {}).await.unwrap();
+                    let response = rpc_client.get_peer_addresses_call(None, GetPeerAddressesRequest::new()).await.unwrap();
                     assert!(response.known_addresses.is_empty());
                 })
             }
@@ -336,11 +336,11 @@ async fn sanity_test() {
                     let _ = rpc_client.add_peer_call(None, AddPeerRequest { peer_address, is_permanent: false }).await.unwrap();
                     let _ = rpc_client.ban_call(None, BanRequest { ip }).await.unwrap();
 
-                    let response = rpc_client.get_peer_addresses_call(None, GetPeerAddressesRequest {}).await.unwrap();
+                    let response = rpc_client.get_peer_addresses_call(None, GetPeerAddressesRequest::new()).await.unwrap();
                     assert!(response.banned_addresses.contains(&ip));
 
                     let _ = rpc_client.unban_call(None, UnbanRequest { ip }).await.unwrap();
-                    let response = rpc_client.get_peer_addresses_call(None, GetPeerAddressesRequest {}).await.unwrap();
+                    let response = rpc_client.get_peer_addresses_call(None, GetPeerAddressesRequest::new()).await.unwrap();
                     assert!(!response.banned_addresses.contains(&ip));
                 })
             }

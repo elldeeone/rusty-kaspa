@@ -174,7 +174,7 @@ impl Deref for IpAddress {
 }
 
 //
-// Borsh serializers need to be manually implemented for `NetAddress` since
+// Borsh serializers need to be manually implemented for `IpAddress` since
 // IpAddr does not currently support Borsh
 //
 
@@ -230,6 +230,50 @@ pub struct NetAddress {
     pub services: u64,
     #[serde(default)]
     pub relay_port: Option<u16>,
+}
+
+/// Versioned Borsh wire encoding for `NetAddress`.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+#[repr(u8)]
+#[borsh(use_discriminant = true)]
+pub enum NetAddressWire {
+    V0V4 { octets: [u8; 4], port: u16 } = 0,
+    V0V6 { octets: [u8; 16], port: u16 } = 1,
+    V1V4 { octets: [u8; 4], port: u16, services: u64, relay_port: Option<u16> } = 2,
+    V1V6 { octets: [u8; 16], port: u16, services: u64, relay_port: Option<u16> } = 3,
+}
+
+impl NetAddressWire {
+    pub fn from_net_address_v0(addr: &NetAddress) -> Self {
+        match addr.ip.0 {
+            IpAddr::V4(ip) => Self::V0V4 { octets: ip.octets(), port: addr.port },
+            IpAddr::V6(ip) => Self::V0V6 { octets: ip.octets(), port: addr.port },
+        }
+    }
+
+    pub fn from_net_address_v1(addr: &NetAddress) -> Self {
+        match addr.ip.0 {
+            IpAddr::V4(ip) => {
+                Self::V1V4 { octets: ip.octets(), port: addr.port, services: addr.services, relay_port: addr.relay_port }
+            }
+            IpAddr::V6(ip) => {
+                Self::V1V6 { octets: ip.octets(), port: addr.port, services: addr.services, relay_port: addr.relay_port }
+            }
+        }
+    }
+
+    pub fn into_net_address(self) -> NetAddress {
+        match self {
+            NetAddressWire::V0V4 { octets, port } => NetAddress::new(IpAddr::V4(Ipv4Addr::from(octets)).into(), port),
+            NetAddressWire::V0V6 { octets, port } => NetAddress::new(IpAddr::V6(Ipv6Addr::from(octets)).into(), port),
+            NetAddressWire::V1V4 { octets, port, services, relay_port } => {
+                NetAddress { ip: IpAddr::V4(Ipv4Addr::from(octets)).into(), port, services, relay_port }
+            }
+            NetAddressWire::V1V6 { octets, port, services, relay_port } => {
+                NetAddress { ip: IpAddr::V6(Ipv6Addr::from(octets)).into(), port, services, relay_port }
+            }
+        }
+    }
 }
 
 impl NetAddress {
@@ -315,37 +359,6 @@ impl std::hash::Hash for NetAddress {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.ip.hash(state);
         self.port.hash(state);
-    }
-}
-
-impl BorshSerialize for NetAddress {
-    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> ::core::result::Result<(), std::io::Error> {
-        BorshSerialize::serialize(&self.ip, writer)?;
-        BorshSerialize::serialize(&self.port, writer)?;
-        BorshSerialize::serialize(&self.services, writer)?;
-        BorshSerialize::serialize(&self.relay_port, writer)?;
-        Ok(())
-    }
-}
-
-impl BorshDeserialize for NetAddress {
-    fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> ::core::result::Result<Self, borsh::io::Error> {
-        let ip = IpAddress::deserialize_reader(reader)?;
-        let port = u16::deserialize_reader(reader)?;
-
-        let services = match u64::deserialize_reader(reader) {
-            Ok(bits) => bits,
-            Err(err) if err.kind() == std::io::ErrorKind::UnexpectedEof => 0,
-            Err(err) => return Err(err),
-        };
-
-        let relay_port = match Option::<u16>::deserialize_reader(reader) {
-            Ok(port) => port,
-            Err(err) if err.kind() == std::io::ErrorKind::UnexpectedEof => None,
-            Err(err) => return Err(err),
-        };
-
-        Ok(Self { ip, port, services, relay_port })
     }
 }
 
@@ -525,6 +538,65 @@ mod tests {
         let bin = borsh::to_vec(&id).unwrap();
         let id2: PeerId = BorshDeserialize::try_from_slice(&bin).unwrap();
         assert_eq!(id, id2);
+    }
+
+    fn legacy_net_address_bytes(ip: IpAddress, port: u16) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&borsh::to_vec(&ip).unwrap());
+        bytes.extend_from_slice(&port.to_le_bytes());
+        bytes
+    }
+
+    #[test]
+    fn test_net_address_wire_legacy_single_decodes() {
+        let ip = IpAddress::from_str("5.6.7.8").unwrap();
+        let port = 5555;
+        let legacy = legacy_net_address_bytes(ip, port);
+
+        let wire: NetAddressWire = BorshDeserialize::try_from_slice(&legacy).unwrap();
+        let decoded = wire.into_net_address();
+
+        assert_eq!(decoded.ip, ip);
+        assert_eq!(decoded.port, port);
+        assert_eq!(decoded.services, 0);
+        assert_eq!(decoded.relay_port, None);
+    }
+
+    #[test]
+    fn test_net_address_wire_legacy_vec_decodes() {
+        let a_ip = IpAddress::from_str("1.2.3.4").unwrap();
+        let a_port = 1111;
+        let b_ip = IpAddress::from_str("9.8.7.6").unwrap();
+        let b_port = 2222;
+
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&(2u32).to_le_bytes());
+        bytes.extend_from_slice(&legacy_net_address_bytes(a_ip, a_port));
+        bytes.extend_from_slice(&legacy_net_address_bytes(b_ip, b_port));
+
+        let decoded: Vec<NetAddressWire> = BorshDeserialize::try_from_slice(&bytes).unwrap();
+        let decoded: Vec<NetAddress> = decoded.into_iter().map(NetAddressWire::into_net_address).collect();
+
+        assert_eq!(decoded.len(), 2);
+        assert_eq!(decoded[0].ip, a_ip);
+        assert_eq!(decoded[0].port, a_port);
+        assert_eq!(decoded[1].ip, b_ip);
+        assert_eq!(decoded[1].port, b_port);
+    }
+
+    #[test]
+    fn test_net_address_wire_v1_roundtrip() {
+        let addr = NetAddress::new(IpAddress::from_str("1.2.3.4").unwrap(), 1234).with_services(0b101).with_relay_port(Some(1818));
+
+        let wire = NetAddressWire::from_net_address_v1(&addr);
+        let bin = borsh::to_vec(&wire).unwrap();
+        let decoded: NetAddressWire = BorshDeserialize::try_from_slice(&bin).unwrap();
+        let addr2 = decoded.into_net_address();
+
+        assert_eq!(addr.ip, addr2.ip);
+        assert_eq!(addr.port, addr2.port);
+        assert_eq!(addr.services, addr2.services);
+        assert_eq!(addr.relay_port, addr2.relay_port);
     }
 
     #[test]

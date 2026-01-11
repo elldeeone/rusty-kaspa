@@ -980,10 +980,14 @@ NOTE: This error usually indicates an RPC conversion error between the node and 
     async fn get_peer_addresses_call(
         &self,
         _connection: Option<&DynRpcConnection>,
-        _: GetPeerAddressesRequest,
+        request: GetPeerAddressesRequest,
     ) -> RpcResult<GetPeerAddressesResponse> {
         let address_manager = self.flow_context.address_manager.lock();
-        Ok(GetPeerAddressesResponse::new(address_manager.get_all_addresses(), address_manager.get_all_banned_addresses()))
+        Ok(GetPeerAddressesResponse::new(
+            address_manager.get_all_addresses(),
+            address_manager.get_all_banned_addresses(),
+            request.response_version(),
+        ))
     }
 
     async fn ban_call(&self, _connection: Option<&DynRpcConnection>, request: BanRequest) -> RpcResult<BanResponse> {
@@ -1020,11 +1024,11 @@ NOTE: This error usually indicates an RPC conversion error between the node and 
     async fn get_connected_peer_info_call(
         &self,
         _connection: Option<&DynRpcConnection>,
-        _: GetConnectedPeerInfoRequest,
+        request: GetConnectedPeerInfoRequest,
     ) -> RpcResult<GetConnectedPeerInfoResponse> {
         let peers = self.flow_context.hub().active_peers();
         let peer_info = self.protocol_converter.get_peers_info(&peers);
-        Ok(GetConnectedPeerInfoResponse::new(peer_info))
+        Ok(GetConnectedPeerInfoResponse::new(peer_info, request.response_version()))
     }
 
     async fn shutdown_call(&self, _connection: Option<&DynRpcConnection>, _: ShutdownRequest) -> RpcResult<ShutdownResponse> {

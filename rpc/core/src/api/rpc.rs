@@ -149,7 +149,7 @@ pub trait RpcApi: Sync + Send + AnySync {
 
     /// Requests the list of known kaspad addresses in the current network (mainnet, testnet, etc.)
     async fn get_peer_addresses(&self) -> RpcResult<GetPeerAddressesResponse> {
-        self.get_peer_addresses_call(None, GetPeerAddressesRequest {}).await
+        self.get_peer_addresses_call(None, GetPeerAddressesRequest::new()).await
     }
     async fn get_peer_addresses_call(
         &self,
@@ -196,7 +196,7 @@ pub trait RpcApi: Sync + Send + AnySync {
 
     /// requests information about all the p2p peers currently connected to this node.
     async fn get_connected_peer_info(&self) -> RpcResult<GetConnectedPeerInfoResponse> {
-        self.get_connected_peer_info_call(None, GetConnectedPeerInfoRequest {}).await
+        self.get_connected_peer_info_call(None, GetConnectedPeerInfoRequest::new()).await
     }
     async fn get_connected_peer_info_call(
         &self,

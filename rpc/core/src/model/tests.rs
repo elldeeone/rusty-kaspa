@@ -512,7 +512,7 @@ mod mockery {
 
     impl Mock for GetPeerAddressesRequest {
         fn mock() -> Self {
-            GetPeerAddressesRequest {}
+            GetPeerAddressesRequest::new()
         }
     }
 
@@ -520,7 +520,7 @@ mod mockery {
 
     impl Mock for GetPeerAddressesResponse {
         fn mock() -> Self {
-            GetPeerAddressesResponse { known_addresses: mock(), banned_addresses: mock() }
+            GetPeerAddressesResponse::new(mock(), mock(), 2)
         }
     }
 
@@ -576,7 +576,7 @@ mod mockery {
 
     impl Mock for GetConnectedPeerInfoRequest {
         fn mock() -> Self {
-            GetConnectedPeerInfoRequest {}
+            GetConnectedPeerInfoRequest::new()
         }
     }
 
@@ -584,7 +584,7 @@ mod mockery {
 
     impl Mock for GetConnectedPeerInfoResponse {
         fn mock() -> Self {
-            GetConnectedPeerInfoResponse { peer_info: mock() }
+            GetConnectedPeerInfoResponse::new(mock(), 2)
         }
     }
 

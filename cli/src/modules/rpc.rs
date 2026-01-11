@@ -70,7 +70,7 @@ impl Rpc {
             //     self.println(&ctx, result);
             // }
             RpcApiOps::GetPeerAddresses => {
-                let result = rpc.get_peer_addresses_call(None, GetPeerAddressesRequest {}).await?;
+                let result = rpc.get_peer_addresses_call(None, GetPeerAddressesRequest::new()).await?;
                 self.println(&ctx, result);
             }
             RpcApiOps::GetSink => {
@@ -82,7 +82,7 @@ impl Rpc {
             //     self.println(&ctx, result);
             // }
             RpcApiOps::GetMempoolEntries => {
-                // TODO
+                // TODO: expose include_orphan_pool/filter_transaction_pool flags in CLI.
                 let result = rpc
                     .get_mempool_entries_call(
                         None,
@@ -92,7 +92,7 @@ impl Rpc {
                 self.println(&ctx, result);
             }
             RpcApiOps::GetConnectedPeerInfo => {
-                let result = rpc.get_connected_peer_info_call(None, GetConnectedPeerInfoRequest {}).await?;
+                let result = rpc.get_connected_peer_info_call(None, GetConnectedPeerInfoRequest::new()).await?;
                 self.println(&ctx, result);
             }
             RpcApiOps::AddPeer => {

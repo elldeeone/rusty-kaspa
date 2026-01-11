@@ -1,18 +1,32 @@
-use crate::model::*;
-use borsh::{BorshDeserialize, BorshSerialize};
-use kaspa_consensus_core::api::stats::BlockCount;
-use kaspa_core::debug;
-use kaspa_notify::subscription::{context::SubscriptionContext, single::UtxosChangedSubscription, Command};
-use kaspa_utils::hex::ToHex;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::{
     fmt::{Display, Formatter},
     sync::Arc,
 };
+
+use borsh::{BorshDeserialize, BorshSerialize};
+use serde::{Deserialize, Serialize};
 use workflow_serializer::prelude::*;
 
+use kaspa_consensus_core::api::stats::BlockCount;
+use kaspa_core::debug;
+use kaspa_notify::subscription::{context::SubscriptionContext, single::UtxosChangedSubscription, Command};
+use kaspa_utils::hex::ToHex;
+use kaspa_utils::networking::NetAddressWire;
+
+use crate::model::peer::RpcPeerInfoWire;
+use crate::model::*;
+
 pub type RpcExtraData = Vec<u8>;
+const NET_ADDRESS_RPC_WIRE_VERSION: u16 = 2;
+
+fn normalize_net_address_wire_version(requested: u16) -> u16 {
+    if requested == 1 {
+        1
+    } else {
+        NET_ADDRESS_RPC_WIRE_VERSION
+    }
+}
 
 /// SubmitBlockRequest requests to submit a block into the DAG.
 /// Blocks are generally expected to have been generated using the getBlockTemplate call.
@@ -351,19 +365,39 @@ impl Deserializer for GetCurrentNetworkResponse {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GetPeerAddressesRequest {}
+pub struct GetPeerAddressesRequest {
+    #[serde(skip, default)]
+    response_version: u16,
+}
+
+impl Default for GetPeerAddressesRequest {
+    fn default() -> Self {
+        Self { response_version: NET_ADDRESS_RPC_WIRE_VERSION }
+    }
+}
+
+impl GetPeerAddressesRequest {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn response_version(&self) -> u16 {
+        normalize_net_address_wire_version(self.response_version)
+    }
+}
 
 impl Serializer for GetPeerAddressesRequest {
     fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-        store!(u16, &1, writer)?;
+        let version = self.response_version();
+        store!(u16, &version, writer)?;
         Ok(())
     }
 }
 
 impl Deserializer for GetPeerAddressesRequest {
     fn deserialize<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
-        let _version = load!(u16, reader)?;
-        Ok(Self {})
+        let response_version = load!(u16, reader)?;
+        Ok(Self { response_version })
     }
 }
 
@@ -372,18 +406,25 @@ impl Deserializer for GetPeerAddressesRequest {
 pub struct GetPeerAddressesResponse {
     pub known_addresses: Vec<RpcPeerAddress>,
     pub banned_addresses: Vec<RpcIpAddress>,
+    #[serde(skip, default)]
+    response_version: u16,
 }
 
 impl GetPeerAddressesResponse {
-    pub fn new(known_addresses: Vec<RpcPeerAddress>, banned_addresses: Vec<RpcIpAddress>) -> Self {
-        Self { known_addresses, banned_addresses }
+    pub fn new(known_addresses: Vec<RpcPeerAddress>, banned_addresses: Vec<RpcIpAddress>, response_version: u16) -> Self {
+        Self { known_addresses, banned_addresses, response_version }
     }
 }
 
 impl Serializer for GetPeerAddressesResponse {
     fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-        store!(u16, &1, writer)?;
-        store!(Vec<RpcPeerAddress>, &self.known_addresses, writer)?;
+        let version = normalize_net_address_wire_version(self.response_version);
+        store!(u16, &version, writer)?;
+        let wire_addresses: Vec<NetAddressWire> = match version {
+            1 => self.known_addresses.iter().map(NetAddressWire::from_net_address_v0).collect(),
+            _ => self.known_addresses.iter().map(NetAddressWire::from_net_address_v1).collect(),
+        };
+        store!(Vec<NetAddressWire>, &wire_addresses, writer)?;
         store!(Vec<RpcIpAddress>, &self.banned_addresses, writer)?;
         Ok(())
     }
@@ -391,10 +432,11 @@ impl Serializer for GetPeerAddressesResponse {
 
 impl Deserializer for GetPeerAddressesResponse {
     fn deserialize<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
-        let _version = load!(u16, reader)?;
-        let known_addresses = load!(Vec<RpcPeerAddress>, reader)?;
+        let response_version = load!(u16, reader)?;
+        let wire_addresses = load!(Vec<NetAddressWire>, reader)?;
+        let known_addresses = wire_addresses.into_iter().map(NetAddressWire::into_net_address).collect();
         let banned_addresses = load!(Vec<RpcIpAddress>, reader)?;
-        Ok(Self { known_addresses, banned_addresses })
+        Ok(Self { known_addresses, banned_addresses, response_version })
     }
 }
 
@@ -573,19 +615,39 @@ impl Deserializer for GetMempoolEntriesResponse {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GetConnectedPeerInfoRequest {}
+pub struct GetConnectedPeerInfoRequest {
+    #[serde(skip, default)]
+    response_version: u16,
+}
+
+impl Default for GetConnectedPeerInfoRequest {
+    fn default() -> Self {
+        Self { response_version: NET_ADDRESS_RPC_WIRE_VERSION }
+    }
+}
+
+impl GetConnectedPeerInfoRequest {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn response_version(&self) -> u16 {
+        normalize_net_address_wire_version(self.response_version)
+    }
+}
 
 impl Serializer for GetConnectedPeerInfoRequest {
     fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-        store!(u16, &1, writer)?;
+        let version = self.response_version();
+        store!(u16, &version, writer)?;
         Ok(())
     }
 }
 
 impl Deserializer for GetConnectedPeerInfoRequest {
     fn deserialize<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
-        let _version = load!(u16, reader)?;
-        Ok(Self {})
+        let response_version = load!(u16, reader)?;
+        Ok(Self { response_version })
     }
 }
 
@@ -593,27 +655,33 @@ impl Deserializer for GetConnectedPeerInfoRequest {
 #[serde(rename_all = "camelCase")]
 pub struct GetConnectedPeerInfoResponse {
     pub peer_info: Vec<RpcPeerInfo>,
+    #[serde(skip, default)]
+    response_version: u16,
 }
 
 impl GetConnectedPeerInfoResponse {
-    pub fn new(peer_info: Vec<RpcPeerInfo>) -> Self {
-        Self { peer_info }
+    pub fn new(peer_info: Vec<RpcPeerInfo>, response_version: u16) -> Self {
+        Self { peer_info, response_version }
     }
 }
 
 impl Serializer for GetConnectedPeerInfoResponse {
     fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-        store!(u16, &1, writer)?;
-        store!(Vec<RpcPeerInfo>, &self.peer_info, writer)?;
+        let version = normalize_net_address_wire_version(self.response_version);
+        store!(u16, &version, writer)?;
+        let wire_peers: Vec<RpcPeerInfoWire> =
+            self.peer_info.iter().map(|peer| RpcPeerInfoWire::from_peer_info(peer, version)).collect();
+        store!(Vec<RpcPeerInfoWire>, &wire_peers, writer)?;
         Ok(())
     }
 }
 
 impl Deserializer for GetConnectedPeerInfoResponse {
     fn deserialize<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
-        let _version = load!(u16, reader)?;
-        let peer_info = load!(Vec<RpcPeerInfo>, reader)?;
-        Ok(Self { peer_info })
+        let response_version = load!(u16, reader)?;
+        let peer_info_wire = load!(Vec<RpcPeerInfoWire>, reader)?;
+        let peer_info = peer_info_wire.into_iter().map(RpcPeerInfoWire::into_peer_info).collect();
+        Ok(Self { peer_info, response_version })
     }
 }
 
