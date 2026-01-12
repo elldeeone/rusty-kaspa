@@ -35,15 +35,11 @@ struct Inner {
     service_ctl: DuplexChannel<()>,
     connect_guard: AsyncMutex<()>,
     disconnect_guard: AsyncMutex<()>,
-    // ---
-    // The permanent url passed in the constructor
-    // (dominant, overrides Resolver if supplied).
+    // URL precedence: ctor > connect() override > resolver-provided value.
     ctor_url: Mutex<Option<String>>,
-    // The url passed in the connect() method
-    // (overrides default URL and the Resolver).
+    // The url passed in the connect() method (overrides default URL and the Resolver).
     default_url: Mutex<Option<String>>,
-    // The current url wRPC is connected to
-    // (possibly acquired via the Resolver).
+    // The current url wRPC is connected to (possibly acquired via the Resolver).
     current_url: Mutex<Option<String>>,
     resolver: Mutex<Option<Resolver>>,
     network_id: Mutex<Option<NetworkId>>,
@@ -112,7 +108,6 @@ impl Inner {
             background_services_running: Arc::new(AtomicBool::new(false)),
             connect_guard: async_std::sync::Mutex::new(()),
             disconnect_guard: async_std::sync::Mutex::new(()),
-            // ---
             ctor_url: Mutex::new(url.map(|s| s.to_string())),
             default_url: Mutex::new(None),
             current_url: Mutex::new(None),
@@ -285,9 +280,6 @@ impl KaspaRpcClient {
         subscription_context: Option<SubscriptionContext>,
     ) -> Result<KaspaRpcClient> {
         Self::new_with_args(encoding, url, resolver, network_id, subscription_context)
-        // FIXME
-        // pub fn new(encoding: Encoding, url: &str, ) -> Result<KaspaRpcClient> {
-        //     Self::new_with_args(encoding, NotificationMode::Direct, url, subscription_context)
     }
 
     /// Extended constructor that accepts [`NotificationMode`] argument.
@@ -642,6 +634,11 @@ impl RpcApi for KaspaRpcClient {
             GetFeeEstimateExperimental,
             GetHeaders,
             GetInfo,
+            GetUdpIngestInfo,
+            GetUdpDigests,
+            UdpEnable,
+            UdpDisable,
+            UdpUpdateSigners,
             GetMempoolEntries,
             GetMempoolEntriesByAddresses,
             GetMempoolEntry,
@@ -666,7 +663,6 @@ impl RpcApi for KaspaRpcClient {
         ]
     );
 
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Notification API
 
     /// Register a new listener and returns an id and a channel receiver.

@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use kaspa_addressmanager::AddressManager;
-use kaspa_connectionmanager::InjectError;
+use kaspa_connectionmanager::{InjectError, PeerMessageInjector};
 use kaspa_consensus::{
     config::{params::SIMNET_PARAMS, ConfigBuilder},
     consensus::test_consensus::{TestConsensus, TestConsensusFactory},
@@ -20,7 +20,11 @@ use kaspa_database::{
 use kaspa_hashes::Hash;
 use kaspa_mining::{manager::MiningManager, manager::MiningManagerProxy, MiningCounters};
 use kaspa_p2p_flows::flow_context::FlowContext;
-use kaspa_p2p_lib::{common::ProtocolError, pb, Hub};
+use kaspa_p2p_lib::{
+    common::ProtocolError,
+    convert::header::{HeaderFormat, Versioned},
+    pb, Hub,
+};
 use kaspa_p2p_mining::rule_engine::MiningRuleEngine;
 use kaspa_udp_sidechannel::{
     block::{BlockChannel, BlockChannelError, BlockParser, BlockQueue, BlockQueueError},
@@ -202,8 +206,9 @@ impl FlowHarness {
             .test_consensus
             .build_utxo_valid_block_with_parents(hash, parents, miner_data, Vec::<Transaction>::new())
             .to_immutable();
-        let pb_block: pb::BlockMessage = (&block).into();
-        let canonical_block: Block = pb_block.clone().try_into().expect("canonical block");
+        let header_format = HeaderFormat::from(u32::from(block.header.version));
+        let pb_block: pb::BlockMessage = (header_format, &block).into();
+        let canonical_block: Block = Versioned(header_format, pb_block.clone()).try_into().expect("canonical block");
         let actual_hash = canonical_block.hash();
         HarnessBlock::new(canonical_block, pb_block, actual_hash)
     }

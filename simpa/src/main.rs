@@ -197,7 +197,7 @@ fn main_impl(mut args: Args) {
     args.bps = if args.testnet11 { TenBps::bps() as f64 } else { args.bps };
     let mut params = if args.testnet11 { SIMNET_PARAMS } else { DEVNET_PARAMS };
     params.crescendo_activation = ForkActivation::always();
-    params.crescendo.coinbase_maturity = 200;
+    params.blockrate.coinbase_maturity = 200;
     params.storage_mass_parameter = 10_000;
     let mut builder = ConfigBuilder::new(params)
         .apply_args(|config| apply_args_to_consensus_params(&args, &mut config.params))
@@ -274,7 +274,7 @@ fn main_impl(mut args: Args) {
     if args.test_pruning {
         let hashes = topologically_ordered_hashes(&consensus, consensus.pruning_point());
         let num_blocks = hashes.len();
-        let num_txs = print_stats(&consensus, &hashes, args.delay, args.bps, config.ghostdag_k().before());
+        let num_txs = print_stats(&consensus, &hashes, args.delay, args.bps, config.ghostdag_k());
         info!("There are {num_blocks} blocks with {num_txs} transactions overall above the current pruning point");
 
         if args.retention_period_days.is_some() {
@@ -293,15 +293,13 @@ fn main_impl(mut args: Args) {
 
             if let Ok(block_acceptance_data) = consensus.get_block_acceptance_data(hash) {
                 block_acceptance_data.iter().for_each(|cbad| {
-                    let block = consensus.get_block(hash).unwrap();
-                    cbad.accepted_transactions.iter().for_each(|ate| {
+                    if !cbad.accepted_transactions.is_empty() {
                         assert!(
-                            consensus.get_populated_transaction(ate.transaction_id, block.header.daa_score).is_ok(),
-                            "Expected to find find tx {} at accepted daa {} via get_populated_transaction",
-                            ate.transaction_id,
-                            block.header.daa_score
+                            consensus.get_block_transactions(hash, None).is_ok(),
+                            "Expected to find transactions for block {}",
+                            hash
                         );
-                    });
+                    }
                 });
             }
         }
@@ -337,65 +335,32 @@ fn main_impl(mut args: Args) {
 }
 
 fn apply_args_to_consensus_params(args: &Args, params: &mut Params) {
-    // We have no actual PoW in the simulation, so the true max is most reflective,
-    // however we avoid the actual max since it is reserved for the DB prefix scheme
     params.max_block_level = BlockLevel::MAX - 1;
     params.genesis.timestamp = 0;
-    if args.testnet11 {
-        info!(
-            "Using kaspa-testnet-11 configuration (GHOSTDAG K={}, DAA window size={}, Median time window size={})",
-            params.ghostdag_k().before(),
-            params.difficulty_window_size().before(),
-            params.past_median_time_window_size().before(),
-        );
-    } else {
-        let max_delay = args.delay.max(NETWORK_DELAY_BOUND as f64);
-        let k = u64::max(calculate_ghostdag_k(2.0 * max_delay * args.bps, 0.05), params.ghostdag_k().before() as u64);
-        let k = u64::min(k, KType::MAX as u64) as KType; // Clamp to KType::MAX
-        params.prior_ghostdag_k = k;
-        params.prior_mergeset_size_limit = k as u64 * 10;
-        params.prior_max_block_parents = u8::max((0.66 * k as f64) as u8, 10);
-        params.prior_target_time_per_block = (1000.0 / args.bps) as u64;
-        params.prior_merge_depth = (params.prior_merge_depth as f64 * args.bps) as u64;
-        params.prior_coinbase_maturity = (params.prior_coinbase_maturity as f64 * f64::max(1.0, args.bps * args.delay * 0.25)) as u64;
-
-        if args.daa_legacy {
-            // Scale DAA and median-time windows linearly with BPS
-            params.crescendo_activation = ForkActivation::never();
-            params.timestamp_deviation_tolerance = (params.timestamp_deviation_tolerance as f64 * args.bps) as u64;
-            params.prior_difficulty_window_size = (params.prior_difficulty_window_size as f64 * args.bps) as usize;
-        } else {
-            // Use the new sampling algorithms
-            params.crescendo_activation = ForkActivation::always();
-            params.timestamp_deviation_tolerance = (600.0 * args.bps) as u64;
-            params.crescendo.past_median_time_sample_rate = (10.0 * args.bps) as u64;
-            params.crescendo.difficulty_sample_rate = (2.0 * args.bps) as u64;
-        }
-
-        info!("2Dλ={}, GHOSTDAG K={}, DAA window size={}", 2.0 * args.delay * args.bps, k, params.difficulty_window_size().before());
-    }
+    let max_delay = args.delay.max(NETWORK_DELAY_BOUND as f64);
+    let k = u64::max(calculate_ghostdag_k(2.0 * max_delay * args.bps, 0.05), params.ghostdag_k() as u64);
+    let k = u64::min(k, KType::MAX as u64) as KType;
+    params.blockrate.ghostdag_k = k;
+    params.blockrate.mergeset_size_limit = params.blockrate.mergeset_size_limit.max(k as u64 * 10);
+    params.blockrate.max_block_parents = params.blockrate.max_block_parents.max(10);
+    params.blockrate.merge_depth = params.blockrate.merge_depth.max(64);
+    params.blockrate.finality_depth = params.blockrate.finality_depth.max(100);
+    params.blockrate.pruning_depth = params.blockrate.pruning_depth.max(200);
+    params.blockrate.coinbase_maturity = params
+        .blockrate
+        .coinbase_maturity
+        .max((params.blockrate.coinbase_maturity as f64 * f64::max(1.0, args.bps * args.delay * 0.25)) as u64);
+    params.blockrate.target_time_per_block = (1000.0 / args.bps) as u64;
+    params.timestamp_deviation_tolerance = (params.timestamp_deviation_tolerance as f64 * args.bps).max(1.0) as u64;
+    params.difficulty_window_size = ((params.difficulty_window_size as f64 * args.bps).max(1.0)) as usize;
+    params.past_median_time_window_size = ((params.past_median_time_window_size as f64 * args.bps).max(1.0)) as usize;
+    params.min_difficulty_window_size = params.min_difficulty_window_size.max(16);
+    params.blockrate.difficulty_sample_rate = (params.blockrate.difficulty_sample_rate as f64 * args.bps).max(1.0) as u64;
+    params.blockrate.past_median_time_sample_rate = (params.blockrate.past_median_time_sample_rate as f64 * args.bps).max(1.0) as u64;
     if args.test_pruning {
         params.crescendo_activation = ForkActivation::new(1250.min(args.target_blocks.map(|x| x / 2).unwrap_or(900)));
-
         params.pruning_proof_m = 16;
-        params.min_difficulty_window_size = 16;
-        params.prior_difficulty_window_size = 64;
-        params.timestamp_deviation_tolerance = 16;
-        params.crescendo.sampled_difficulty_window_size = params.crescendo.sampled_difficulty_window_size.min(32);
-
-        params.prior_ghostdag_k = 10;
-        params.prior_finality_depth = 100;
-        params.prior_merge_depth = 64;
-        params.prior_mergeset_size_limit = 32;
-        params.prior_pruning_depth = 100 * 2 + 50;
-
-        params.crescendo.ghostdag_k = 20;
-        params.crescendo.finality_depth = 100 * 2;
-        params.crescendo.merge_depth = 64 * 2;
-        params.crescendo.mergeset_size_limit = 32 * 2;
-        params.crescendo.pruning_depth = 100 * 2 * 2 + 50;
-
-        info!("Setting pruning depth to {:?}", params.pruning_depth());
+        params.blockrate.pruning_depth = params.blockrate.pruning_depth.max(250);
     }
 }
 
@@ -411,7 +376,7 @@ fn apply_args_to_perf_params(args: &Args, perf_params: &mut PerfParams) {
 async fn validate(src_consensus: &Consensus, dst_consensus: &Consensus, params: &Params, delay: f64, bps: f64, header_only: bool) {
     let hashes = topologically_ordered_hashes(src_consensus, params.genesis.hash);
     let num_blocks = hashes.len();
-    let num_txs = print_stats(src_consensus, &hashes, delay, bps, params.ghostdag_k().before());
+    let num_txs = print_stats(src_consensus, &hashes, delay, bps, params.ghostdag_k());
     if header_only {
         info!("Validating {num_blocks} headers...");
     } else {
@@ -477,12 +442,14 @@ fn topologically_ordered_hashes(src_consensus: &Consensus, genesis_hash: Hash) -
     let mut queue: VecDeque<Hash> = std::iter::once(genesis_hash).collect();
     let mut visited = BlockHashSet::new();
     let mut vec = Vec::new();
-    let relations = src_consensus.relations_stores.read();
+    let relations = src_consensus.relations_store.read();
     while let Some(current) = queue.pop_front() {
-        for child in relations[0].get_children(current).unwrap().read().iter() {
-            if visited.insert(*child) {
-                queue.push_back(*child);
-                vec.push(*child);
+        if let Ok(children) = relations.get_children(current) {
+            for child in children.read().iter() {
+                if visited.insert(*child) {
+                    queue.push_back(*child);
+                    vec.push(*child);
+                }
             }
         }
     }

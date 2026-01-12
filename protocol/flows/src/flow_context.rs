@@ -3,7 +3,7 @@ use crate::flowcontext::{
     process_queue::ProcessQueue,
     transactions::TransactionsSpread,
 };
-use crate::{v7, v8};
+use crate::{sat_virtual_peer::SatVirtualPeerInjector, v7, v8};
 use async_trait::async_trait;
 use futures::future::join_all;
 use kaspa_addressmanager::AddressManager;
@@ -375,6 +375,10 @@ impl FlowContext {
 
     pub fn connection_manager(&self) -> Option<Arc<ConnectionManager>> {
         self.connection_manager.read().clone()
+    }
+
+    pub fn create_sat_virtual_peer(&self) -> Result<Arc<SatVirtualPeerInjector>, ProtocolError> {
+        SatVirtualPeerInjector::start(self.clone())
     }
 
     pub fn flow_shutdown_listener(&self) -> Listener {

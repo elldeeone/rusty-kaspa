@@ -140,6 +140,16 @@ pub enum RpcApiOps {
     GetUtxoReturnAddress = 150,
     /// Get Virtual Chain from Block V2
     GetVirtualChainFromBlockV2 = 151,
+    /// UDP ingest info
+    GetUdpIngestInfo = 152,
+    /// UDP digests
+    GetUdpDigests = 153,
+    /// UDP enable
+    UdpEnable = 154,
+    /// UDP disable
+    UdpDisable = 155,
+    /// UDP signer update
+    UdpUpdateSigners = 156,
 }
 
 impl RpcApiOps {

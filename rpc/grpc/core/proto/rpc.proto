@@ -1094,6 +1094,116 @@ message GetCurrentBlockColorResponseMessage {
   RPCError error = 1000;
 }
 
+// UDP admin + telemetry
+message RpcUdpQueueSnapshot {
+  uint32 capacity = 1;
+  uint32 depth = 2;
+}
+
+message RpcUdpMetricEntry {
+  string label = 1;
+  uint64 value = 2;
+}
+
+message RpcUdpDigestSummary {
+  uint64 epoch = 1;
+  optional string pruning_point = 2;
+  optional string pruning_proof_commitment = 3;
+  optional string utxo_muhash = 4;
+  string virtual_selected_parent = 5;
+  uint64 virtual_blue_score = 6;
+  uint64 daa_score = 7;
+  string blue_work_hex = 8;
+  optional string kept_headers_mmr_root = 9;
+  uint32 signer_id = 10;
+  bool signature_valid = 11;
+  uint64 recv_ts_ms = 12;
+  uint32 source_id = 13;
+}
+
+message RpcUdpDigestRecord {
+  uint64 epoch = 1;
+  string kind = 2;
+  RpcUdpDigestSummary summary = 3;
+  bool verified = 4;
+}
+
+message RpcUdpSourceInfo {
+  uint32 source_id = 1;
+  uint64 last_epoch = 2;
+  uint64 last_ts_ms = 3;
+  uint32 signer_id = 4;
+  bool signature_valid = 5;
+}
+
+message RpcUdpDivergenceInfo {
+  bool detected = 1;
+  optional uint64 last_mismatch_epoch = 2;
+}
+
+message GetUdpIngestInfoRequestMessage {
+  optional string auth_token = 1;
+}
+
+message GetUdpIngestInfoResponseMessage {
+  uint32 rpc_version = 1;
+  bool enabled = 2;
+  optional string bind_address = 3;
+  optional string bind_unix = 4;
+  bool allow_non_local = 5;
+  string mode = 6;
+  uint32 max_kbps = 7;
+  RpcUdpQueueSnapshot digest_queue = 8;
+  RpcUdpQueueSnapshot block_queue = 9;
+  repeated RpcUdpMetricEntry frames = 10;
+  repeated RpcUdpMetricEntry drops = 11;
+  uint64 bytes_total = 12;
+  double rx_kbps = 13;
+  optional uint64 last_frame_ts_ms = 14;
+  uint64 frames_received = 15;
+  optional RpcUdpDigestSummary last_digest = 16;
+  RpcUdpDivergenceInfo divergence = 17;
+  uint32 source_count = 18;
+  repeated RpcUdpSourceInfo sources = 19;
+  uint64 signature_failures = 20;
+  uint64 skew_seconds = 21;
+  uint64 block_injected_total = 22;
+  RPCError error = 1000;
+}
+
+message GetUdpDigestsRequestMessage {
+  optional uint64 from_epoch = 1;
+  optional uint32 limit = 2;
+  optional string auth_token = 3;
+}
+
+message GetUdpDigestsResponseMessage {
+  repeated RpcUdpDigestRecord digests = 1;
+  RPCError error = 1000;
+}
+
+message UdpEnableRequestMessage {
+  optional string auth_token = 1;
+}
+
+message UdpEnableResponseMessage {
+  bool previous_enabled = 1;
+  bool enabled = 2;
+  optional string note = 3;
+  RPCError error = 1000;
+}
+
+message UdpDisableRequestMessage {
+  optional string auth_token = 1;
+}
+
+message UdpDisableResponseMessage {
+  bool previous_enabled = 1;
+  bool enabled = 2;
+  optional string note = 3;
+  RPCError error = 1000;
+}
+
 message UdpUpdateSignersRequestMessage {
   repeated string keys = 1;
   optional string auth_token = 2;

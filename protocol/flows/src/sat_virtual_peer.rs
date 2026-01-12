@@ -19,7 +19,6 @@ pub struct SatVirtualPeerInjector {
 impl SatVirtualPeerInjector {
     pub fn start(ctx: FlowContext) -> Result<Arc<Self>, ProtocolError> {
         let router = Router::new_virtual(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0));
-        ctx.register_virtual_router(router.clone())?;
         Box::new(BlockInjectionFlow::new(ctx.clone(), router.clone())).launch();
         let (tx, mut rx) = mpsc::channel(SAT_INJECT_QUEUE);
         let shutdown = ctx.flow_shutdown_listener();

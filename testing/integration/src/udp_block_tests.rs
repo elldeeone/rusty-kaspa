@@ -8,7 +8,7 @@ use kaspa_consensus_core::{
 };
 use kaspa_core::log;
 use kaspa_grpc_client::GrpcClient;
-use kaspa_p2p_lib::pb;
+use kaspa_p2p_lib::{convert::header::HeaderFormat, pb};
 use kaspa_rpc_core::{api::rpc::RpcApi, RpcRawBlock};
 use kaspa_udp_sidechannel::frame::{FrameFlags, FrameKind, SatFrameHeader, HEADER_LEN, KUDP_MAGIC};
 use kaspad_lib::args::{Args, UdpModeArg};
@@ -58,7 +58,7 @@ async fn udp_block_equivalence() {
 
     let template = miner_client.get_block_template(pay_address.clone(), vec![]).await.unwrap();
     let rpc_block = template.block.clone();
-    let block_hash = Header::from(&rpc_block.header).hash;
+    let block_hash = Header::try_from(&rpc_block.header).unwrap().hash;
     miner_client.submit_block(template.block, false).await.unwrap();
 
     wait_for(
@@ -210,7 +210,8 @@ async fn measure_sync_duration(blocks: u64, miner: &GrpcClient, target: &GrpcCli
 
 fn rpc_block_to_pb(rpc_block: &RpcRawBlock) -> pb::BlockMessage {
     let block: Block = rpc_block.clone().try_into().expect("raw block conversion");
-    (&block).into()
+    let header_format = HeaderFormat::from(u32::from(block.header.version));
+    (header_format, &block).into()
 }
 
 fn pb_block_bytes(block: &pb::BlockMessage) -> Vec<u8> {

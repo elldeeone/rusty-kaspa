@@ -378,6 +378,30 @@ impl RpcApi for RpcCoreMock {
         Err(RpcError::NotImplemented)
     }
 
+    async fn get_udp_ingest_info_call(
+        &self,
+        _connection: Option<&DynRpcConnection>,
+        _request: GetUdpIngestInfoRequest,
+    ) -> RpcResult<GetUdpIngestInfoResponse> {
+        Err(RpcError::NotImplemented)
+    }
+
+    async fn udp_enable_call(
+        &self,
+        _connection: Option<&DynRpcConnection>,
+        _request: UdpEnableRequest,
+    ) -> RpcResult<UdpEnableResponse> {
+        Err(RpcError::NotImplemented)
+    }
+
+    async fn udp_disable_call(
+        &self,
+        _connection: Option<&DynRpcConnection>,
+        _request: UdpDisableRequest,
+    ) -> RpcResult<UdpDisableResponse> {
+        Err(RpcError::NotImplemented)
+    }
+
     async fn udp_update_signers_call(
         &self,
         _connection: Option<&DynRpcConnection>,

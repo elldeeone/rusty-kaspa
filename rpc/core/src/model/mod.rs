@@ -17,6 +17,7 @@ pub mod script_class;
 pub mod subnets;
 mod tests;
 pub mod tx;
+pub mod udp;
 pub mod verbosity;
 
 pub use address::*;
@@ -33,4 +34,5 @@ pub use optional::*;
 pub use peer::*;
 pub use subnets::*;
 pub use tx::*;
+pub use udp::*;
 pub use verbosity::*;

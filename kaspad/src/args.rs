@@ -1,3 +1,5 @@
+use clap::builder::BoolishValueParser;
+use clap::error::ErrorKind;
 use clap::{arg, Arg, ArgAction, Command};
 use kaspa_consensus_core::{
     config::Config,
@@ -5,11 +7,12 @@ use kaspa_consensus_core::{
 };
 use kaspa_core::kaspad_env::version;
 use kaspa_notify::address::tracker::Tracker;
+use kaspa_udp_sidechannel::{UdpConfig, UdpMode};
 use kaspa_utils::networking::ContextualNetAddress;
 use kaspa_wrpc_server::address::WrpcNetAddress;
 use serde::Deserialize;
 use serde_with::{serde_as, DisplayFromStr};
-use std::{ffi::OsString, fs};
+use std::{ffi::OsString, fs, net::SocketAddr, path::PathBuf};
 use toml::from_str;
 
 #[cfg(feature = "devnet-prealloc")]
@@ -20,6 +23,9 @@ use kaspa_consensus_core::tx::{TransactionOutpoint, UtxoEntry};
 use kaspa_txscript::pay_to_address_script;
 #[cfg(feature = "devnet-prealloc")]
 use std::sync::Arc;
+
+const DEFAULT_UDP_LISTEN_ADDR: &str = "127.0.0.1:18111";
+const DEFAULT_UDP_LOG_VERBOSITY: &str = "info";
 
 #[serde_as]
 #[derive(Debug, Clone, Deserialize)]
@@ -283,6 +289,7 @@ impl std::str::FromStr for UdpModeArg {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
 
@@ -336,7 +343,6 @@ mod tests {
         assert_eq!(args.udp.max_digest_payload_bytes, 4096);
         assert_eq!(args.udp.max_block_payload_bytes, 65_536);
     }
->>>>>>> 01559993 (feat(udp): Phase 2 — frame parsing, fragmentation, de-dup, rate limit)
 }
 
 impl Default for Args {
@@ -392,6 +398,7 @@ impl Default for Args {
             rocksdb_preset: None,
             rocksdb_wal_dir: None,
             rocksdb_cache_size: None,
+            udp: UdpArgs::default(),
         }
     }
 }
@@ -691,7 +698,6 @@ pub fn cli() -> Command {
                 .require_equals(true)
                 .help("Override UDP ingest log verbosity (default: info)."),
         )
->>>>>>> 01559993 (feat(udp): Phase 2 — frame parsing, fragmentation, de-dup, rate limit)
         .arg(
             Arg::new("connect-peers")
                 .long("connect")
@@ -955,6 +961,7 @@ impl Args {
             rocksdb_preset: m.get_one::<String>("rocksdb-preset").cloned().or(defaults.rocksdb_preset),
             rocksdb_wal_dir: m.get_one::<String>("rocksdb-wal-dir").cloned().or(defaults.rocksdb_wal_dir),
             rocksdb_cache_size: m.get_one::<usize>("rocksdb-cache-size").cloned().or(defaults.rocksdb_cache_size),
+            udp: UdpArgs::from_matches(&m, &defaults.udp)?,
         };
 
         if arg_match_unwrap_or::<bool>(&m, "enable-mainnet-mining", false) {

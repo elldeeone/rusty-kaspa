@@ -303,7 +303,7 @@ mod tests {
         ));
 
         // advance seq to raise floor
-        now = now + Duration::from_millis(10);
+        now += Duration::from_millis(10);
         assert!(matches!(runtime.evaluate(&header(10, false), &payload, now), RuntimeDecision::Accept));
         // stale seq
         assert!(matches!(
@@ -315,12 +315,9 @@ mod tests {
         let mut dropped_delta = false;
         for seq in 11..40 {
             let decision = runtime.evaluate(&header(seq, false), &payload, now);
-            match decision {
-                RuntimeDecision::Drop { reason: DropReason::RateCap, drop_class: Some(DropClass::Delta) } => {
-                    dropped_delta = true;
-                    break;
-                }
-                _ => {}
+            if let RuntimeDecision::Drop { reason: DropReason::RateCap, drop_class: Some(DropClass::Delta) } = decision {
+                dropped_delta = true;
+                break;
             }
         }
         assert!(dropped_delta);
@@ -329,12 +326,9 @@ mod tests {
         let mut snapshot_drop = false;
         for seq in 100..140 {
             let decision = runtime.evaluate(&header(seq, true), &payload, now);
-            match decision {
-                RuntimeDecision::Drop { reason: DropReason::RateCap, drop_class: Some(DropClass::Snapshot) } => {
-                    snapshot_drop = true;
-                    break;
-                }
-                _ => {}
+            if let RuntimeDecision::Drop { reason: DropReason::RateCap, drop_class: Some(DropClass::Snapshot) } = decision {
+                snapshot_drop = true;
+                break;
             }
         }
         assert!(snapshot_drop);

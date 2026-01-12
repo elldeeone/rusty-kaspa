@@ -8,7 +8,7 @@ use kaspa_consensus_core::{
     mining_rules::MiningRules,
 };
 use kaspa_consensus_notify::{root::ConsensusNotificationRoot, service::NotifyService};
-use kaspa_core::{core::Core, debug, info};
+use kaspa_core::{core::Core, debug, info, warn};
 use kaspa_core::{kaspad_env::version, task::tick::TickService};
 use kaspa_database::{
     prelude::{CachePolicy, DbWriter, DirectDbWriter, RocksDbPreset},
@@ -18,7 +18,7 @@ use kaspa_grpc_server::service::GrpcService;
 use kaspa_notify::{address::tracker::Tracker, subscription::context::SubscriptionContext};
 use kaspa_p2p_lib::Hub;
 use kaspa_p2p_mining::rule_engine::MiningRuleEngine;
-use kaspa_rpc_service::service::RpcCoreService;
+use kaspa_rpc_service::service::{RpcCoreService, UdpAdminPolicy};
 use kaspa_txscript::caches::TxScriptCacheCounters;
 use kaspa_utils::git;
 use kaspa_utils::networking::ContextualNetAddress;
@@ -26,6 +26,7 @@ use kaspa_utils::sysinfo::SystemInfo;
 use kaspa_utils_tower::counters::TowerConnectionCounters;
 
 use kaspa_addressmanager::AddressManager;
+use kaspa_connectionmanager::injector::PeerMessageInjector;
 use kaspa_consensus::{
     consensus::factory::MultiConsensusManagementStore, model::stores::headers::DbHeadersStore, pipeline::monitor::ConsensusMonitor,
 };
@@ -43,7 +44,7 @@ use kaspa_mining::{
     MiningCounters,
 };
 use kaspa_p2p_flows::{flow_context::FlowContext, service::P2pService};
-use kaspa_udp_sidechannel::{UdpIngestService, UdpMetrics};
+use kaspa_udp_sidechannel::{UdpDigestManager, UdpIngestService, UdpMetrics};
 
 use kaspa_perf_monitor::{builder::Builder as PerfMonitorBuilder, counters::CountersSnapshot};
 use kaspa_utxoindex::{api::UtxoIndexProxy, UtxoIndex};
@@ -623,7 +624,7 @@ Do you confirm? (y/n)";
         None
     };
 
-    let (address_manager, port_mapping_extender_svc) = AddressManager::new(config.clone(), meta_db, tick_service.clone());
+    let (address_manager, port_mapping_extender_svc) = AddressManager::new(config.clone(), meta_db.clone(), tick_service.clone());
 
     let mining_manager = MiningManagerProxy::new(Arc::new(MiningManager::new_with_extended_config(
         config.target_time_per_block(),
@@ -667,6 +668,32 @@ Do you confirm? (y/n)";
         p2p_tower_counters.clone(),
     ));
     let udp_config = args.udp.to_runtime_config(network);
+    let udp_metrics = Arc::new(UdpMetrics::new());
+    let block_injector: Option<Arc<dyn PeerMessageInjector>> = if udp_config.blocks_allowed() {
+        flow_context.create_sat_virtual_peer().ok().map(|injector| injector as Arc<dyn PeerMessageInjector>)
+    } else {
+        None
+    };
+    let udp_service = Arc::new(UdpIngestService::new(
+        udp_config.clone(),
+        udp_metrics.clone(),
+        block_injector,
+        Some(flow_context.flow_shutdown_listener()),
+    ));
+    let udp_digest = if udp_config.mode.allows_digest() {
+        match UdpDigestManager::start(&udp_config, udp_service.clone(), udp_metrics.clone(), Some(meta_db.clone())) {
+            Ok(manager) => Some(manager),
+            Err(err) => {
+                warn!("udp.event=digest_init_failed err={err}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let udp_admin_token =
+        udp_config.admin_token_file.as_ref().and_then(|path| fs::read_to_string(path).ok()).map(|token| token.trim().to_string());
+    let udp_admin_policy = UdpAdminPolicy { allow_remote: udp_config.admin_remote_allowed, token: udp_admin_token };
 
     let rpc_core_service = Arc::new(RpcCoreService::new(
         consensus_manager.clone(),
@@ -686,6 +713,9 @@ Do you confirm? (y/n)";
         grpc_tower_counters.clone(),
         system_info,
         mining_rule_engine.clone(),
+        udp_service.clone(),
+        udp_digest.clone(),
+        udp_admin_policy,
     ));
     let grpc_service_broadcasters: usize = 3; // TODO: add a command line argument or derive from other arg/config/host-related fields
     let grpc_service = if !args.disable_grpc {
@@ -720,11 +750,7 @@ Do you confirm? (y/n)";
     async_runtime.register(mining_monitor);
     async_runtime.register(perf_monitor);
     async_runtime.register(mining_rule_engine);
-    if udp_config.enable {
-        let udp_metrics = Arc::new(UdpMetrics::new());
-        let udp_service = Arc::new(UdpIngestService::new(udp_config, udp_metrics));
-        async_runtime.register(udp_service);
-    }
+    async_runtime.register(udp_service.clone());
 
     let wrpc_service_tasks: usize = 2; // num_cpus::get() / 2;
                                        // Register wRPC servers based on command line arguments

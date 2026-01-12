@@ -65,6 +65,11 @@ pub mod kaspad_request_convert {
     impl_into_kaspad_request!(GetCurrentBlockColor);
     impl_into_kaspad_request!(GetUtxoReturnAddress);
     impl_into_kaspad_request!(GetVirtualChainFromBlockV2);
+    impl_into_kaspad_request!(GetUdpIngestInfo);
+    impl_into_kaspad_request!(GetUdpDigests);
+    impl_into_kaspad_request!(UdpEnable);
+    impl_into_kaspad_request!(UdpDisable);
+    impl_into_kaspad_request!(UdpUpdateSigners);
 
     impl_into_kaspad_request!(NotifyBlockAdded);
     impl_into_kaspad_request!(NotifyNewBlockTemplate);
@@ -204,6 +209,11 @@ pub mod kaspad_response_convert {
     impl_into_kaspad_response!(GetCurrentBlockColor);
     impl_into_kaspad_response!(GetUtxoReturnAddress);
     impl_into_kaspad_response!(GetVirtualChainFromBlockV2);
+    impl_into_kaspad_response!(GetUdpIngestInfo);
+    impl_into_kaspad_response!(GetUdpDigests);
+    impl_into_kaspad_response!(UdpEnable);
+    impl_into_kaspad_response!(UdpDisable);
+    impl_into_kaspad_response!(UdpUpdateSigners);
 
     impl_into_kaspad_notify_response!(NotifyBlockAdded);
     impl_into_kaspad_notify_response!(NotifyNewBlockTemplate);

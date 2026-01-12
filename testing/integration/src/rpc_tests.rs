@@ -769,6 +769,42 @@ async fn sanity_test() {
                         .unwrap();
                 })
             }
+            KaspadPayloadOps::GetUdpIngestInfo => {
+                let rpc_client = client.clone();
+                tst!(op, {
+                    rpc_client.get_udp_ingest_info_call(None, GetUdpIngestInfoRequest { auth_token: None }).await.unwrap();
+                })
+            }
+            KaspadPayloadOps::GetUdpDigests => {
+                let rpc_client = client.clone();
+                tst!(op, {
+                    rpc_client
+                        .get_udp_digests_call(None, GetUdpDigestsRequest { from_epoch: None, limit: None, auth_token: None })
+                        .await
+                        .unwrap();
+                })
+            }
+            KaspadPayloadOps::UdpEnable => {
+                let rpc_client = client.clone();
+                tst!(op, {
+                    rpc_client.udp_enable_call(None, UdpEnableRequest { auth_token: None }).await.unwrap();
+                })
+            }
+            KaspadPayloadOps::UdpDisable => {
+                let rpc_client = client.clone();
+                tst!(op, {
+                    rpc_client.udp_disable_call(None, UdpDisableRequest { auth_token: None }).await.unwrap();
+                })
+            }
+            KaspadPayloadOps::UdpUpdateSigners => {
+                let rpc_client = client.clone();
+                tst!(op, {
+                    rpc_client
+                        .udp_update_signers_call(None, UdpUpdateSignersRequest { keys: vec![], auth_token: None })
+                        .await
+                        .unwrap();
+                })
+            }
             KaspadPayloadOps::StopNotifyingUtxosChanged => {
                 let rpc_client = client.clone();
                 let id = listener_id;

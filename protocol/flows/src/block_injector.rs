@@ -2,8 +2,13 @@ use crate::{flow_context::FlowContext, flow_trait::Flow};
 use kaspa_consensus_core::block::Block;
 use kaspa_core::{debug, trace, warn};
 use kaspa_p2p_lib::{
-    common::ProtocolError, convert::error::ConversionError, pb::kaspad_message::Payload, IncomingRoute, KaspadMessagePayloadType,
-    Router,
+    common::ProtocolError,
+    convert::{
+        error::ConversionError,
+        header::{HeaderFormat, Versioned},
+    },
+    pb::kaspad_message::Payload,
+    IncomingRoute, KaspadMessagePayloadType, Router,
 };
 use std::sync::Arc;
 
@@ -43,7 +48,10 @@ impl Flow for BlockInjectionFlow {
                 Some(Payload::Block(block_msg)) => block_msg,
                 _ => return Err(ProtocolError::UnexpectedMessage("Payload::Block", payload_type)),
             };
-            let block: Block = block_message.try_into().map_err(|err: ConversionError| ProtocolError::OtherOwned(err.to_string()))?;
+            let header_format = HeaderFormat::from(block_message.header.as_ref().map(|h| h.version).unwrap_or_default());
+            let block: Block = Versioned(header_format, block_message)
+                .try_into()
+                .map_err(|err: ConversionError| ProtocolError::OtherOwned(err.to_string()))?;
             let session = self.ctx.consensus().session().await;
             if let Err(err) = self.ctx.submit_rpc_block(&session, block.clone()).await {
                 println!("satellite block {} rejected: {}", block.hash(), err);
