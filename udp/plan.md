@@ -409,6 +409,14 @@ The 2025-11-17 14:23 AEST trace (`/tmp/udp_slow_gate_phase5_after.log`) includes
   - Tests: Tabletop exercise / script verifying config reload when signer list changes; smoke tests on listed platforms.  
   - DoD: Stakeholders approve plan; watchers know how to flip feature on/off safely; compatibility doc published.
 
+### External review (Oracle 2026-01-12)
+- Misbind/unix perms must degrade to disabled, not crash daemon; add tests for bad bind + unwritable unix path.
+- Cap tracked `source_id` set (e.g., 16/64) or overflow bucket; add spray test to bound memory/RPC output.
+- Align retention defaults with 1 Hz cadence: raise count for multi-day history or document ~3h window at 10k.
+- Divergence hysteresis: N mismatches to raise, M matches to clear; staleness separate; add reorg vs true-divergence tests.
+- Block mode dev/test only: prefer compile-time gate + mainnet hard lock + explicit memory caps; keep docs/CLI loud.
+- Acceptance/doc gaps: require_signature=true with empty signers => loud error/warn; define admin token file perms; specify 10 kbps basis; enumerate RocksDB CF upgrade/downgrade behaviors.
+
 ## 4. Repository Changes & Layout
 - **New crate:** `components/udp-sidechannel` (workspace member) housing ingest runtime, frame parsing, digest/block logic, metrics adapters, fuzz targets.
 - **Supporting tools:** `udp/tools/generator` (Rust bin crate) for PoC traffic; `udp/tools/soak.sh` for perf runs; `udp/tools/cleanup_cf.rs` for column-family maintenance.
