@@ -540,11 +540,15 @@ mod tests {
         assert_eq!(id, id2);
     }
 
+    /// Legacy layout used by v1 (ip + port only).
+    #[derive(PartialEq, Eq, Hash, Copy, Clone, Serialize, Deserialize, Debug, BorshSerialize, BorshDeserialize)]
+    pub struct NetAddressLegacy {
+        pub ip: IpAddress,
+        pub port: u16,
+    }
+
     fn legacy_net_address_bytes(ip: IpAddress, port: u16) -> Vec<u8> {
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(&borsh::to_vec(&ip).unwrap());
-        bytes.extend_from_slice(&port.to_le_bytes());
-        bytes
+        borsh::to_vec(&NetAddressLegacy { ip, port }).unwrap()
     }
 
     #[test]
@@ -615,6 +619,21 @@ mod tests {
         base.merge_metadata(&other);
         assert_eq!(base.services, 0b101);
         assert_eq!(base.relay_port, Some(1818));
+    }
+
+    #[test]
+    fn net_address_backwards_compatible() {
+        let net_v1 = NetAddressLegacy { ip: IpAddress(IpAddr::V4(Ipv4Addr::from_bits(0))), port: 0 };
+
+        let net_v1_encoded = borsh::to_vec(&net_v1).unwrap();
+
+        let netwire_with_v1: NetAddressWire = BorshDeserialize::try_from_slice(&net_v1_encoded).unwrap();
+
+        let decoded = netwire_with_v1.into_net_address();
+        assert_eq!(decoded.ip.0, IpAddr::V4(Ipv4Addr::from_bits(0)));
+        assert_eq!(decoded.port, 0);
+        assert_eq!(decoded.services, 0);
+        assert!(decoded.relay_port.is_none());
     }
 
     #[test]
