@@ -73,8 +73,14 @@ def main():
         vals = [v for v in vals if v is not None]
         return max(vals) if vals else None
 
+    def group_for_label(label: str) -> str:
+        if label.startswith("reach-"):
+            return "reach-batched (no bodies)"
+        return "full-batch (bodies+headers)"
+
     fields = [
         "_label",
+        "group",
         "summary_count",
         "summary_pruned_count",
         "duration_ms_avg",
@@ -121,6 +127,7 @@ def main():
 
         rows_out.append({
             "_label": label,
+            "group": group_for_label(label),
             "summary_count": summary_count,
             "summary_pruned_count": summary_pruned_count,
             "duration_ms_avg": mean(duration_vals),
