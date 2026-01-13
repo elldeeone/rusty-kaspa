@@ -49,7 +49,12 @@ timestamp() {
     date +"%Y%m%d-%H%M%S"
 }
 
-LOG_FILE="${EXPERIMENT_DIR}/simpa-prune-$(timestamp).log"
+label_suffix=""
+if [[ -n "${SIMPA_RUN_LABEL}" ]]; then
+    safe_label="$(echo "${SIMPA_RUN_LABEL}" | tr -cs 'A-Za-z0-9._-' '-' | sed -e 's/^-//' -e 's/-$//')"
+    label_suffix="-${safe_label}"
+fi
+LOG_FILE="${EXPERIMENT_DIR}/simpa-prune${label_suffix}-$(timestamp).log"
 METRICS_FILE="${LOG_FILE%.log}.csv"
 
 COMMON_ARGS=(
@@ -81,35 +86,17 @@ if [[ "${SIMPA_ROCKSDB_PIPELINED}" == "1" ]]; then
     COMMON_ARGS+=(--rocksdb-pipelined-write)
 fi
 
-echo ">> Simpa pruning run"
-if [[ -n "${SIMPA_RUN_LABEL}" ]]; then
-    echo "   SIMPA_RUN_LABEL=${SIMPA_RUN_LABEL}"
-fi
-echo "   SIMPA_DB_DIR=${SIMPA_DB_DIR}"
-echo "   SIMPA_BPS=${SIMPA_BPS}, SIMPA_MINERS=${SIMPA_MINERS}, SIMPA_TPB=${SIMPA_TPB}, SIMPA_RETENTION_DAYS=${SIMPA_RETENTION_DAYS}"
-echo "   SIMPA_TARGET_BLOCKS=${SIMPA_TARGET_BLOCKS}, SIMPA_LONG_PAYLOAD=${SIMPA_LONG_PAYLOAD}"
-echo "   SIMPA_ROCKSDB_STATS=${SIMPA_ROCKSDB_STATS} (period ${SIMPA_ROCKSDB_STATS_PERIOD_SEC:-default}s)"
-echo "   SIMPA_ROCKSDB_PIPELINED=${SIMPA_ROCKSDB_PIPELINED}"
-echo "   SIMPA_SKIP_ACCEPTANCE_VALIDATION=${SIMPA_SKIP_ACCEPTANCE_VALIDATION}"
-echo "   SIMPA_FORCE_REBUILD=${SIMPA_FORCE_REBUILD}"
-echo "   PRUNE_LOCK_MAX_DURATION_MS=${PRUNE_LOCK_MAX_DURATION_MS:-unset}"
-echo "   PRUNE_BATCH_MAX_BLOCKS=${PRUNE_BATCH_MAX_BLOCKS:-unset}"
-echo "   PRUNE_BATCH_MAX_OPS=${PRUNE_BATCH_MAX_OPS:-unset}"
-echo "   PRUNE_BATCH_MAX_BYTES=${PRUNE_BATCH_MAX_BYTES:-unset}"
-echo "   PRUNE_BATCH_MAX_DURATION_MS=${PRUNE_BATCH_MAX_DURATION_MS:-unset}"
-echo "   PRUNE_BATCH_BODIES=${PRUNE_BATCH_BODIES:-unset}"
-
 SIMPA_DB_CURRENT="${SIMPA_DB_DIR}/CURRENT"
 if [[ "${SIMPA_FORCE_REBUILD}" == "1" ]]; then
-    echo ">> SIMPA_FORCE_REBUILD=1 — removing existing DB at ${SIMPA_DB_DIR}"
+    DB_ACTION="SIMPA_FORCE_REBUILD=1 — removing existing DB at ${SIMPA_DB_DIR}"
     rm -rf "${SIMPA_DB_DIR}"
 fi
 
 if [[ -f "${SIMPA_DB_CURRENT}" ]]; then
-    echo ">> Reusing existing Simpa DB at ${SIMPA_DB_DIR}"
+    DB_ACTION="${DB_ACTION:-Reusing existing Simpa DB at ${SIMPA_DB_DIR}}"
     IO_ARGS=(--input-dir "${SIMPA_DB_DIR}")
 else
-    echo ">> No Simpa DB found. Generating ${SIMPA_TARGET_BLOCKS} blocks..."
+    DB_ACTION="${DB_ACTION:-No Simpa DB found. Generating ${SIMPA_TARGET_BLOCKS} blocks...}"
     if [[ -d "${SIMPA_DB_DIR}" ]]; then
         rm -rf "${SIMPA_DB_DIR}"
     fi
@@ -117,7 +104,25 @@ else
     IO_ARGS=(--output-dir "${SIMPA_DB_DIR}" --target-blocks "${SIMPA_TARGET_BLOCKS}")
 fi
 
-echo ">> Running Simpa. Log: ${LOG_FILE}"
+{
+    echo ">> Simpa pruning run"
+    echo "   SIMPA_RUN_LABEL=${SIMPA_RUN_LABEL}"
+    echo "   SIMPA_DB_DIR=${SIMPA_DB_DIR}"
+    echo "   SIMPA_BPS=${SIMPA_BPS}, SIMPA_MINERS=${SIMPA_MINERS}, SIMPA_TPB=${SIMPA_TPB}, SIMPA_RETENTION_DAYS=${SIMPA_RETENTION_DAYS}"
+    echo "   SIMPA_TARGET_BLOCKS=${SIMPA_TARGET_BLOCKS}, SIMPA_LONG_PAYLOAD=${SIMPA_LONG_PAYLOAD}"
+    echo "   SIMPA_ROCKSDB_STATS=${SIMPA_ROCKSDB_STATS} (period ${SIMPA_ROCKSDB_STATS_PERIOD_SEC:-default}s)"
+    echo "   SIMPA_ROCKSDB_PIPELINED=${SIMPA_ROCKSDB_PIPELINED}"
+    echo "   SIMPA_SKIP_ACCEPTANCE_VALIDATION=${SIMPA_SKIP_ACCEPTANCE_VALIDATION}"
+    echo "   SIMPA_FORCE_REBUILD=${SIMPA_FORCE_REBUILD}"
+    echo "   PRUNE_LOCK_MAX_DURATION_MS=${PRUNE_LOCK_MAX_DURATION_MS:-unset}"
+    echo "   PRUNE_BATCH_MAX_BLOCKS=${PRUNE_BATCH_MAX_BLOCKS:-unset}"
+    echo "   PRUNE_BATCH_MAX_OPS=${PRUNE_BATCH_MAX_OPS:-unset}"
+    echo "   PRUNE_BATCH_MAX_BYTES=${PRUNE_BATCH_MAX_BYTES:-unset}"
+    echo "   PRUNE_BATCH_MAX_DURATION_MS=${PRUNE_BATCH_MAX_DURATION_MS:-unset}"
+    echo "   PRUNE_BATCH_BODIES=${PRUNE_BATCH_BODIES:-unset}"
+    echo ">> ${DB_ACTION}"
+    echo ">> Running Simpa. Log: ${LOG_FILE}"
+} | tee "${LOG_FILE}"
 (
     cd "${ROOT_DIR}"
     cargo run --quiet --release --bin simpa -- \
@@ -125,7 +130,7 @@ echo ">> Running Simpa. Log: ${LOG_FILE}"
         "${IO_ARGS[@]}" \
         "$@" \
         2>&1
-) | tee "${LOG_FILE}"
+) | tee -a "${LOG_FILE}"
 
 if command -v python3 >/dev/null 2>&1; then
     echo ">> Extracting pruning metrics to ${METRICS_FILE}"

@@ -18,6 +18,7 @@ from typing import Dict, Iterable, List
 
 FIELDNAMES = [
     "source",
+    "simpa_run_label",
     "kind",
     "commit_type",
     "count",
@@ -54,6 +55,14 @@ def parse_line(raw: str) -> Dict[str, str]:
 
 
 def records_from_file(path: Path) -> Iterable[Dict[str, str]]:
+    run_label = ""
+    with path.open("r", encoding="utf-8") as handle:
+        for idx, line in enumerate(handle):
+            if "SIMPA_RUN_LABEL=" in line:
+                run_label = line.strip().split("SIMPA_RUN_LABEL=", 1)[1].strip()
+                break
+            if idx > 200:
+                break
     with path.open("r", encoding="utf-8") as handle:
         for line in handle:
             if "[PRUNING METRICS]" not in line:
@@ -61,6 +70,7 @@ def records_from_file(path: Path) -> Iterable[Dict[str, str]]:
             record = parse_line(line)
             if record:
                 record["source"] = str(path)
+                record["simpa_run_label"] = run_label
                 yield record
 
 
