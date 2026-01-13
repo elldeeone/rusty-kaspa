@@ -1,6 +1,6 @@
 //! TODO: module comment about locking safety and consistency of various pruning stores
 
-use super::batching::{PruneBatch, PruningPhaseMetrics, PRUNE_LOCK_MAX_DURATION_MS};
+use super::batching::{PruneBatch, PruneBatchLimits, PruningPhaseMetrics};
 use crate::{
     consensus::{
         services::{ConsensusServices, DbParentsManager, DbPruningPointManager},
@@ -51,7 +51,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 pub enum PruningProcessingMessage {
@@ -301,7 +301,8 @@ impl PruningProcessor {
         }
 
         info!("Header and Block pruning: preparing proof and anticone data...");
-        let mut metrics = PruningPhaseMetrics::new();
+        let prune_batch_limits = PruneBatchLimits::from_env();
+        let mut metrics = PruningPhaseMetrics::new(prune_batch_limits);
 
         let proof = self.pruning_proof_manager.get_pruning_point_proof();
         let data = self
@@ -396,7 +397,8 @@ impl PruningProcessor {
         prune_guard = self.pruning_lock.blocking_write();
         let mut lock_acquire_time = Instant::now();
         let reachability_read = self.reachability_store.upgradable_read();
-        let mut prune_batch = PruneBatch::new();
+        let mut prune_batch = PruneBatch::new(prune_batch_limits);
+        let batch_bodies = prune_batch_limits.batch_bodies;
 
         {
             // Start with a batch for pruning body tips and selected chain stores
@@ -461,7 +463,7 @@ impl PruningProcessor {
             let mut statuses_write = self.statuses_store.write();
 
             while let Some(current) = queue.pop_front() {
-                if lock_acquire_time.elapsed() > Duration::from_millis(PRUNE_LOCK_MAX_DURATION_MS) {
+                if lock_acquire_time.elapsed() > prune_batch_limits.max_lock_duration {
                     // Commit staging stores and flush the batch so we can yield
                     let reachability_write = staging_reachability.commit(&mut prune_batch.batch).unwrap();
                     staging_reachability_relations.commit(&mut prune_batch.batch).unwrap();
@@ -504,14 +506,26 @@ impl PruningProcessor {
                 self.block_window_cache_for_past_median_time.remove(&current);
 
                 if !keep_blocks.contains(&current) {
+                    if batch_bodies {
+                        let batch = &mut prune_batch.batch;
+                        self.utxo_multisets_store.delete_batch(batch, current).unwrap();
+                        self.utxo_diffs_store.delete_batch(batch, current).unwrap();
+                        self.acceptance_data_store.delete_batch(batch, current).unwrap();
+                        self.block_transactions_store.delete_batch(batch, current).unwrap();
+                    } else {
+                        let mut body_batch = WriteBatch::default();
+                        self.utxo_multisets_store.delete_batch(&mut body_batch, current).unwrap();
+                        self.utxo_diffs_store.delete_batch(&mut body_batch, current).unwrap();
+                        self.acceptance_data_store.delete_batch(&mut body_batch, current).unwrap();
+                        self.block_transactions_store.delete_batch(&mut body_batch, current).unwrap();
+                        let ops = body_batch.len();
+                        let bytes = body_batch.size_in_bytes();
+                        let commit_start = Instant::now();
+                        self.db.write(body_batch).unwrap();
+                        metrics.record_body_commit(ops, bytes, commit_start.elapsed());
+                    }
+
                     let batch = &mut prune_batch.batch;
-
-                    // Prune data related to block bodies and UTXO state
-                    self.utxo_multisets_store.delete_batch(batch, current).unwrap();
-                    self.utxo_diffs_store.delete_batch(batch, current).unwrap();
-                    self.acceptance_data_store.delete_batch(batch, current).unwrap();
-                    self.block_transactions_store.delete_batch(batch, current).unwrap();
-
                     if let Some(&affiliated_proof_level) = keep_relations.get(&current) {
                         if statuses_write.get(current).optional().unwrap().is_some_and(|s| s.is_valid()) {
                             // We set the status to header-only only if it was previously set to a valid
