@@ -1,0 +1,447 @@
+2025-11-05 22:15:34.485+11:00 [INFO ] simpa v1.0.1
+2025-11-05 22:15:34.485+11:00 [INFO ] Simpa configuration: target_blocks=Some(80000), retention_days=Some(1e-5), bps=12, delay=2, output_dir=Some("/tmp/simpa-phase3-highbps-pipelined"), input_dir=None
+2025-11-05 22:15:34.486+11:00 [WARN ] Warning: number of miners was configured to 4. Currently each miner added doubles the simulation
+        memory and runtime footprint, while a single miner is sufficient for most simulation purposes (delay is simulated anyway).
+2025-11-05 22:15:34.486+11:00 [INFO ] 2Dλ=48, GHOSTDAG K=138, DAA window size=661
+2025-11-05 22:15:34.486+11:00 [INFO ] Setting pruning depth to ForkedParam { pre: 10, post: 10, activation: ForkActivation(1250) }
+2025-11-05 22:15:34.501+11:00 [DEBUG] [PRUNING PROCESSOR] recovery check: current pruning point: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2, retention checkpoint: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2, pruning utxoset position: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2
+2025-11-05 22:15:34.501+11:00 [TRACE] retention_checkpoint: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2 | retention_period_root: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2 | pruning_point: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2
+2025-11-05 22:15:34.502+11:00 [DEBUG] [PRUNING PROCESSOR] recovery check: current pruning point: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2, retention checkpoint: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2, pruning utxoset position: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2
+2025-11-05 22:15:34.502+11:00 [TRACE] retention_checkpoint: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2 | retention_period_root: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2 | pruning_point: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2
+2025-11-05 22:15:34.502+11:00 [DEBUG] [PRUNING PROCESSOR] recovery check: current pruning point: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2, retention checkpoint: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2, pruning utxoset position: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2
+2025-11-05 22:15:34.502+11:00 [TRACE] retention_checkpoint: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2 | retention_period_root: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2 | pruning_point: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2
+2025-11-05 22:15:34.502+11:00 [DEBUG] [PRUNING PROCESSOR] recovery check: current pruning point: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2, retention checkpoint: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2, pruning utxoset position: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2
+2025-11-05 22:15:34.502+11:00 [TRACE] retention_checkpoint: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2 | retention_period_root: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2 | pruning_point: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2
+2025-11-05 22:15:34.533+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.534+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.534+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.534+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.535+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.535+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.535+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.535+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.536+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.536+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.536+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.536+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.537+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.537+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.537+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.537+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.538+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.538+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.538+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.538+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.538+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.538+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.538+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.539+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.539+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.539+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.539+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.539+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.539+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.540+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.540+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.540+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.540+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.540+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.540+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.540+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.540+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.540+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.541+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.541+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.541+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.541+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.541+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.541+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.541+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.541+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.541+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.541+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.541+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.541+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.542+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.542+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.542+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.542+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.542+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.542+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.542+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.542+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.542+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.543+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.543+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.543+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.543+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.543+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.543+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.543+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.543+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.543+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.543+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.543+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.543+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.544+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.544+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.544+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.544+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.544+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.544+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.544+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.544+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.544+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.545+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.545+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.545+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.545+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.545+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.545+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.545+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.545+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.545+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.546+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.546+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.546+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.546+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.546+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.546+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.546+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.546+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.546+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.546+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.546+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.546+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.547+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.547+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.547+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.547+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.547+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.547+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.547+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.547+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.547+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.548+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.548+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.548+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.548+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.548+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.548+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.548+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.548+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.548+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.548+11:00 [WARN ] Finality Violation Detected. Block a285500eb1cf95a043a0c610d3a0484095e1969bbcaf1e210cc3a6249c826e8c violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.549+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.549+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.549+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.549+11:00 [WARN ] Finality Violation Detected. Block a285500eb1cf95a043a0c610d3a0484095e1969bbcaf1e210cc3a6249c826e8c violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.549+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.549+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.549+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.549+11:00 [WARN ] Finality Violation Detected. Block a285500eb1cf95a043a0c610d3a0484095e1969bbcaf1e210cc3a6249c826e8c violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.550+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.550+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.550+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.550+11:00 [WARN ] Finality Violation Detected. Block a285500eb1cf95a043a0c610d3a0484095e1969bbcaf1e210cc3a6249c826e8c violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.550+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.550+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.550+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.550+11:00 [WARN ] Finality Violation Detected. Block a285500eb1cf95a043a0c610d3a0484095e1969bbcaf1e210cc3a6249c826e8c violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.550+11:00 [WARN ] Finality Violation Detected. Block 8b9bc0d88b03c97700d34ff73696c526e9ebdf4f6c6a84f91f5b6cc5ef32b10f violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.551+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.551+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.551+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.551+11:00 [WARN ] Finality Violation Detected. Block a285500eb1cf95a043a0c610d3a0484095e1969bbcaf1e210cc3a6249c826e8c violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.551+11:00 [WARN ] Finality Violation Detected. Block 8b9bc0d88b03c97700d34ff73696c526e9ebdf4f6c6a84f91f5b6cc5ef32b10f violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.551+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.551+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.551+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.551+11:00 [WARN ] Finality Violation Detected. Block a285500eb1cf95a043a0c610d3a0484095e1969bbcaf1e210cc3a6249c826e8c violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.551+11:00 [WARN ] Finality Violation Detected. Block 8b9bc0d88b03c97700d34ff73696c526e9ebdf4f6c6a84f91f5b6cc5ef32b10f violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.552+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.552+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.552+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.552+11:00 [WARN ] Finality Violation Detected. Block a285500eb1cf95a043a0c610d3a0484095e1969bbcaf1e210cc3a6249c826e8c violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.552+11:00 [WARN ] Finality Violation Detected. Block 8b9bc0d88b03c97700d34ff73696c526e9ebdf4f6c6a84f91f5b6cc5ef32b10f violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.552+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.552+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.552+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.552+11:00 [WARN ] Finality Violation Detected. Block a285500eb1cf95a043a0c610d3a0484095e1969bbcaf1e210cc3a6249c826e8c violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.552+11:00 [WARN ] Finality Violation Detected. Block 8b9bc0d88b03c97700d34ff73696c526e9ebdf4f6c6a84f91f5b6cc5ef32b10f violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.552+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.552+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.552+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.552+11:00 [WARN ] Finality Violation Detected. Block a285500eb1cf95a043a0c610d3a0484095e1969bbcaf1e210cc3a6249c826e8c violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.552+11:00 [WARN ] Finality Violation Detected. Block 8b9bc0d88b03c97700d34ff73696c526e9ebdf4f6c6a84f91f5b6cc5ef32b10f violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.553+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.553+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.553+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.553+11:00 [WARN ] Finality Violation Detected. Block a285500eb1cf95a043a0c610d3a0484095e1969bbcaf1e210cc3a6249c826e8c violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.553+11:00 [WARN ] Finality Violation Detected. Block 8b9bc0d88b03c97700d34ff73696c526e9ebdf4f6c6a84f91f5b6cc5ef32b10f violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.553+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.553+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.553+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.553+11:00 [WARN ] Finality Violation Detected. Block a285500eb1cf95a043a0c610d3a0484095e1969bbcaf1e210cc3a6249c826e8c violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.553+11:00 [WARN ] Finality Violation Detected. Block 8b9bc0d88b03c97700d34ff73696c526e9ebdf4f6c6a84f91f5b6cc5ef32b10f violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.553+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.553+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.553+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.553+11:00 [WARN ] Finality Violation Detected. Block a285500eb1cf95a043a0c610d3a0484095e1969bbcaf1e210cc3a6249c826e8c violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.553+11:00 [WARN ] Finality Violation Detected. Block 8b9bc0d88b03c97700d34ff73696c526e9ebdf4f6c6a84f91f5b6cc5ef32b10f violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.554+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.554+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.554+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.554+11:00 [WARN ] Finality Violation Detected. Block a285500eb1cf95a043a0c610d3a0484095e1969bbcaf1e210cc3a6249c826e8c violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.554+11:00 [WARN ] Finality Violation Detected. Block 8b9bc0d88b03c97700d34ff73696c526e9ebdf4f6c6a84f91f5b6cc5ef32b10f violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.554+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.554+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.554+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.554+11:00 [WARN ] Finality Violation Detected. Block a285500eb1cf95a043a0c610d3a0484095e1969bbcaf1e210cc3a6249c826e8c violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.554+11:00 [WARN ] Finality Violation Detected. Block 8b9bc0d88b03c97700d34ff73696c526e9ebdf4f6c6a84f91f5b6cc5ef32b10f violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.554+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.554+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.554+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.554+11:00 [WARN ] Finality Violation Detected. Block a285500eb1cf95a043a0c610d3a0484095e1969bbcaf1e210cc3a6249c826e8c violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.554+11:00 [WARN ] Finality Violation Detected. Block 8b9bc0d88b03c97700d34ff73696c526e9ebdf4f6c6a84f91f5b6cc5ef32b10f violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.555+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.555+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.555+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.555+11:00 [WARN ] Finality Violation Detected. Block a285500eb1cf95a043a0c610d3a0484095e1969bbcaf1e210cc3a6249c826e8c violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.555+11:00 [WARN ] Finality Violation Detected. Block 8b9bc0d88b03c97700d34ff73696c526e9ebdf4f6c6a84f91f5b6cc5ef32b10f violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.555+11:00 [WARN ] Finality Violation Detected. Block 080d872aac0aecb0a7abf78cb0b4778383485998a022fa1ba69c37f029938d72 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.555+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.555+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.555+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.555+11:00 [WARN ] Finality Violation Detected. Block a285500eb1cf95a043a0c610d3a0484095e1969bbcaf1e210cc3a6249c826e8c violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.555+11:00 [WARN ] Finality Violation Detected. Block 8b9bc0d88b03c97700d34ff73696c526e9ebdf4f6c6a84f91f5b6cc5ef32b10f violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.555+11:00 [WARN ] Finality Violation Detected. Block 080d872aac0aecb0a7abf78cb0b4778383485998a022fa1ba69c37f029938d72 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.556+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.556+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.556+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.556+11:00 [WARN ] Finality Violation Detected. Block a285500eb1cf95a043a0c610d3a0484095e1969bbcaf1e210cc3a6249c826e8c violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.556+11:00 [WARN ] Finality Violation Detected. Block 8b9bc0d88b03c97700d34ff73696c526e9ebdf4f6c6a84f91f5b6cc5ef32b10f violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.556+11:00 [WARN ] Finality Violation Detected. Block 080d872aac0aecb0a7abf78cb0b4778383485998a022fa1ba69c37f029938d72 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.556+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.556+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.556+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.556+11:00 [WARN ] Finality Violation Detected. Block a285500eb1cf95a043a0c610d3a0484095e1969bbcaf1e210cc3a6249c826e8c violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.556+11:00 [WARN ] Finality Violation Detected. Block 8b9bc0d88b03c97700d34ff73696c526e9ebdf4f6c6a84f91f5b6cc5ef32b10f violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.556+11:00 [WARN ] Finality Violation Detected. Block 080d872aac0aecb0a7abf78cb0b4778383485998a022fa1ba69c37f029938d72 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.557+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.557+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.557+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.557+11:00 [WARN ] Finality Violation Detected. Block a285500eb1cf95a043a0c610d3a0484095e1969bbcaf1e210cc3a6249c826e8c violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.557+11:00 [WARN ] Finality Violation Detected. Block 8b9bc0d88b03c97700d34ff73696c526e9ebdf4f6c6a84f91f5b6cc5ef32b10f violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.557+11:00 [WARN ] Finality Violation Detected. Block 3bfb46eb422d9b9830292f91501bc67c7e6b67d254fc3631256e5cb498d1474d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.557+11:00 [WARN ] Finality Violation Detected. Block 080d872aac0aecb0a7abf78cb0b4778383485998a022fa1ba69c37f029938d72 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.557+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.557+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.557+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.557+11:00 [WARN ] Finality Violation Detected. Block a285500eb1cf95a043a0c610d3a0484095e1969bbcaf1e210cc3a6249c826e8c violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.557+11:00 [WARN ] Finality Violation Detected. Block 8b9bc0d88b03c97700d34ff73696c526e9ebdf4f6c6a84f91f5b6cc5ef32b10f violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.557+11:00 [WARN ] Finality Violation Detected. Block 3bfb46eb422d9b9830292f91501bc67c7e6b67d254fc3631256e5cb498d1474d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.557+11:00 [WARN ] Finality Violation Detected. Block 080d872aac0aecb0a7abf78cb0b4778383485998a022fa1ba69c37f029938d72 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.558+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.558+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.558+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.558+11:00 [WARN ] Finality Violation Detected. Block a285500eb1cf95a043a0c610d3a0484095e1969bbcaf1e210cc3a6249c826e8c violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.558+11:00 [WARN ] Finality Violation Detected. Block 8b9bc0d88b03c97700d34ff73696c526e9ebdf4f6c6a84f91f5b6cc5ef32b10f violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.558+11:00 [WARN ] Finality Violation Detected. Block 3bfb46eb422d9b9830292f91501bc67c7e6b67d254fc3631256e5cb498d1474d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.558+11:00 [WARN ] Finality Violation Detected. Block 080d872aac0aecb0a7abf78cb0b4778383485998a022fa1ba69c37f029938d72 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.558+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.558+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.558+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.558+11:00 [WARN ] Finality Violation Detected. Block a285500eb1cf95a043a0c610d3a0484095e1969bbcaf1e210cc3a6249c826e8c violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.558+11:00 [WARN ] Finality Violation Detected. Block 8b9bc0d88b03c97700d34ff73696c526e9ebdf4f6c6a84f91f5b6cc5ef32b10f violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.558+11:00 [WARN ] Finality Violation Detected. Block 3bfb46eb422d9b9830292f91501bc67c7e6b67d254fc3631256e5cb498d1474d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.558+11:00 [WARN ] Finality Violation Detected. Block 080d872aac0aecb0a7abf78cb0b4778383485998a022fa1ba69c37f029938d72 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.559+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.559+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.559+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.559+11:00 [WARN ] Finality Violation Detected. Block a285500eb1cf95a043a0c610d3a0484095e1969bbcaf1e210cc3a6249c826e8c violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.559+11:00 [WARN ] Finality Violation Detected. Block 8b9bc0d88b03c97700d34ff73696c526e9ebdf4f6c6a84f91f5b6cc5ef32b10f violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.559+11:00 [WARN ] Finality Violation Detected. Block 5c9eeb5f1cfbeaf066a20725e846cd230e88dee283c469f92f19056fe2ba1324 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.559+11:00 [WARN ] Finality Violation Detected. Block 3bfb46eb422d9b9830292f91501bc67c7e6b67d254fc3631256e5cb498d1474d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.559+11:00 [WARN ] Finality Violation Detected. Block 080d872aac0aecb0a7abf78cb0b4778383485998a022fa1ba69c37f029938d72 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.559+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.559+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.559+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.559+11:00 [WARN ] Finality Violation Detected. Block a285500eb1cf95a043a0c610d3a0484095e1969bbcaf1e210cc3a6249c826e8c violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.559+11:00 [WARN ] Finality Violation Detected. Block 8b9bc0d88b03c97700d34ff73696c526e9ebdf4f6c6a84f91f5b6cc5ef32b10f violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.559+11:00 [WARN ] Finality Violation Detected. Block 5c9eeb5f1cfbeaf066a20725e846cd230e88dee283c469f92f19056fe2ba1324 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.559+11:00 [WARN ] Finality Violation Detected. Block 3bfb46eb422d9b9830292f91501bc67c7e6b67d254fc3631256e5cb498d1474d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.559+11:00 [WARN ] Finality Violation Detected. Block 080d872aac0aecb0a7abf78cb0b4778383485998a022fa1ba69c37f029938d72 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.560+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.560+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.560+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.560+11:00 [WARN ] Finality Violation Detected. Block a285500eb1cf95a043a0c610d3a0484095e1969bbcaf1e210cc3a6249c826e8c violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.560+11:00 [WARN ] Finality Violation Detected. Block 8b9bc0d88b03c97700d34ff73696c526e9ebdf4f6c6a84f91f5b6cc5ef32b10f violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.560+11:00 [WARN ] Finality Violation Detected. Block 5c9eeb5f1cfbeaf066a20725e846cd230e88dee283c469f92f19056fe2ba1324 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.560+11:00 [WARN ] Finality Violation Detected. Block 3bfb46eb422d9b9830292f91501bc67c7e6b67d254fc3631256e5cb498d1474d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.560+11:00 [WARN ] Finality Violation Detected. Block 080d872aac0aecb0a7abf78cb0b4778383485998a022fa1ba69c37f029938d72 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.560+11:00 [WARN ] Finality Violation Detected. Block e3316a8c1385f5d8d445deaecf9aee3af3c4207a4fa5d34b0405c4ad2138c836 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.560+11:00 [WARN ] Finality Violation Detected. Block d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.560+11:00 [WARN ] Finality Violation Detected. Block a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.560+11:00 [WARN ] Finality Violation Detected. Block a285500eb1cf95a043a0c610d3a0484095e1969bbcaf1e210cc3a6249c826e8c violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.560+11:00 [WARN ] Finality Violation Detected. Block 8b9bc0d88b03c97700d34ff73696c526e9ebdf4f6c6a84f91f5b6cc5ef32b10f violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.560+11:00 [WARN ] Finality Violation Detected. Block 5c9eeb5f1cfbeaf066a20725e846cd230e88dee283c469f92f19056fe2ba1324 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.560+11:00 [WARN ] Finality Violation Detected. Block 3bfb46eb422d9b9830292f91501bc67c7e6b67d254fc3631256e5cb498d1474d violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.560+11:00 [WARN ] Finality Violation Detected. Block 080d872aac0aecb0a7abf78cb0b4778383485998a022fa1ba69c37f029938d72 violates finality and is ignored from Virtual chain.
+2025-11-05 22:15:34.624+11:00 [TRACE] Adjusting the retention period root to cover the required retention period. Target timestamp: 6419
+2025-11-05 22:15:34.624+11:00 [TRACE] block | timestamp = 15c3a3eed5898acf7f177cad6190759bd88b470b6034396984751abb161ead9d | 2302
+2025-11-05 22:15:34.624+11:00 [TRACE] block 15c3a3eed5898acf7f177cad6190759bd88b470b6034396984751abb161ead9d timestamp 2302 >= 6419
+2025-11-05 22:15:34.624+11:00 [TRACE] Retention period root adjustment summary: old_root=4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2 new_root=15c3a3eed5898acf7f177cad6190759bd88b470b6034396984751abb161ead9d pruning_point=15c3a3eed5898acf7f177cad6190759bd88b470b6034396984751abb161ead9d steps=0 sink_ts=7284 target_ts=6419 retention_ms=865
+2025-11-05 22:15:34.624+11:00 [TRACE] New Pruning Point: 15c3a3eed5898acf7f177cad6190759bd88b470b6034396984751abb161ead9d | New Retention Period Root: 15c3a3eed5898acf7f177cad6190759bd88b470b6034396984751abb161ead9d
+2025-11-05 22:15:34.624+11:00 [INFO ] Periodic pruning point movement: advancing from 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2 to 15c3a3eed5898acf7f177cad6190759bd88b470b6034396984751abb161ead9d
+2025-11-05 22:15:34.624+11:00 [INFO ] Performing a sanity check that the new UTXO set has the expected UTXO commitment
+2025-11-05 22:15:34.624+11:00 [INFO ] Verifying the new pruning point UTXO commitment (sanity test)
+2025-11-05 22:15:34.624+11:00 [INFO ] Pruning point UTXO commitment was verified correctly (sanity test)
+2025-11-05 22:15:34.624+11:00 [INFO ] Updated the pruning point UTXO set
+2025-11-05 22:15:34.624+11:00 [INFO ] Header and Block pruning: preparing proof and anticone data...
+2025-11-05 22:15:34.625+11:00 [TRACE] Adjusting the retention period root to cover the required retention period. Target timestamp: 6419
+2025-11-05 22:15:34.625+11:00 [TRACE] block | timestamp = 15c3a3eed5898acf7f177cad6190759bd88b470b6034396984751abb161ead9d | 2302
+2025-11-05 22:15:34.625+11:00 [TRACE] block 15c3a3eed5898acf7f177cad6190759bd88b470b6034396984751abb161ead9d timestamp 2302 >= 6419
+2025-11-05 22:15:34.625+11:00 [TRACE] Retention period root adjustment summary: old_root=4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2 new_root=15c3a3eed5898acf7f177cad6190759bd88b470b6034396984751abb161ead9d pruning_point=15c3a3eed5898acf7f177cad6190759bd88b470b6034396984751abb161ead9d steps=0 sink_ts=7284 target_ts=6419 retention_ms=865
+2025-11-05 22:15:34.625+11:00 [TRACE] New Pruning Point: 15c3a3eed5898acf7f177cad6190759bd88b470b6034396984751abb161ead9d | New Retention Period Root: 15c3a3eed5898acf7f177cad6190759bd88b470b6034396984751abb161ead9d
+2025-11-05 22:15:34.625+11:00 [INFO ] Periodic pruning point movement: advancing from 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2 to 15c3a3eed5898acf7f177cad6190759bd88b470b6034396984751abb161ead9d
+2025-11-05 22:15:34.625+11:00 [INFO ] Performing a sanity check that the new UTXO set has the expected UTXO commitment
+2025-11-05 22:15:34.625+11:00 [INFO ] Verifying the new pruning point UTXO commitment (sanity test)
+2025-11-05 22:15:34.625+11:00 [INFO ] Pruning point UTXO commitment was verified correctly (sanity test)
+2025-11-05 22:15:34.625+11:00 [INFO ] Updated the pruning point UTXO set
+2025-11-05 22:15:34.625+11:00 [INFO ] Header and Block pruning: preparing proof and anticone data...
+2025-11-05 22:15:34.626+11:00 [TRACE] Adjusting the retention period root to cover the required retention period. Target timestamp: 6419
+2025-11-05 22:15:34.626+11:00 [TRACE] block | timestamp = 15c3a3eed5898acf7f177cad6190759bd88b470b6034396984751abb161ead9d | 2302
+2025-11-05 22:15:34.626+11:00 [TRACE] block 15c3a3eed5898acf7f177cad6190759bd88b470b6034396984751abb161ead9d timestamp 2302 >= 6419
+2025-11-05 22:15:34.626+11:00 [TRACE] Retention period root adjustment summary: old_root=4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2 new_root=15c3a3eed5898acf7f177cad6190759bd88b470b6034396984751abb161ead9d pruning_point=15c3a3eed5898acf7f177cad6190759bd88b470b6034396984751abb161ead9d steps=0 sink_ts=7284 target_ts=6419 retention_ms=865
+2025-11-05 22:15:34.626+11:00 [TRACE] New Pruning Point: 15c3a3eed5898acf7f177cad6190759bd88b470b6034396984751abb161ead9d | New Retention Period Root: 15c3a3eed5898acf7f177cad6190759bd88b470b6034396984751abb161ead9d
+2025-11-05 22:15:34.626+11:00 [INFO ] Periodic pruning point movement: advancing from 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2 to 15c3a3eed5898acf7f177cad6190759bd88b470b6034396984751abb161ead9d
+2025-11-05 22:15:34.626+11:00 [INFO ] Performing a sanity check that the new UTXO set has the expected UTXO commitment
+2025-11-05 22:15:34.626+11:00 [INFO ] Verifying the new pruning point UTXO commitment (sanity test)
+2025-11-05 22:15:34.626+11:00 [INFO ] Pruning point UTXO commitment was verified correctly (sanity test)
+2025-11-05 22:15:34.626+11:00 [INFO ] Updated the pruning point UTXO set
+2025-11-05 22:15:34.626+11:00 [INFO ] Header and Block pruning: preparing proof and anticone data...
+2025-11-05 22:15:34.627+11:00 [TRACE] Adjusting the retention period root to cover the required retention period. Target timestamp: 6419
+2025-11-05 22:15:34.627+11:00 [TRACE] block | timestamp = 15c3a3eed5898acf7f177cad6190759bd88b470b6034396984751abb161ead9d | 2302
+2025-11-05 22:15:34.627+11:00 [TRACE] block 15c3a3eed5898acf7f177cad6190759bd88b470b6034396984751abb161ead9d timestamp 2302 >= 6419
+2025-11-05 22:15:34.627+11:00 [TRACE] Retention period root adjustment summary: old_root=4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2 new_root=15c3a3eed5898acf7f177cad6190759bd88b470b6034396984751abb161ead9d pruning_point=15c3a3eed5898acf7f177cad6190759bd88b470b6034396984751abb161ead9d steps=0 sink_ts=7284 target_ts=6419 retention_ms=865
+2025-11-05 22:15:34.627+11:00 [TRACE] New Pruning Point: 15c3a3eed5898acf7f177cad6190759bd88b470b6034396984751abb161ead9d | New Retention Period Root: 15c3a3eed5898acf7f177cad6190759bd88b470b6034396984751abb161ead9d
+2025-11-05 22:15:34.627+11:00 [INFO ] Periodic pruning point movement: advancing from 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2 to 15c3a3eed5898acf7f177cad6190759bd88b470b6034396984751abb161ead9d
+2025-11-05 22:15:34.627+11:00 [INFO ] Performing a sanity check that the new UTXO set has the expected UTXO commitment
+2025-11-05 22:15:34.627+11:00 [INFO ] Verifying the new pruning point UTXO commitment (sanity test)
+2025-11-05 22:15:34.627+11:00 [INFO ] Pruning point UTXO commitment was verified correctly (sanity test)
+2025-11-05 22:15:34.627+11:00 [INFO ] Updated the pruning point UTXO set
+2025-11-05 22:15:34.627+11:00 [INFO ] Header and Block pruning: preparing proof and anticone data...
+2025-11-05 22:15:34.631+11:00 [INFO ] Built headers proof with overall 261 headers (7 unique)
+2025-11-05 22:15:34.631+11:00 [INFO ] Header and Block pruning: waiting for consensus write permissions...
+2025-11-05 22:15:34.631+11:00 [INFO ] Starting Header and Block pruning...
+2025-11-05 22:15:34.631+11:00 [INFO ] Header and Block pruning: updated ghostdag data for 0 blocks
+2025-11-05 22:15:34.631+11:00 [INFO ] Header and Block pruning: pruned 20 tips: a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d, 16cf44f2141997fb62ff3d21b3fab62b3946011cfe89425f047a0a1e1e951f4d, a285500eb1cf95a043a0c610d3a0484095e1969bbcaf1e210cc3a6249c826e8c, 7e4e6a464d85b480c79c3cf3c24d7781301db83621cd25190d2ca0b75e93eaef, b27637de8c1d46ff87c02b00763772e4cc324fe873341e42921b2250c6531733...0286b0b32e3e13f0bf946fdba6effb2bcf566c9d5dfb592160515ada6bfa331c, 9e645e75d0eab534e333696ae9745e2691d7b794e736e8465ed273a9f2ae3c08, cb8e8843e17b7a68eed6f608bee38912fe91b0f1b7cfd1a3d61887d0f724ce05, 0bdae49a640ea1ece4490468fffe7c8c6ae9669fe0f0398c54534979060723b7, ae15ae9fd68cadd55d80a518fbcba578a49b80f6311f17254f9c06dcfa37d712
+2025-11-05 22:15:34.631+11:00 [INFO ] Header and Block pruning: starting traversal from: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2 (genesis: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2)
+2025-11-05 22:15:34.631+11:00 [INFO ] Built headers proof with overall 261 headers (7 unique)
+2025-11-05 22:15:34.631+11:00 [INFO ] Header and Block pruning: waiting for consensus write permissions...
+2025-11-05 22:15:34.631+11:00 [INFO ] Starting Header and Block pruning...
+2025-11-05 22:15:34.631+11:00 [INFO ] Header and Block pruning: updated ghostdag data for 0 blocks
+2025-11-05 22:15:34.631+11:00 [INFO ] Header and Block pruning: pruned 20 tips: a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d, 16cf44f2141997fb62ff3d21b3fab62b3946011cfe89425f047a0a1e1e951f4d, a285500eb1cf95a043a0c610d3a0484095e1969bbcaf1e210cc3a6249c826e8c, 7e4e6a464d85b480c79c3cf3c24d7781301db83621cd25190d2ca0b75e93eaef, b27637de8c1d46ff87c02b00763772e4cc324fe873341e42921b2250c6531733...0286b0b32e3e13f0bf946fdba6effb2bcf566c9d5dfb592160515ada6bfa331c, 9e645e75d0eab534e333696ae9745e2691d7b794e736e8465ed273a9f2ae3c08, cb8e8843e17b7a68eed6f608bee38912fe91b0f1b7cfd1a3d61887d0f724ce05, 0bdae49a640ea1ece4490468fffe7c8c6ae9669fe0f0398c54534979060723b7, ae15ae9fd68cadd55d80a518fbcba578a49b80f6311f17254f9c06dcfa37d712
+2025-11-05 22:15:34.631+11:00 [INFO ] Header and Block pruning: starting traversal from: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2 (genesis: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2)
+2025-11-05 22:15:34.632+11:00 [TRACE] Failed to delete reachability node 7e4e6a464d85b480c79c3cf3c24d7781301db83621cd25190d2ca0b75e93eaef (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.632+11:00 [TRACE] Failed to delete reachability node 0bdae49a640ea1ece4490468fffe7c8c6ae9669fe0f0398c54534979060723b7 (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.632+11:00 [TRACE] Failed to delete reachability node 3067fea00d6f0c874c5868705480c7eb965421f51569eb5f15e02add1d74ecb1 (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.632+11:00 [TRACE] Failed to delete reachability node 7bf7db0fd10ee8482a785ee16947a88600e90980a342b0704a44d04767737c48 (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.632+11:00 [TRACE] Failed to delete reachability node b27637de8c1d46ff87c02b00763772e4cc324fe873341e42921b2250c6531733 (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.632+11:00 [TRACE] Failed to delete reachability node ae15ae9fd68cadd55d80a518fbcba578a49b80f6311f17254f9c06dcfa37d712 (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.632+11:00 [TRACE] Failed to delete reachability node 16cf44f2141997fb62ff3d21b3fab62b3946011cfe89425f047a0a1e1e951f4d (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.632+11:00 [TRACE] Failed to delete reachability node 8050c621a189ff4f465fe7bbb41620f4f0f323a03d55b39b3bd39acca2d0c977 (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.632+11:00 [TRACE] Failed to delete reachability node 175045f35cc2a00ae00c86a78aa119275aacf4546266eb5627de8af1ec86c7cc (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.632+11:00 [TRACE] Failed to delete reachability node cb8e8843e17b7a68eed6f608bee38912fe91b0f1b7cfd1a3d61887d0f724ce05 (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.632+11:00 [INFO ] Header and Block pruning completed: traversed: 51, pruned 41
+2025-11-05 22:15:34.632+11:00 [INFO ] Header and Block pruning stats: proof size: 261, pruning point and anticone: 5, unique headers in proof and windows: 11, pruning points in history: 1
+2025-11-05 22:15:34.632+11:00 [INFO ] Rebuilding the pruning proof after pruning data (sanity test)
+2025-11-05 22:15:34.632+11:00 [TRACE] Failed to delete reachability node 7e4e6a464d85b480c79c3cf3c24d7781301db83621cd25190d2ca0b75e93eaef (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.632+11:00 [TRACE] Failed to delete reachability node 0bdae49a640ea1ece4490468fffe7c8c6ae9669fe0f0398c54534979060723b7 (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.632+11:00 [TRACE] Failed to delete reachability node 3067fea00d6f0c874c5868705480c7eb965421f51569eb5f15e02add1d74ecb1 (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.632+11:00 [TRACE] Failed to delete reachability node 7bf7db0fd10ee8482a785ee16947a88600e90980a342b0704a44d04767737c48 (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.632+11:00 [TRACE] Failed to delete reachability node 9e645e75d0eab534e333696ae9745e2691d7b794e736e8465ed273a9f2ae3c08 (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.632+11:00 [TRACE] Failed to delete reachability node b27637de8c1d46ff87c02b00763772e4cc324fe873341e42921b2250c6531733 (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.632+11:00 [TRACE] Failed to delete reachability node ae15ae9fd68cadd55d80a518fbcba578a49b80f6311f17254f9c06dcfa37d712 (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.632+11:00 [TRACE] Failed to delete reachability node 8050c621a189ff4f465fe7bbb41620f4f0f323a03d55b39b3bd39acca2d0c977 (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.632+11:00 [TRACE] Failed to delete reachability node 16cf44f2141997fb62ff3d21b3fab62b3946011cfe89425f047a0a1e1e951f4d (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.632+11:00 [TRACE] Failed to delete reachability node 175045f35cc2a00ae00c86a78aa119275aacf4546266eb5627de8af1ec86c7cc (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.632+11:00 [TRACE] Failed to delete reachability node cb8e8843e17b7a68eed6f608bee38912fe91b0f1b7cfd1a3d61887d0f724ce05 (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.632+11:00 [INFO ] Header and Block pruning completed: traversed: 51, pruned 41
+2025-11-05 22:15:34.632+11:00 [INFO ] Header and Block pruning stats: proof size: 261, pruning point and anticone: 5, unique headers in proof and windows: 11, pruning points in history: 1
+2025-11-05 22:15:34.632+11:00 [INFO ] Rebuilding the pruning proof after pruning data (sanity test)
+2025-11-05 22:15:34.632+11:00 [INFO ] Built headers proof with overall 261 headers (7 unique)
+2025-11-05 22:15:34.632+11:00 [INFO ] Header and Block pruning: waiting for consensus write permissions...
+2025-11-05 22:15:34.632+11:00 [INFO ] Starting Header and Block pruning...
+2025-11-05 22:15:34.632+11:00 [INFO ] Header and Block pruning: updated ghostdag data for 0 blocks
+2025-11-05 22:15:34.632+11:00 [INFO ] Header and Block pruning: pruned 20 tips: a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d, 16cf44f2141997fb62ff3d21b3fab62b3946011cfe89425f047a0a1e1e951f4d, a285500eb1cf95a043a0c610d3a0484095e1969bbcaf1e210cc3a6249c826e8c, 7e4e6a464d85b480c79c3cf3c24d7781301db83621cd25190d2ca0b75e93eaef, b27637de8c1d46ff87c02b00763772e4cc324fe873341e42921b2250c6531733...0286b0b32e3e13f0bf946fdba6effb2bcf566c9d5dfb592160515ada6bfa331c, 9e645e75d0eab534e333696ae9745e2691d7b794e736e8465ed273a9f2ae3c08, cb8e8843e17b7a68eed6f608bee38912fe91b0f1b7cfd1a3d61887d0f724ce05, 0bdae49a640ea1ece4490468fffe7c8c6ae9669fe0f0398c54534979060723b7, ae15ae9fd68cadd55d80a518fbcba578a49b80f6311f17254f9c06dcfa37d712
+2025-11-05 22:15:34.633+11:00 [INFO ] Header and Block pruning: starting traversal from: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2 (genesis: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2)
+2025-11-05 22:15:34.633+11:00 [TRACE] Failed to delete reachability node 7e4e6a464d85b480c79c3cf3c24d7781301db83621cd25190d2ca0b75e93eaef (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.633+11:00 [TRACE] Failed to delete reachability node 0bdae49a640ea1ece4490468fffe7c8c6ae9669fe0f0398c54534979060723b7 (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.633+11:00 [TRACE] Failed to delete reachability node 3067fea00d6f0c874c5868705480c7eb965421f51569eb5f15e02add1d74ecb1 (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.633+11:00 [TRACE] Failed to delete reachability node 7bf7db0fd10ee8482a785ee16947a88600e90980a342b0704a44d04767737c48 (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.633+11:00 [TRACE] Failed to delete reachability node 9e645e75d0eab534e333696ae9745e2691d7b794e736e8465ed273a9f2ae3c08 (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.633+11:00 [TRACE] Failed to delete reachability node b27637de8c1d46ff87c02b00763772e4cc324fe873341e42921b2250c6531733 (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.633+11:00 [TRACE] Failed to delete reachability node ae15ae9fd68cadd55d80a518fbcba578a49b80f6311f17254f9c06dcfa37d712 (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.633+11:00 [TRACE] Failed to delete reachability node 16cf44f2141997fb62ff3d21b3fab62b3946011cfe89425f047a0a1e1e951f4d (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.633+11:00 [TRACE] Failed to delete reachability node 8050c621a189ff4f465fe7bbb41620f4f0f323a03d55b39b3bd39acca2d0c977 (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.633+11:00 [TRACE] Failed to delete reachability node 175045f35cc2a00ae00c86a78aa119275aacf4546266eb5627de8af1ec86c7cc (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.633+11:00 [TRACE] Failed to delete reachability node cb8e8843e17b7a68eed6f608bee38912fe91b0f1b7cfd1a3d61887d0f724ce05 (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.633+11:00 [INFO ] Header and Block pruning completed: traversed: 51, pruned 41
+2025-11-05 22:15:34.633+11:00 [INFO ] Header and Block pruning stats: proof size: 261, pruning point and anticone: 5, unique headers in proof and windows: 11, pruning points in history: 1
+2025-11-05 22:15:34.633+11:00 [INFO ] Rebuilding the pruning proof after pruning data (sanity test)
+2025-11-05 22:15:34.634+11:00 [INFO ] Built headers proof with overall 261 headers (7 unique)
+2025-11-05 22:15:34.634+11:00 [INFO ] Header and Block pruning: waiting for consensus write permissions...
+2025-11-05 22:15:34.634+11:00 [INFO ] Starting Header and Block pruning...
+2025-11-05 22:15:34.634+11:00 [INFO ] Header and Block pruning: updated ghostdag data for 0 blocks
+2025-11-05 22:15:34.634+11:00 [INFO ] Header and Block pruning: pruned 20 tips: a9aa1d30c2eb4b254bc02790fc9a77e712a38d86ac240e8d807ee3ec673fc08d, 16cf44f2141997fb62ff3d21b3fab62b3946011cfe89425f047a0a1e1e951f4d, a285500eb1cf95a043a0c610d3a0484095e1969bbcaf1e210cc3a6249c826e8c, 7e4e6a464d85b480c79c3cf3c24d7781301db83621cd25190d2ca0b75e93eaef, b27637de8c1d46ff87c02b00763772e4cc324fe873341e42921b2250c6531733...0286b0b32e3e13f0bf946fdba6effb2bcf566c9d5dfb592160515ada6bfa331c, 9e645e75d0eab534e333696ae9745e2691d7b794e736e8465ed273a9f2ae3c08, cb8e8843e17b7a68eed6f608bee38912fe91b0f1b7cfd1a3d61887d0f724ce05, 0bdae49a640ea1ece4490468fffe7c8c6ae9669fe0f0398c54534979060723b7, ae15ae9fd68cadd55d80a518fbcba578a49b80f6311f17254f9c06dcfa37d712
+2025-11-05 22:15:34.635+11:00 [INFO ] Header and Block pruning: starting traversal from: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2 (genesis: 4cb48d0b2073b802360145a15ad1abdc01d89b5c2fe4722630ab9b5fe9dfc4f2)
+2025-11-05 22:15:34.635+11:00 [TRACE] Failed to delete reachability node 7e4e6a464d85b480c79c3cf3c24d7781301db83621cd25190d2ca0b75e93eaef (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.635+11:00 [TRACE] Failed to delete reachability node 0bdae49a640ea1ece4490468fffe7c8c6ae9669fe0f0398c54534979060723b7 (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.635+11:00 [TRACE] Failed to delete reachability node 3067fea00d6f0c874c5868705480c7eb965421f51569eb5f15e02add1d74ecb1 (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.635+11:00 [TRACE] Failed to delete reachability node 7bf7db0fd10ee8482a785ee16947a88600e90980a342b0704a44d04767737c48 (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.635+11:00 [TRACE] Failed to delete reachability node 9e645e75d0eab534e333696ae9745e2691d7b794e736e8465ed273a9f2ae3c08 (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.635+11:00 [TRACE] Failed to delete reachability node b27637de8c1d46ff87c02b00763772e4cc324fe873341e42921b2250c6531733 (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.635+11:00 [TRACE] Failed to delete reachability node ae15ae9fd68cadd55d80a518fbcba578a49b80f6311f17254f9c06dcfa37d712 (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.635+11:00 [TRACE] Failed to delete reachability node 16cf44f2141997fb62ff3d21b3fab62b3946011cfe89425f047a0a1e1e951f4d (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.635+11:00 [TRACE] Failed to delete reachability node 8050c621a189ff4f465fe7bbb41620f4f0f323a03d55b39b3bd39acca2d0c977 (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.635+11:00 [TRACE] Failed to delete reachability node 175045f35cc2a00ae00c86a78aa119275aacf4546266eb5627de8af1ec86c7cc (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.635+11:00 [TRACE] Failed to delete reachability node cb8e8843e17b7a68eed6f608bee38912fe91b0f1b7cfd1a3d61887d0f724ce05 (mergeset_len=1, err=DataInconsistency); skipping
+2025-11-05 22:15:34.635+11:00 [INFO ] Header and Block pruning completed: traversed: 51, pruned 41
+2025-11-05 22:15:34.635+11:00 [INFO ] Header and Block pruning stats: proof size: 261, pruning point and anticone: 5, unique headers in proof and windows: 11, pruning points in history: 1
+2025-11-05 22:15:34.635+11:00 [INFO ] Rebuilding the pruning proof after pruning data (sanity test)
+2025-11-05 22:15:34.655+11:00 [INFO ] Proof was rebuilt successfully following pruning
+2025-11-05 22:15:34.655+11:00 [INFO ] Rebuilding pruning point trusted data (sanity test)
+2025-11-05 22:15:34.663+11:00 [INFO ] Trusted data was rebuilt successfully following pruning
+2025-11-05 22:15:34.673+11:00 [INFO ] [PRUNING METRICS] duration_ms=48 traversed=51 pruned=41 lock_hold_ms=0 lock_yields=1 lock_reacquires=49
+2025-11-05 22:15:34.674+11:00 [INFO ] [PRUNING METRICS] commit_type=batched count=1 avg_ops=1183.00 max_ops=1183 avg_bytes=116275.00 max_bytes=116275 avg_commit_ms=10.020 max_commit_ms=10.020
+2025-11-05 22:15:34.674+11:00 [INFO ] [PRUNING METRICS] commit_type=ghostdag_adjust count=1 avg_ops=0.00 max_ops=0 avg_bytes=12.00 max_bytes=12 avg_commit_ms=0.005 max_commit_ms=0.005
+2025-11-05 22:15:34.674+11:00 [INFO ] [PRUNING METRICS] commit_type=tips_and_selected_chain count=1 avg_ops=24.00 max_ops=24 avg_bytes=804.00 max_bytes=804 avg_commit_ms=0.016 max_commit_ms=0.016
+2025-11-05 22:15:34.682+11:00 [INFO ] Proof was rebuilt successfully following pruning
+2025-11-05 22:15:34.682+11:00 [INFO ] Rebuilding pruning point trusted data (sanity test)
+2025-11-05 22:15:34.682+11:00 [INFO ] Trusted data was rebuilt successfully following pruning
+2025-11-05 22:15:34.682+11:00 [INFO ] [PRUNING METRICS] duration_ms=58 traversed=51 pruned=41 lock_hold_ms=0 lock_yields=1 lock_reacquires=49
+2025-11-05 22:15:34.682+11:00 [INFO ] [PRUNING METRICS] commit_type=batched count=1 avg_ops=1203.00 max_ops=1203 avg_bytes=117339.00 max_bytes=117339 avg_commit_ms=0.482 max_commit_ms=0.482
+2025-11-05 22:15:34.682+11:00 [INFO ] [PRUNING METRICS] commit_type=ghostdag_adjust count=1 avg_ops=0.00 max_ops=0 avg_bytes=12.00 max_bytes=12 avg_commit_ms=0.004 max_commit_ms=0.004
+2025-11-05 22:15:34.682+11:00 [INFO ] [PRUNING METRICS] commit_type=tips_and_selected_chain count=1 avg_ops=24.00 max_ops=24 avg_bytes=804.00 max_bytes=804 avg_commit_ms=0.013 max_commit_ms=0.013
+2025-11-05 22:15:34.683+11:00 [INFO ] Proof was rebuilt successfully following pruning
+2025-11-05 22:15:34.683+11:00 [INFO ] Rebuilding pruning point trusted data (sanity test)
+2025-11-05 22:15:34.683+11:00 [INFO ] Trusted data was rebuilt successfully following pruning
+2025-11-05 22:15:34.684+11:00 [INFO ] [PRUNING METRICS] duration_ms=58 traversed=51 pruned=41 lock_hold_ms=0 lock_yields=1 lock_reacquires=49
+2025-11-05 22:15:34.684+11:00 [INFO ] [PRUNING METRICS] commit_type=batched count=1 avg_ops=1183.00 max_ops=1183 avg_bytes=116275.00 max_bytes=116275 avg_commit_ms=0.739 max_commit_ms=0.739
+2025-11-05 22:15:34.684+11:00 [INFO ] [PRUNING METRICS] commit_type=ghostdag_adjust count=1 avg_ops=0.00 max_ops=0 avg_bytes=12.00 max_bytes=12 avg_commit_ms=0.005 max_commit_ms=0.005
+2025-11-05 22:15:34.684+11:00 [INFO ] [PRUNING METRICS] commit_type=tips_and_selected_chain count=1 avg_ops=24.00 max_ops=24 avg_bytes=804.00 max_bytes=804 avg_commit_ms=0.015 max_commit_ms=0.015
+2025-11-05 22:15:34.684+11:00 [INFO ] Proof was rebuilt successfully following pruning
+2025-11-05 22:15:34.684+11:00 [INFO ] Rebuilding pruning point trusted data (sanity test)
+2025-11-05 22:15:34.684+11:00 [INFO ] Trusted data was rebuilt successfully following pruning
+2025-11-05 22:15:34.685+11:00 [ERROR] thread 'block-pool-0' panicked at consensus/src/processes/reachability/inquirer.rs:237:82: called `Result::unwrap()` on an `Err` value: KeyNotFound(Reachability/d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291)
+
+thread 'block-pool-0' panicked at consensus/src/processes/reachability/inquirer.rs:237:82:
+called `Result::unwrap()` on an `Err` value: KeyNotFound(Reachability/d2869eccaae2a0e0bfd1c8da6cf0a53fa44bd18096f9314c8bdf23684b9c8291)
+2025-11-05 22:15:34.685+11:00 [INFO ] [PRUNING METRICS] duration_ms=57 traversed=51 pruned=41 lock_hold_ms=1 lock_yields=1 lock_reacquires=49
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+2025-11-05 22:15:34.685+11:00 [INFO ] [PRUNING METRICS] commit_type=batched count=1 avg_ops=1184.00 max_ops=1184 avg_bytes=116368.00 max_bytes=116368 avg_commit_ms=0.476 max_commit_ms=0.476
+2025-11-05 22:15:34.685+11:00 [INFO ] [PRUNING METRICS] commit_type=ghostdag_adjust count=1 avg_ops=0.00 max_ops=0 avg_bytes=12.00 max_bytes=12 avg_commit_ms=0.004 max_commit_ms=0.004
+2025-11-05 22:15:34.685+11:00 [INFO ] [PRUNING METRICS] commit_type=tips_and_selected_chain count=1 avg_ops=24.00 max_ops=24 avg_bytes=804.00 max_bytes=804 avg_commit_ms=0.228 max_commit_ms=0.228
+Exiting...

@@ -74,6 +74,8 @@ def main():
         return max(vals) if vals else None
 
     def group_for_label(label: str) -> str:
+        if label.startswith("unbatched"):
+            return "unbatched (no batching)"
         if label.startswith("reach-"):
             return "reach-batched (no bodies)"
         return "full-batch (bodies+headers)"

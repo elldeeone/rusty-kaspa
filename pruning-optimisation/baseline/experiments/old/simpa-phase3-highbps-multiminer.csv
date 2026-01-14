@@ -1,0 +1,17 @@
+source,kind,commit_type,count,avg_ops,max_ops,avg_bytes,max_bytes,avg_commit_ms,max_commit_ms,duration_ms,traversed,pruned,lock_hold_ms,lock_yields,lock_reacquires
+pruning-optimisation/baseline/experiments/simpa-prune-20251105-215228.log,summary,,,,,,,,,31,58,51,0,1,58
+pruning-optimisation/baseline/experiments/simpa-prune-20251105-215228.log,commit,batched,1,1476.00,1476,120820.00,120820,0.840,0.840,,,,,,
+pruning-optimisation/baseline/experiments/simpa-prune-20251105-215228.log,commit,ghostdag_adjust,1,0.00,0,12.00,12,0.015,0.015,,,,,,
+pruning-optimisation/baseline/experiments/simpa-prune-20251105-215228.log,commit,tips_and_selected_chain,1,32.00,32,1084.00,1084,0.056,0.056,,,,,,
+pruning-optimisation/baseline/experiments/simpa-prune-20251105-215228.log,summary,,,,,,,,,31,58,51,1,1,58
+pruning-optimisation/baseline/experiments/simpa-prune-20251105-215228.log,commit,batched,1,1359.00,1359,114819.00,114819,0.795,0.795,,,,,,
+pruning-optimisation/baseline/experiments/simpa-prune-20251105-215228.log,commit,ghostdag_adjust,1,0.00,0,12.00,12,0.020,0.020,,,,,,
+pruning-optimisation/baseline/experiments/simpa-prune-20251105-215228.log,commit,tips_and_selected_chain,1,32.00,32,1084.00,1084,0.037,0.037,,,,,,
+pruning-optimisation/baseline/experiments/simpa-prune-20251105-215228.log,summary,,,,,,,,,27,58,51,1,1,58
+pruning-optimisation/baseline/experiments/simpa-prune-20251105-215228.log,commit,batched,1,1321.00,1321,112877.00,112877,0.702,0.702,,,,,,
+pruning-optimisation/baseline/experiments/simpa-prune-20251105-215228.log,commit,ghostdag_adjust,1,0.00,0,12.00,12,0.005,0.005,,,,,,
+pruning-optimisation/baseline/experiments/simpa-prune-20251105-215228.log,commit,tips_and_selected_chain,1,32.00,32,1084.00,1084,0.055,0.055,,,,,,
+pruning-optimisation/baseline/experiments/simpa-prune-20251105-215228.log,summary,,,,,,,,,32,58,51,1,1,58
+pruning-optimisation/baseline/experiments/simpa-prune-20251105-215228.log,commit,batched,1,1359.00,1359,114819.00,114819,0.497,0.497,,,,,,
+pruning-optimisation/baseline/experiments/simpa-prune-20251105-215228.log,commit,ghostdag_adjust,1,0.00,0,12.00,12,0.005,0.005,,,,,,
+pruning-optimisation/baseline/experiments/simpa-prune-20251105-215228.log,commit,tips_and_selected_chain,1,32.00,32,1084.00,1084,0.048,0.048,,,,,,
