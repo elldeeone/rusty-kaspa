@@ -23,7 +23,7 @@ should_run() {
     if [[ -z "${RUN_FILTER}" ]]; then
         return 0
     fi
-    [[ "${label}" == *"${RUN_FILTER}"* ]]
+    [[ "${label}" =~ ${RUN_FILTER} ]]
 }
 
 run_case() {
