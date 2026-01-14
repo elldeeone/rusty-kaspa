@@ -9,6 +9,7 @@ mkdir -p "${LOG_DIR}"
 : "${PRUNE_WAIT_PRUNED_MIN:=1}"
 : "${KASPAD_EXTRA_ARGS:=}"
 : "${RESET_DB:=1}"
+: "${AUTO_YES:=1}"
 : "${KASPAD_SIGINT_WAIT_SEC:=60}"
 : "${KASPAD_SIGTERM_WAIT_SEC:=30}"
 
@@ -29,9 +30,12 @@ run_kaspad() {
     local log_file="${LOG_DIR}/kaspad-${label}-${ts}.log"
     local csv_file="${LOG_DIR}/kaspad-${label}-${ts}.csv"
 
-    local -a args=("--loglevel" "${KASPAD_LOGLEVEL}")
+    local -a args=("--loglevel=${KASPAD_LOGLEVEL}")
     if [[ "${RESET_DB}" == "1" ]]; then
         args+=("--reset-db")
+    fi
+    if [[ "${AUTO_YES}" == "1" ]]; then
+        args+=("--yes")
     fi
     if [[ -n "${network_flag}" ]]; then
         args+=("${network_flag}")
