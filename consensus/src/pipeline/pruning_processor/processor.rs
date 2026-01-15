@@ -1,5 +1,6 @@
 //! TODO: module comment about locking safety and consistency of various pruning stores
 
+use super::metrics::PruningMetrics;
 use crate::{
     consensus::{
         services::{ConsensusServices, DbParentsManager, DbPruningPointManager},
@@ -300,6 +301,7 @@ impl PruningProcessor {
         }
 
         info!("Header and Block pruning: preparing proof and anticone data...");
+        let mut metrics = PruningMetrics::new();
 
         let proof = self.pruning_proof_manager.get_pruning_point_proof();
         let data = self
@@ -455,6 +457,7 @@ impl PruningProcessor {
 
             // If we have the lock for more than a few milliseconds, release and recapture to allow consensus progress during pruning
             if lock_acquire_time.elapsed() > Duration::from_millis(5) {
+                metrics.record_yield(lock_acquire_time.elapsed());
                 drop(reachability_read);
                 // An exit signal was received. Exit from this long running process.
                 if self.is_consensus_exiting.load(Ordering::Relaxed) {
@@ -548,8 +551,12 @@ impl PruningProcessor {
                 let reachability_write = staging_reachability.commit(&mut batch).unwrap();
                 staging_reachability_relations.commit(&mut batch).unwrap();
 
+                let ops = batch.len();
+                let bytes = batch.size_in_bytes();
+                let commit_start = Instant::now();
                 // Flush the batch to the DB
                 self.db.write(batch).unwrap();
+                metrics.record_commit(ops, bytes, commit_start.elapsed());
 
                 // Calling the drops explicitly after the batch is written in order to avoid possible errors.
                 drop(reachability_write);
@@ -561,9 +568,11 @@ impl PruningProcessor {
             }
         }
 
+        metrics.record_final_lock_hold(lock_acquire_time.elapsed());
         drop(reachability_read);
         drop(prune_guard);
 
+        metrics.set_traversed(traversed, counter);
         info!("Header and Block pruning completed: traversed: {}, pruned {}", traversed, counter);
         info!(
             "Header and Block pruning stats: proof size: {}, pruning point and anticone: {}, unique headers in proof and windows: {}, pruning points in history: {}",
@@ -572,6 +581,7 @@ impl PruningProcessor {
             keep_relations.len(),
             keep_headers.len()
         );
+        metrics.log_summary();
 
         if self.config.enable_sanity_checks {
             self.assert_proof_rebuilding(proof, new_pruning_point);
