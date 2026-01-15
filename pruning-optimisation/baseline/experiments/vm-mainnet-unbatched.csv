@@ -1,0 +1,3 @@
+source,simpa_run_label,kind,commit_type,count,avg_ops,max_ops,avg_bytes,max_bytes,avg_commit_ms,max_commit_ms,duration_ms,traversed,pruned,config_lock_max_ms,config_batch_max_ms,config_batch_max_ops,config_batch_max_bytes,config_batch_max_blocks,config_batch_bodies,lock_hold_ms,lock_yields,lock_reacquires
+/Users/luke/Projects/rusty-kaspa/pruning-optimisation/baseline/experiments/vm-mainnet-unbatched.log,,summary,,,,,,,,,989881,474251,432517,5,0,0,0,0,1,615571,79015,79016
+/Users/luke/Projects/rusty-kaspa/pruning-optimisation/baseline/experiments/vm-mainnet-unbatched.log,,commit,unbatched,474234,45.84,772,3661.63,53550,0.067,240.553,,,,,,,,,,,,
