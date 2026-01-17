@@ -68,6 +68,8 @@ impl Router {
                 GetSyncStatus,
                 GetSystemInfo,
                 GetUtxosByAddresses,
+                GetUdpIngestInfo,
+                GetUdpDigests,
                 GetVirtualChainFromBlock,
                 GetVirtualChainFromBlockV2,
                 ResolveFinalityConflict,
@@ -75,6 +77,9 @@ impl Router {
                 SubmitBlock,
                 SubmitTransaction,
                 SubmitTransactionReplacement,
+                UdpEnable,
+                UdpDisable,
+                UdpUpdateSigners,
                 Unban,
             ]
         );

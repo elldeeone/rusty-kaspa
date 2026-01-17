@@ -82,7 +82,7 @@ impl Rpc {
             //     self.println(&ctx, result);
             // }
             RpcApiOps::GetMempoolEntries => {
-                // TODO
+                // TODO: wire filtered/paged mempool reads once the RPC exposes selectors.
                 let result = rpc
                     .get_mempool_entries_call(
                         None,
@@ -288,6 +288,31 @@ impl Rpc {
                 let result =
                     rpc.get_utxo_return_address_call(None, GetUtxoReturnAddressRequest { txid, accepting_block_daa_score }).await?;
 
+                self.println(&ctx, result);
+            }
+            RpcApiOps::GetUdpIngestInfo => {
+                let result = rpc.get_udp_ingest_info(None).await?;
+                self.println(&ctx, result);
+            }
+            RpcApiOps::GetUdpDigests => {
+                let from_epoch = argv.first().and_then(|value| value.parse::<u64>().ok());
+                let limit = argv.get(1).and_then(|value| value.parse::<u32>().ok());
+                let result = rpc.get_udp_digests(from_epoch, limit, None).await?;
+                self.println(&ctx, result);
+            }
+            RpcApiOps::UdpEnable => {
+                let result = rpc.udp_enable(None).await?;
+                self.println(&ctx, result);
+            }
+            RpcApiOps::UdpDisable => {
+                let result = rpc.udp_disable(None).await?;
+                self.println(&ctx, result);
+            }
+            RpcApiOps::UdpUpdateSigners => {
+                if argv.is_empty() {
+                    return Err(Error::custom("Usage: rpc udpUpdateSigners <hex pubkey> [hex pubkey...]"));
+                }
+                let result = rpc.udp_update_signers(argv, None).await?;
                 self.println(&ctx, result);
             }
             RpcApiOps::GetVirtualChainFromBlockV2 => {
