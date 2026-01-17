@@ -6,8 +6,10 @@ use kaspa_core::time::unix_now;
 use kaspa_udp_sidechannel::fixtures::{self, build_delta_vector, build_snapshot_vector, delta_fields, snapshot_fields};
 use secp256k1::{Keypair, Secp256k1, SecretKey};
 use std::net::SocketAddr;
-use std::time::Duration;
+use std::path::PathBuf;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::net::UdpSocket;
+use tokio::net::UnixDatagram;
 use tokio::time::{sleep, Instant};
 
 #[derive(Parser, Debug)]
@@ -15,8 +17,12 @@ use tokio::time::{sleep, Instant};
 #[command(about = "Emit DigestV1 frames at a fixed bitrate for soak/fuzz testing.")]
 struct Args {
     /// UDP target (host:port) to send frames to.
-    #[arg(long, default_value = "127.0.0.1:28515")]
-    target: String,
+    #[arg(long)]
+    target: Option<String>,
+
+    /// Unix datagram socket path to send frames to.
+    #[arg(long, conflicts_with = "target")]
+    target_unix: Option<PathBuf>,
 
     /// Desired bitrate in kilobits per second.
     #[arg(long, default_value_t = 10.0)]
@@ -39,13 +45,55 @@ struct Args {
     signer_secret_hex: Option<String>,
 }
 
+enum OutSocket {
+    Udp(UdpSocket),
+    Unix(UnixDatagram),
+}
+
+impl OutSocket {
+    async fn send(&self, buf: &[u8]) -> Result<()> {
+        match self {
+            OutSocket::Udp(socket) => {
+                socket.send(buf).await.context("send udp")?;
+            }
+            OutSocket::Unix(socket) => {
+                socket.send(buf).await.context("send unix")?;
+            }
+        }
+        Ok(())
+    }
+}
+
+struct UnixSocketGuard {
+    path: PathBuf,
+}
+
+impl Drop for UnixSocketGuard {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
-    let target: SocketAddr = args.target.parse().context("invalid --target")?;
     let network_id: NetworkId = args.network.parse().context("invalid --network")?;
     let network_tag = encode_network_tag(&network_id);
     let keypair = if let Some(hex) = args.signer_secret_hex.as_deref() { keypair_from_hex(hex)? } else { fixtures::default_keypair() };
+
+    let (socket, _guard, target_desc) = if let Some(path) = args.target_unix.as_ref() {
+        let local_path = unix_bind_path();
+        let _ = std::fs::remove_file(&local_path);
+        let socket = UnixDatagram::bind(&local_path).context("bind unix")?;
+        socket.connect(path).context("connect unix")?;
+        (OutSocket::Unix(socket), Some(UnixSocketGuard { path: local_path }), path.to_string_lossy().to_string())
+    } else {
+        let target = args.target.as_deref().unwrap_or("127.0.0.1:28515");
+        let target_addr: SocketAddr = target.parse().context("invalid --target")?;
+        let socket = UdpSocket::bind("127.0.0.1:0").await.context("bind")?;
+        socket.connect(target_addr).await.context("connect")?;
+        (OutSocket::Udp(socket), None, target.to_string())
+    };
 
     let bytes_per_sec = (args.rate_kbps.max(0.1) * 1000.0) / 8.0;
     if bytes_per_sec.is_nan() || bytes_per_sec <= 0.0 {
@@ -53,12 +101,10 @@ async fn main() -> Result<()> {
     }
 
     let snapshot_interval = Duration::from_secs(args.snapshot_interval.max(1));
-    let socket = UdpSocket::bind("127.0.0.1:0").await.context("bind")?;
-    socket.connect(target).await.context("connect")?;
 
     println!(
         "udp-generator target={} rate_kbps={:.2} snapshot_interval={}s network={} source_id={}",
-        args.target,
+        target_desc,
         args.rate_kbps,
         snapshot_interval.as_secs(),
         network_id,
@@ -94,7 +140,7 @@ impl GeneratorState {
         }
     }
 
-    async fn run(&mut self, socket: UdpSocket) -> Result<()> {
+    async fn run(&mut self, socket: OutSocket) -> Result<()> {
         loop {
             let now = Instant::now();
             let send_snapshot = now >= self.next_snapshot_deadline;
@@ -104,7 +150,7 @@ impl GeneratorState {
             } else {
                 self.delta_datagram()
             };
-            socket.send(&datagram).await.context("send")?;
+            socket.send(&datagram).await?;
 
             // Advance sequence/epoch bookkeeping.
             self.seq = self.seq.wrapping_add(1);
@@ -156,4 +202,10 @@ fn keypair_from_hex(hex: &str) -> Result<Keypair> {
     let secp = Secp256k1::new();
     let sk = SecretKey::from_slice(&bytes).context("invalid secret key")?;
     Ok(Keypair::from_secret_key(&secp, &sk))
+}
+
+fn unix_bind_path() -> PathBuf {
+    let pid = std::process::id();
+    let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis();
+    std::env::temp_dir().join(format!("udp-generator-{pid}-{ts}.sock"))
 }

@@ -39,7 +39,8 @@ fn crash_only_corpus_replay() {
     assert!(harness.drop_events.is_empty());
 
     let drops = harness.metrics.drops_snapshot();
-    assert!(drops.iter().all(|(reason, _)| *reason != "panic"), "panic drop reason observed: {drops:?}");
+    let panic_count = drops.iter().find(|(reason, _)| *reason == "panic").map(|(_, count)| *count).unwrap_or(0);
+    assert_eq!(panic_count, 0, "panic drop reason observed: {drops:?}");
 }
 
 fn load_seed_datagrams() -> Vec<Vec<u8>> {

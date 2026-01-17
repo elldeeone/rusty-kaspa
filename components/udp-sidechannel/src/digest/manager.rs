@@ -81,6 +81,9 @@ impl UdpDigestManager {
         metrics: Arc<UdpMetrics>,
         db: Option<Arc<DB>>,
     ) -> Result<Arc<Self>, DigestInitError> {
+        if config.require_signature && config.allowed_signers.is_empty() {
+            warn!("udp.event=signer_config_empty note=require_signature_enabled_without_signers");
+        }
         let registry = SignerRegistry::from_hex(&config.allowed_signers).map_err(DigestInitError::Signers)?;
         let parser = DigestParser::new(config.require_signature, registry, TimestampSkew::default());
         let store = match db {

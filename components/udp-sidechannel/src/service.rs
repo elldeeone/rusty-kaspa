@@ -13,7 +13,7 @@ use crate::{
 };
 use bytes::Bytes;
 use kaspa_connectionmanager::PeerMessageInjector;
-use kaspa_core::task::service::{AsyncService, AsyncServiceError, AsyncServiceFuture, AsyncServiceResult};
+use kaspa_core::task::service::{AsyncService, AsyncServiceFuture, AsyncServiceResult};
 use kaspa_core::{debug, error, info, trace, warn};
 use kaspa_utils::triggers::{Listener, SingleTrigger};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -278,7 +278,18 @@ impl UdpIngestService {
                 }
                 Err(err) => {
                     error!("udp.event=bind_fail reason={err}");
-                    return Err(AsyncServiceError::Service(err.to_string()));
+                    self.set_enabled(false);
+                    tokio::select! {
+                        _ = shutdown.clone() => {
+                            trace!("udp.event=ingest_shutdown");
+                            break;
+                        }
+                        changed = enabled_rx.changed() => {
+                            if changed.is_err() {
+                                break;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -942,6 +953,23 @@ mod tests {
         assert_eq!(metadata.permissions().mode() & 0o777, 0o640);
         drop(service);
         assert!(!path.exists());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn unix_socket_unwritable_dir_errors() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("udp-nope.sock");
+        fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o500)).expect("chmod");
+        let mut cfg = base_config();
+        cfg.listen = None;
+        cfg.listen_unix = Some(path);
+        let service = Arc::new(UdpIngestService::new(cfg, Arc::new(UdpMetrics::new()), None, None));
+        let err = service.bind_listener().await.expect_err("expected unix bind error");
+        matches!(err, UdpIngestError::Io(_));
+        let _ = fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700));
     }
 
     #[cfg(not(unix))]

@@ -178,8 +178,10 @@ impl Default for UdpArgs {
 
 impl UdpArgs {
     fn from_matches(m: &clap::ArgMatches, defaults: &UdpArgs) -> Result<Self, clap::Error> {
-        let listen = m.get_one::<SocketAddr>("udp-listen").cloned().or(defaults.listen);
-        let listen_unix = m.get_one::<PathBuf>("udp-listen-unix").cloned().or_else(|| defaults.listen_unix.clone());
+        let listen_raw = m.get_one::<SocketAddr>("udp-listen").cloned();
+        let listen_unix_raw = m.get_one::<PathBuf>("udp-listen-unix").cloned();
+        let listen_unix = listen_unix_raw.clone().or_else(|| defaults.listen_unix.clone());
+        let listen = if listen_unix_raw.is_some() && listen_raw.is_none() { None } else { listen_raw.or(defaults.listen) };
 
         if listen.is_some() && listen_unix.is_some() {
             return Err(clap::Error::raw(ErrorKind::ArgumentConflict, "only one of --udp.listen or --udp.listen_unix may be set"));
@@ -306,6 +308,14 @@ mod tests {
         let args = Args::parse(["kaspad", "--udp.enable", "--udp.listen=127.0.0.1:40000"]).expect("args parse");
         assert!(args.udp.enable);
         assert_eq!(args.udp.listen.unwrap().to_string(), "127.0.0.1:40000");
+    }
+
+    #[test]
+    fn udp_listen_unix_overrides_default_listen() {
+        let args = Args::parse(["kaspad", "--udp.enable", "--udp.listen_unix=/tmp/udp.sock"]).expect("args parse");
+        assert!(args.udp.enable);
+        assert!(args.udp.listen.is_none());
+        assert_eq!(args.udp.listen_unix.unwrap().to_string_lossy(), "/tmp/udp.sock");
     }
 
     #[test]
