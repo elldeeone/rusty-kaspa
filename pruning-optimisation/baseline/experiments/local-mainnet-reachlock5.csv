@@ -1,0 +1,4 @@
+source,simpa_run_label,kind,commit_type,count,avg_ops,max_ops,avg_bytes,max_bytes,avg_commit_ms,max_commit_ms,duration_ms,traversed,pruned,config_lock_max_ms,config_batch_max_ms,config_batch_max_ops,config_batch_max_bytes,config_batch_max_blocks,config_batch_bodies,lock_hold_ms,lock_yields,lock_reacquires
+/Users/luke/Projects/rusty-kaspa/pruning-optimisation/baseline/experiments/local-mainnet-reachlock5.log,,summary,,,,,,,,,408080,474261,432143,5,50,50000,4194304,256,0,,,
+/Users/luke/Projects/rusty-kaspa/pruning-optimisation/baseline/experiments/local-mainnet-reachlock5.log,,commit,batched,39955,324.24,1544,22735.62,113163,0.203,117.138,,,,,,,,,,,,
+/Users/luke/Projects/rusty-kaspa/pruning-optimisation/baseline/experiments/local-mainnet-reachlock5.log,,commit,body_per_block,474243,4.00,4,152.00,152,0.007,36.965,,,,,,,,,,,,
