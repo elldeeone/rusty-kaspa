@@ -21,6 +21,7 @@ FEE_SOMPI="${FEE_SOMPI:-1000000}"
 BIND_WAIT_SECS="${BIND_WAIT_SECS:-60}"
 RESET_DB="${RESET_DB:-true}"
 CLEAN_APPDIR="${CLEAN_APPDIR:-false}"
+RPC_URL="${RPC_URL:-}"
 
 KASPAD_FLAGS=(
   --devnet
@@ -50,6 +51,10 @@ mkdir -p "${APPDIR}"
 : > "${LOG_FILE}"
 
 KASPAD_FLAGS+=(--appdir="${APPDIR}")
+
+if [[ -z "${RPC_URL}" ]]; then
+  RPC_URL="grpc://${RPC_LISTEN}"
+fi
 
 if [[ "${KASPAD_BIN}" == "cargo" ]]; then
   KASPAD_CMD=(cargo run -p kaspad --features "${KASPAD_FEATURES}" --)
@@ -146,7 +151,7 @@ for _ in $(seq 1 80); do
   if grep -q "udp.event=tx_submit_ok" "${LOG_FILE}"; then
     echo "tx submit ok"
     tail -n 30 "${LOG_FILE}"
-    exit 0
+    break
   fi
   if grep -q "udp.event=tx_submit_fail" "${LOG_FILE}"; then
     echo "tx submit failed" >&2
@@ -156,6 +161,13 @@ for _ in $(seq 1 80); do
   sleep 0.25
 done
 
-echo "tx submit not observed" >&2
-tail -n 80 "${LOG_FILE}" >&2
-exit 1
+if ! grep -q "udp.event=tx_submit_ok" "${LOG_FILE}"; then
+  echo "tx submit not observed" >&2
+  tail -n 80 "${LOG_FILE}" >&2
+  exit 1
+fi
+
+(
+  cd "${ROOT_DIR}"
+  cargo run -p udp-generator --bin udp-rpc-mempool -- --rpc-url "${RPC_URL}" --address "${PREALLOC_ADDRESS}"
+)

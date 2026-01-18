@@ -6268,6 +6268,8 @@ dependencies = [
  "kaspa-addresses",
  "kaspa-consensus-core",
  "kaspa-core",
+ "kaspa-grpc-client",
+ "kaspa-rpc-core",
  "kaspa-txscript",
  "kaspa-udp-sidechannel",
  "secp256k1",
