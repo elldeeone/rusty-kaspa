@@ -13,6 +13,9 @@ faster-hex.workspace = true
 kaspa-core = { path = "../../../core" }
 kaspa-consensus-core = { path = "../../../consensus/core" }
 kaspa-udp-sidechannel = { path = "../../../components/udp-sidechannel" }
+kaspa-addresses = { path = "../../../crypto/addresses" }
+kaspa-txscript = { path = "../../../crypto/txscript" }
 tokio = { version = "1.37", features = ["macros", "rt-multi-thread", "net", "time"] }
 secp256k1.workspace = true
 crc32fast.workspace = true
+borsh.workspace = true

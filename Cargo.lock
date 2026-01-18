@@ -6261,11 +6261,14 @@ name = "udp-generator"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "borsh",
  "clap 4.5.51",
  "crc32fast",
  "faster-hex",
+ "kaspa-addresses",
  "kaspa-consensus-core",
  "kaspa-core",
+ "kaspa-txscript",
  "kaspa-udp-sidechannel",
  "secp256k1",
  "tokio",
