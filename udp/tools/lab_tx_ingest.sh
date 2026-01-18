@@ -167,7 +167,14 @@ if ! grep -q "udp.event=tx_submit_ok" "${LOG_FILE}"; then
   exit 1
 fi
 
+TXID="$(grep -oE 'tx_submit_ok txid=[0-9a-f]+' "${LOG_FILE}" | tail -n 1 | awk -F= '{print $2}')"
+if [[ -z "${TXID}" ]]; then
+  echo "tx submit ok but txid not found in log" >&2
+  tail -n 80 "${LOG_FILE}" >&2
+  exit 1
+fi
+
 (
   cd "${ROOT_DIR}"
-  cargo run -p udp-generator --bin udp-rpc-mempool -- --rpc-url "${RPC_URL}" --address "${PREALLOC_ADDRESS}"
+  cargo run -p udp-generator --bin udp-rpc-mempool -- --rpc-url "${RPC_URL}" --address "${PREALLOC_ADDRESS}" --expect-txid "${TXID}"
 )
