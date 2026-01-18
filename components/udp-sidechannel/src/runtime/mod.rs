@@ -28,8 +28,10 @@ impl Default for RuntimeConfig {
 pub struct FrameRuntime {
     digest_window: DedupWindow,
     block_window: DedupWindow,
+    tx_window: DedupWindow,
     digest_bucket: TokenBucket,
     block_bucket: TokenBucket,
+    tx_bucket: TokenBucket,
 }
 
 #[derive(Debug, Clone)]
@@ -82,11 +84,14 @@ impl FrameRuntime {
         let bytes_per_sec = bytes_per_sec(config.max_kbps);
         let digest_bucket = TokenBucket::new(bytes_per_sec, config.snapshot_overdraft_factor);
         let block_bucket = TokenBucket::new(bytes_per_sec, 1.0);
+        let tx_bucket = TokenBucket::new(bytes_per_sec, 1.0);
         Self {
             digest_window: DedupWindow::new(config.dedup_window, config.dedup_max_entries, config.dedup_retention),
             block_window: DedupWindow::new(config.dedup_window, config.dedup_max_entries, config.dedup_retention),
+            tx_window: DedupWindow::new(config.dedup_window, config.dedup_max_entries, config.dedup_retention),
             digest_bucket,
             block_bucket,
+            tx_bucket,
         }
     }
 
@@ -95,6 +100,7 @@ impl FrameRuntime {
         let window = match header.kind {
             FrameKind::Digest => &mut self.digest_window,
             FrameKind::Block => &mut self.block_window,
+            FrameKind::Tx => &mut self.tx_window,
         };
 
         match window.check(header.seq, hash, now) {
@@ -112,11 +118,13 @@ impl FrameRuntime {
             (FrameKind::Digest, true) => TrafficClass::Snapshot,
             (FrameKind::Digest, false) => TrafficClass::Delta,
             (FrameKind::Block, _) => TrafficClass::Block,
+            (FrameKind::Tx, _) => TrafficClass::Tx,
         };
 
         let bucket = match header.kind {
             FrameKind::Digest => &mut self.digest_bucket,
             FrameKind::Block => &mut self.block_bucket,
+            FrameKind::Tx => &mut self.tx_bucket,
         };
 
         match bucket.try_consume(cost, traffic, now) {
@@ -131,6 +139,7 @@ enum TrafficClass {
     Delta,
     Snapshot,
     Block,
+    Tx,
 }
 
 enum DedupDecision {
@@ -199,6 +208,7 @@ impl TokenBucket {
                 TrafficClass::Delta => Some(DropClass::Delta),
                 TrafficClass::Snapshot => Some(DropClass::Snapshot),
                 TrafficClass::Block => None,
+                TrafficClass::Tx => None,
             });
         }
 
@@ -220,6 +230,14 @@ impl TokenBucket {
                 }
             }
             TrafficClass::Block => {
+                if self.tokens >= need {
+                    self.tokens -= need;
+                    BucketDecision::Accept
+                } else {
+                    BucketDecision::Drop(None)
+                }
+            }
+            TrafficClass::Tx => {
                 if self.tokens >= need {
                     self.tokens -= need;
                     BucketDecision::Accept

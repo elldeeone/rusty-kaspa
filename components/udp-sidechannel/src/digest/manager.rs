@@ -142,6 +142,9 @@ impl UdpDigestManager {
             FrameKind::Block => {
                 trace!("udp.event=frame_ignored kind=block seq={}", header.seq);
             }
+            FrameKind::Tx => {
+                trace!("udp.event=frame_ignored kind=tx seq={}", header.seq);
+            }
         }
     }
 

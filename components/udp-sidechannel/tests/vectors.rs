@@ -73,7 +73,7 @@ fn wrong_network_id_is_dropped() {
     buf[8..16].copy_from_slice(&1u64.to_le_bytes());
     buf[28..32].copy_from_slice(&(16u32).to_le_bytes());
     buf[32..34].copy_from_slice(&DEFAULT_SOURCE_ID.to_le_bytes());
-    let ctx = HeaderParseContext { network_tag: 0x11, payload_caps: PayloadCaps { digest: 2048, block: 0 } };
+    let ctx = HeaderParseContext { network_tag: 0x11, payload_caps: PayloadCaps { digest: 2048, block: 0, tx: 0 } };
     let err = SatFrameHeader::parse(&buf, &ctx).expect_err("network mismatch");
     assert_eq!(err.reason, DropReason::NetworkMismatch);
 }

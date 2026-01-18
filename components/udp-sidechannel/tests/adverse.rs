@@ -74,7 +74,7 @@ struct Harness {
 
 impl Harness {
     fn new() -> Self {
-        let ctx = HeaderParseContext { network_tag: 0x11, payload_caps: PayloadCaps { digest: 2048, block: 131_072 } };
+        let ctx = HeaderParseContext { network_tag: 0x11, payload_caps: PayloadCaps { digest: 2048, block: 131_072, tx: 4096 } };
         let assembler = FrameAssembler::new(FrameAssemblerConfig {
             max_groups: 8,
             max_buffer_bytes: 64 * 1024,

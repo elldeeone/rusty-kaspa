@@ -19,6 +19,7 @@ kaspa-database.workspace = true
 secp256k1.workspace = true
 sha2.workspace = true
 bincode.workspace = true
+borsh.workspace = true
 thiserror.workspace = true
 serde.workspace = true
 tokio = { workspace = true, features = ["net", "time", "sync", "macros", "rt", "rt-multi-thread"] }

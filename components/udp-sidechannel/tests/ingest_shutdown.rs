@@ -17,6 +17,8 @@ fn test_config() -> UdpConfig {
         allowed_signers: vec![],
         digest_queue: 4,
         block_queue: 0,
+        tx_enable: false,
+        tx_queue: 0,
         danger_accept_blocks: false,
         block_mainnet_override: false,
         discard_unsigned: true,
@@ -25,6 +27,7 @@ fn test_config() -> UdpConfig {
         retention_days: 1,
         max_digest_payload_bytes: 2048,
         max_block_payload_bytes: 131_072,
+        max_tx_payload_bytes: 4096,
         block_max_bytes: 131_072,
         log_verbosity: "info".into(),
         admin_remote_allowed: false,
@@ -36,7 +39,7 @@ fn test_config() -> UdpConfig {
 #[tokio::test]
 async fn ingest_service_exits_on_signal() {
     let cfg = test_config();
-    let service = Arc::new(UdpIngestService::new(cfg, Arc::new(UdpMetrics::new()), None, None));
+    let service = Arc::new(UdpIngestService::new(cfg, Arc::new(UdpMetrics::new()), None, None, None));
     let runner = {
         let svc = service.clone();
         tokio::spawn(async move { svc.start().await })

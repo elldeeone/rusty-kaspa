@@ -25,11 +25,14 @@ pub enum DropReason {
     BlockQueueFull,
     BlockUnsupportedFormat,
     BlockMalformed,
+    TxMalformed,
+    TxQueueFull,
+    TxRejected,
     Panic,
 }
 
 impl DropReason {
-    pub const ALL: [DropReason; 17] = [
+    pub const ALL: [DropReason; 20] = [
         DropReason::Crc,
         DropReason::Version,
         DropReason::NetworkMismatch,
@@ -46,6 +49,9 @@ impl DropReason {
         DropReason::BlockQueueFull,
         DropReason::BlockUnsupportedFormat,
         DropReason::BlockMalformed,
+        DropReason::TxMalformed,
+        DropReason::TxQueueFull,
+        DropReason::TxRejected,
         DropReason::Panic,
     ];
 
@@ -67,6 +73,9 @@ impl DropReason {
             DropReason::BlockQueueFull => "block_queue_full",
             DropReason::BlockUnsupportedFormat => "block_unsupported_format",
             DropReason::BlockMalformed => "block_malformed",
+            DropReason::TxMalformed => "tx_malformed",
+            DropReason::TxQueueFull => "tx_queue_full",
+            DropReason::TxRejected => "tx_rejected",
             DropReason::Panic => "panic",
         }
     }
@@ -89,7 +98,10 @@ impl DropReason {
             DropReason::BlockQueueFull => 13,
             DropReason::BlockUnsupportedFormat => 14,
             DropReason::BlockMalformed => 15,
-            DropReason::Panic => 16,
+            DropReason::TxMalformed => 16,
+            DropReason::TxQueueFull => 17,
+            DropReason::TxRejected => 18,
+            DropReason::Panic => 19,
         }
     }
 }

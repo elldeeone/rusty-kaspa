@@ -31,6 +31,8 @@ pub struct UdpConfig {
     pub allowed_signers: Vec<String>,
     pub digest_queue: usize,
     pub block_queue: usize,
+    pub tx_enable: bool,
+    pub tx_queue: usize,
     pub danger_accept_blocks: bool,
     pub block_mainnet_override: bool,
     pub discard_unsigned: bool,
@@ -39,6 +41,7 @@ pub struct UdpConfig {
     pub retention_days: u32,
     pub max_digest_payload_bytes: u32,
     pub max_block_payload_bytes: u32,
+    pub max_tx_payload_bytes: u32,
     pub block_max_bytes: u32,
     pub log_verbosity: String,
     pub admin_remote_allowed: bool,
@@ -58,7 +61,7 @@ impl UdpConfig {
     }
 
     pub fn payload_caps(&self) -> PayloadCaps {
-        PayloadCaps { digest: self.max_digest_payload_bytes, block: self.max_block_payload_bytes }
+        PayloadCaps { digest: self.max_digest_payload_bytes, block: self.max_block_payload_bytes, tx: self.max_tx_payload_bytes }
     }
 
     pub fn network_tag(&self) -> u8 {
@@ -77,6 +80,10 @@ impl UdpConfig {
             NetworkType::Mainnet => self.block_mainnet_override,
             _ => true,
         }
+    }
+
+    pub fn tx_allowed(&self) -> bool {
+        self.tx_enable
     }
 }
 
@@ -114,6 +121,8 @@ mod tests {
             allowed_signers: vec![],
             digest_queue: 0,
             block_queue: 0,
+            tx_enable: false,
+            tx_queue: 0,
             danger_accept_blocks: false,
             block_mainnet_override: false,
             discard_unsigned: false,
@@ -122,6 +131,7 @@ mod tests {
             retention_days: 0,
             max_digest_payload_bytes: 0,
             max_block_payload_bytes: 0,
+            max_tx_payload_bytes: 0,
             block_max_bytes: 0,
             log_verbosity: String::new(),
             admin_remote_allowed: false,

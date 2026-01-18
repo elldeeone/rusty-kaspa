@@ -83,7 +83,7 @@ impl Harness {
             dedup_retention: Duration::from_secs(2),
             snapshot_overdraft_factor: 2.0,
         });
-        let ctx = HeaderParseContext { network_tag: 0x01, payload_caps: PayloadCaps { digest: 4096, block: 0 } };
+        let ctx = HeaderParseContext { network_tag: 0x01, payload_caps: PayloadCaps { digest: 4096, block: 0, tx: 0 } };
         Self { assembler, runtime, ctx, metrics: UdpMetrics::new(), drop_events: Vec::new() }
     }
 

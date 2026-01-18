@@ -32,6 +32,14 @@ fn metric_reasons_are_bounded() {
         "rate_cap",
         "signature",
         "source_signer_mismatch",
+        "block_oversize",
+        "block_queue_full",
+        "block_unsupported_format",
+        "block_malformed",
+        "tx_malformed",
+        "tx_queue_full",
+        "tx_rejected",
+        "panic",
     ];
     let actual: Vec<_> = DropReason::ALL.iter().map(|reason| reason.as_str()).collect();
     assert_eq!(actual, expected, "drop reason label set changed unexpectedly");

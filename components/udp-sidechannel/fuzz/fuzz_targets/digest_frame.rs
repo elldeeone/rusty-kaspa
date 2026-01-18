@@ -8,7 +8,7 @@ use once_cell::sync::Lazy;
 
 static CTX: Lazy<HeaderParseContext> = Lazy::new(|| HeaderParseContext {
     network_tag: 0x01,
-    payload_caps: PayloadCaps { digest: 4096, block: 0 },
+    payload_caps: PayloadCaps { digest: 4096, block: 0, tx: 0 },
 });
 
 static PARSER: Lazy<DigestParser> = Lazy::new(|| {

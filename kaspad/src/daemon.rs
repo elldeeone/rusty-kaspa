@@ -44,7 +44,7 @@ use kaspa_mining::{
     MiningCounters,
 };
 use kaspa_p2p_flows::{flow_context::FlowContext, service::P2pService};
-use kaspa_udp_sidechannel::{UdpDigestManager, UdpIngestService, UdpMetrics};
+use kaspa_udp_sidechannel::{UdpDigestManager, UdpIngestService, UdpMetrics, UdpTxSubmitter};
 
 use kaspa_perf_monitor::{builder::Builder as PerfMonitorBuilder, counters::CountersSnapshot};
 use kaspa_utxoindex::{api::UtxoIndexProxy, UtxoIndex};
@@ -65,6 +65,7 @@ const MINIMUM_RETENTION_PERIOD_DAYS: f64 = 2.0;
 const ONE_GIGABYTE: f64 = 1_000_000_000.0;
 
 use crate::args::Args;
+use crate::udp_tx::FlowTxSubmitter;
 
 const DEFAULT_DATA_DIR: &str = "datadir";
 const CONSENSUS_DB: &str = "consensus";
@@ -674,11 +675,17 @@ Do you confirm? (y/n)";
     } else {
         None
     };
+    let tx_submitter: Option<Arc<dyn UdpTxSubmitter>> = if udp_config.tx_allowed() {
+        Some(FlowTxSubmitter::new(flow_context.clone(), consensus_manager.clone(), config.unsafe_rpc))
+    } else {
+        None
+    };
     let udp_service = Arc::new(UdpIngestService::new(
         udp_config.clone(),
         udp_metrics.clone(),
         block_injector,
         Some(flow_context.flow_shutdown_listener()),
+        tx_submitter,
     ));
     let udp_digest = if udp_config.mode.allows_digest() {
         match UdpDigestManager::start(&udp_config, udp_service.clone(), udp_metrics.clone(), Some(meta_db.clone())) {

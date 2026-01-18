@@ -8,6 +8,7 @@ pub mod metrics;
 pub mod runtime;
 pub mod service;
 mod task;
+mod tx;
 
 pub use block::{BlockChannel, BlockChannelError, BlockFrame, BlockParser, BlockPayload, BlockQueue, BlockQueueError};
 pub use config::{BindTarget, UdpConfig, UdpMode};
@@ -22,3 +23,4 @@ pub use frame::{
 pub use metrics::UdpMetrics;
 pub use runtime::{DropClass, FrameRuntime, RuntimeConfig, RuntimeDecision};
 pub use service::{QueueSnapshot, QueuedFrame, UdpIngestError, UdpIngestService, UdpIngestSnapshot};
+pub use tx::{TxSubmitError, TxSubmitFuture, UdpTxSubmitter};

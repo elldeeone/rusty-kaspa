@@ -9,15 +9,17 @@ const HEADER_CRC_OFFSET: usize = HEADER_LEN - 4;
 pub enum FrameKind {
     Digest = 0x01,
     Block = 0x02,
+    Tx = 0x03,
 }
 
 impl FrameKind {
-    pub const ALL: [FrameKind; 2] = [FrameKind::Digest, FrameKind::Block];
+    pub const ALL: [FrameKind; 3] = [FrameKind::Digest, FrameKind::Block, FrameKind::Tx];
 
     pub fn as_str(self) -> &'static str {
         match self {
             FrameKind::Digest => "digest",
             FrameKind::Block => "block",
+            FrameKind::Tx => "tx",
         }
     }
 
@@ -25,6 +27,7 @@ impl FrameKind {
         match self {
             FrameKind::Digest => 0,
             FrameKind::Block => 1,
+            FrameKind::Tx => 2,
         }
     }
 }
@@ -36,6 +39,7 @@ impl TryFrom<u8> for FrameKind {
         match value {
             0x01 => Ok(FrameKind::Digest),
             0x02 => Ok(FrameKind::Block),
+            0x03 => Ok(FrameKind::Tx),
             _ => Err(()),
         }
     }
@@ -114,6 +118,7 @@ impl SatFrameHeader {
 pub struct PayloadCaps {
     pub digest: u32,
     pub block: u32,
+    pub tx: u32,
 }
 
 impl PayloadCaps {
@@ -121,6 +126,7 @@ impl PayloadCaps {
         match kind {
             FrameKind::Digest => self.digest,
             FrameKind::Block => self.block,
+            FrameKind::Tx => self.tx,
         }
     }
 }
@@ -238,7 +244,7 @@ mod tests {
     use crate::frame::DropReason;
 
     fn ctx() -> HeaderParseContext {
-        HeaderParseContext { network_tag: 0x11, payload_caps: PayloadCaps { digest: 2048, block: 131072 } }
+        HeaderParseContext { network_tag: 0x11, payload_caps: PayloadCaps { digest: 2048, block: 131072, tx: 4096 } }
     }
 
     fn encode_header(kind: FrameKind, payload: &[u8], overrides: impl FnOnce(&mut [u8])) -> Vec<u8> {

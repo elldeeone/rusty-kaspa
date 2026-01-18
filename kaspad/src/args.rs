@@ -133,6 +133,8 @@ pub struct UdpArgs {
     pub allowed_signers: Vec<String>,
     pub digest_queue: usize,
     pub block_queue: usize,
+    pub tx_enable: bool,
+    pub tx_queue: usize,
     pub danger_accept_blocks: bool,
     pub block_mainnet_override: bool,
     pub discard_unsigned: bool,
@@ -141,6 +143,7 @@ pub struct UdpArgs {
     pub retention_days: u32,
     pub max_digest_payload_bytes: u32,
     pub max_block_payload_bytes: u32,
+    pub max_tx_payload_bytes: u32,
     pub block_max_bytes: u32,
     pub admin_remote_allowed: bool,
     pub admin_token_file: Option<PathBuf>,
@@ -160,6 +163,8 @@ impl Default for UdpArgs {
             allowed_signers: Vec::new(),
             digest_queue: 1024,
             block_queue: 32,
+            tx_enable: false,
+            tx_queue: 128,
             danger_accept_blocks: false,
             block_mainnet_override: false,
             discard_unsigned: true,
@@ -168,6 +173,7 @@ impl Default for UdpArgs {
             retention_days: 7,
             max_digest_payload_bytes: 2048,
             max_block_payload_bytes: 1_048_576,
+            max_tx_payload_bytes: 65_536,
             block_max_bytes: 1_048_576,
             admin_remote_allowed: false,
             admin_token_file: None,
@@ -210,6 +216,8 @@ impl UdpArgs {
             allowed_signers,
             digest_queue: arg_match_unwrap_or::<usize>(m, "udp-digest-queue", defaults.digest_queue),
             block_queue: arg_match_unwrap_or::<usize>(m, "udp-block-queue", defaults.block_queue),
+            tx_enable: arg_match_unwrap_or::<bool>(m, "udp-tx-enable", defaults.tx_enable),
+            tx_queue: arg_match_unwrap_or::<usize>(m, "udp-tx-queue", defaults.tx_queue),
             danger_accept_blocks: arg_match_unwrap_or::<bool>(m, "udp-danger-accept-blocks", defaults.danger_accept_blocks),
             block_mainnet_override: arg_match_unwrap_or::<bool>(m, "udp-block-mainnet-override", defaults.block_mainnet_override),
             discard_unsigned: arg_match_unwrap_or::<bool>(m, "udp-discard-unsigned", defaults.discard_unsigned),
@@ -218,6 +226,7 @@ impl UdpArgs {
             retention_days: arg_match_unwrap_or::<u32>(m, "udp-retention-days", defaults.retention_days),
             max_digest_payload_bytes: arg_match_unwrap_or::<u32>(m, "udp-max-digest-payload", defaults.max_digest_payload_bytes),
             max_block_payload_bytes: arg_match_unwrap_or::<u32>(m, "udp-max-block-payload", defaults.max_block_payload_bytes),
+            max_tx_payload_bytes: arg_match_unwrap_or::<u32>(m, "udp-max-tx-payload", defaults.max_tx_payload_bytes),
             block_max_bytes: arg_match_unwrap_or::<u32>(m, "udp-block-max-bytes", defaults.block_max_bytes),
             admin_remote_allowed: arg_match_unwrap_or::<bool>(m, "udp-admin-remote-allowed", defaults.admin_remote_allowed),
             admin_token_file,
@@ -250,6 +259,8 @@ impl UdpArgs {
             allowed_signers: self.allowed_signers.clone(),
             digest_queue: self.digest_queue,
             block_queue: self.block_queue,
+            tx_enable: self.tx_enable,
+            tx_queue: self.tx_queue,
             danger_accept_blocks: self.danger_accept_blocks,
             block_mainnet_override: self.block_mainnet_override,
             discard_unsigned: self.discard_unsigned,
@@ -258,6 +269,7 @@ impl UdpArgs {
             retention_days: self.retention_days,
             max_digest_payload_bytes: self.max_digest_payload_bytes,
             max_block_payload_bytes: self.max_block_payload_bytes,
+            max_tx_payload_bytes: self.max_tx_payload_bytes,
             block_max_bytes: self.block_max_bytes,
             log_verbosity: self.log_verbosity.clone(),
             admin_remote_allowed: self.admin_remote_allowed,
@@ -343,15 +355,18 @@ mod tests {
         let args = Args::parse(["kaspad"]).expect("defaults");
         assert_eq!(args.udp.max_digest_payload_bytes, 2048);
         assert_eq!(args.udp.max_block_payload_bytes, 1_048_576);
+        assert_eq!(args.udp.max_tx_payload_bytes, 65_536);
 
         let cfg = r#"
             [udp]
             max_digest_payload_bytes = 4096
             max_block_payload_bytes = 65536
+            max_tx_payload_bytes = 8192
         "#;
         let args: Args = toml::from_str(cfg).expect("toml parse");
         assert_eq!(args.udp.max_digest_payload_bytes, 4096);
         assert_eq!(args.udp.max_block_payload_bytes, 65_536);
+        assert_eq!(args.udp.max_tx_payload_bytes, 8192);
     }
 }
 
@@ -594,6 +609,15 @@ pub fn cli() -> Command {
                 .help("Maximum bytes accepted per Block payload before dropping (default: 1048576)."),
         )
         .arg(
+            Arg::new("udp-max-tx-payload")
+                .long("udp.max_tx_payload_bytes")
+                .value_name("BYTES")
+                .num_args(1)
+                .require_equals(true)
+                .value_parser(clap::value_parser!(u32))
+                .help("Maximum bytes accepted per Tx capsule payload before dropping (default: 65536)."),
+        )
+        .arg(
             Arg::new("udp-block-max-bytes")
                 .long("udp.block_max_bytes")
                 .value_name("BYTES")
@@ -636,6 +660,21 @@ pub fn cli() -> Command {
                 .require_equals(true)
                 .value_parser(clap::value_parser!(usize))
                 .help("Block queue capacity for optional block mode (default: 32)."),
+        )
+        .arg(
+            Arg::new("udp-tx-enable")
+                .long("udp.tx_enable")
+                .action(ArgAction::SetTrue)
+                .help("Enable Tx capsule ingestion (default: false)."),
+        )
+        .arg(
+            Arg::new("udp-tx-queue")
+                .long("udp.tx_queue")
+                .value_name("COUNT")
+                .num_args(1)
+                .require_equals(true)
+                .value_parser(clap::value_parser!(usize))
+                .help("Tx capsule queue capacity before back-pressure (default: 128)."),
         )
         .arg(
             Arg::new("udp-danger-accept-blocks")
