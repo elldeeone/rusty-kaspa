@@ -64,6 +64,44 @@ Expected: grep prints those flags.
 If grep prints nothing, **stop** and rebuild with `--features libp2p` before continuing.
 If you run `cargo clean`, rebuild with the same `--features libp2p` command again.
 
+## Twist Persistent Mode (Leave Nodes Running)
+
+Use this mode when you want Relay/Node A/Node B to stay up and interact with other devnet nodes over time.
+
+- Keep nodes running for the whole observation window.
+- In Steps 1-12, skip the `pkill` and `rm -rf` lines unless you are explicitly testing restart/reseed behavior.
+- Keep the same appdirs/identity files so peer identity and history stay stable.
+- Monitor continuously with:
+
+```bash
+tail -f /tmp/kaspa-relay.log /tmp/kaspa-a.log /tmp/kaspa-b.log
+```
+
+### Minimum Cargo command required for devnet connectivity
+
+When running `kaspad` via Cargo, include this baseline command:
+
+```bash
+cargo run --bin kaspad --release -- --utxoindex --devnet --connect=23.118.8.163:26611
+```
+
+For DCUtR/libp2p lab runs, append runbook flags to that baseline command (or use the built binary commands in this runbook). If using `cargo run` for libp2p-specific steps, include `--features libp2p`.
+
+Example (Node A style, persistent mode):
+
+```bash
+KASPAD_LIBP2P_AUTONAT_ALLOW_PRIVATE=true \
+nohup cargo run --features libp2p --bin kaspad --release -- \
+  --utxoindex --devnet --connect=23.118.8.163:26611 \
+  --appdir=/tmp/kaspa-a \
+  --libp2p-mode=bridge \
+  --libp2p-identity-path=/tmp/node-a.key \
+  --libp2p-helper-listen=127.0.0.1:38080 \
+  --libp2p-reservations=/ip4/10.0.3.26/tcp/16112/p2p/RELAY_PEER_ID \
+  --libp2p-external-multiaddrs=/ip4/10.0.3.61/tcp/16112 \
+  --nologfiles > /tmp/kaspa-a.log 2>&1 &
+```
+
 ## Step 1: Start Relay
 
 SSH to relay and run:
@@ -707,6 +745,150 @@ grep -E "Connecting to relay target|Connecting to 24[0-9]\\." /tmp/kaspa-a.log |
 
 **Expected:** relay-target attempts may appear; `Connecting to 24[0-9].*` should not appear for synthetic hint targets.
 
+## Step 13: Real-World Bring-Up Handoff (Persistent)
+
+Goal: emulate three independent operators coming online:
+
+- Operator 1 runs one public relay node.
+- Operator 2 runs private Node A.
+- Operator 3 runs private Node B.
+- No helper apparatus and no scripted hole-punch trigger.
+
+### 13.1 Real-world mode rules
+
+- Do not use helper API at all (`--libp2p-helper-listen`, `nc`, helper `dial`, helper `peers`).
+- Do not force dials between Node A and Node B.
+- Start each node once, then leave it running.
+- Keep the baseline devnet connect argument on every node:
+
+```bash
+cargo run --bin kaspad --release -- --utxoindex --devnet --connect=23.118.8.163:26611
+```
+
+### 13.2 Public-node operator (relay) startup
+
+Use the Step 6.1 relay command (`--libp2p-role=public`) and keep that node online as the single public relay operator for this scenario.
+
+### 13.3 Private-node operator startup (Node A and Node B)
+
+Start Node A and Node B in `auto` role, with no helper flag, and leave them online.
+
+Minimal autonomous examples:
+
+```bash
+# Node A (private operator)
+KASPAD_LIBP2P_AUTONAT_ALLOW_PRIVATE=true \
+nohup cargo run --features libp2p --bin kaspad --release -- \
+  --utxoindex --devnet --connect=23.118.8.163:26611 \
+  --appdir=/tmp/kaspa-a \
+  --libp2p-mode=bridge \
+  --libp2p-role=auto \
+  --libp2p-identity-path=/tmp/node-a.key \
+  --libp2p-external-multiaddrs=/ip4/10.0.3.61/tcp/16112 \
+  --libp2p-relay-candidates=/ip4/10.0.3.26/tcp/16112/p2p/RELAY_PEER_ID \
+  --connect=10.0.3.26:16111 \
+  --nologfiles > /tmp/kaspa-a.log 2>&1 &
+
+# Node B (private operator)
+KASPAD_LIBP2P_AUTONAT_ALLOW_PRIVATE=true \
+nohup cargo run --features libp2p --bin kaspad --release -- \
+  --utxoindex --devnet --connect=23.118.8.163:26611 \
+  --appdir=/tmp/kaspa-b \
+  --libp2p-mode=bridge \
+  --libp2p-role=auto \
+  --libp2p-identity-path=/tmp/node-b.key \
+  --libp2p-external-multiaddrs=/ip4/10.0.3.62/tcp/16112 \
+  --libp2p-relay-candidates=/ip4/10.0.3.26/tcp/16112/p2p/RELAY_PEER_ID \
+  --connect=10.0.3.26:16111 \
+  --nologfiles > /tmp/kaspa-b.log 2>&1 &
+```
+
+### 13.4 Passive soak and handoff
+
+1. After all 3 nodes are online, wait at least 15 minutes (30-60 minutes preferred) with no intervention.
+2. Confirm processes remain alive:
+
+```bash
+pgrep -fa "kaspad.*kaspa-a|kaspad.*kaspa-b|kaspad.*kaspa-relay"
+```
+
+3. Collect passive evidence only:
+
+```bash
+tail -n 80 /tmp/kaspa-a.log
+tail -n 80 /tmp/kaspa-b.log
+tail -n 80 /tmp/kaspa-relay.log
+```
+
+Look for naturally occurring indicators such as `reservation accepted`, `dcutr event`, and `path: Direct` (if/when they appear).
+
+4. End this runbook step by handing the environment back to the operator for ongoing observation. Do not add scripted actions after this point.
+
+### 13.5 Structured periodic check-ins (no helper)
+
+Use a fixed cadence (for example every 10 minutes) and write machine-readable snapshots.
+
+Create and start a check-in loop:
+
+```bash
+cat > /tmp/dcutr-checkin.sh <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+interval_sec="${1:-600}" # 600s = 10m
+out="${2:-/tmp/dcutr-checkins.tsv}"
+
+if [[ ! -f "$out" ]]; then
+  printf "ts_utc\tup_a\tup_b\tup_relay\ta_resv\ta_dcutr\ta_direct\tb_resv\tb_dcutr\tb_direct\n" > "$out"
+fi
+
+while true; do
+  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+  up_a=0; pgrep -f "kaspad.*kaspa-a" >/dev/null && up_a=1
+  up_b=0; pgrep -f "kaspad.*kaspa-b" >/dev/null && up_b=1
+  up_r=0; pgrep -f "kaspad.*kaspa-relay" >/dev/null && up_r=1
+
+  a_resv="$(rg -c "reservation accepted" /tmp/kaspa-a.log 2>/dev/null || echo 0)"
+  a_dcutr="$(rg -c "dcutr event" /tmp/kaspa-a.log 2>/dev/null || echo 0)"
+  a_direct="$(rg -c "path: Direct" /tmp/kaspa-a.log 2>/dev/null || echo 0)"
+
+  b_resv="$(rg -c "reservation accepted" /tmp/kaspa-b.log 2>/dev/null || echo 0)"
+  b_dcutr="$(rg -c "dcutr event" /tmp/kaspa-b.log 2>/dev/null || echo 0)"
+  b_direct="$(rg -c "path: Direct" /tmp/kaspa-b.log 2>/dev/null || echo 0)"
+
+  printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+    "$ts" "$up_a" "$up_b" "$up_r" "$a_resv" "$a_dcutr" "$a_direct" "$b_resv" "$b_dcutr" "$b_direct" \
+    | tee -a "$out"
+
+  sleep "$interval_sec"
+done
+EOF
+
+chmod +x /tmp/dcutr-checkin.sh
+nohup /tmp/dcutr-checkin.sh 600 /tmp/dcutr-checkins.tsv > /tmp/dcutr-checkin.log 2>&1 &
+```
+
+Review snapshots:
+
+```bash
+tail -n 20 /tmp/dcutr-checkins.tsv
+```
+
+Optional human-readable view:
+
+```bash
+column -t -s $'\t' /tmp/dcutr-checkins.tsv | tail -n 20
+```
+
+Interpretation for autonomous success:
+
+- `up_a=1`, `up_b=1`, `up_relay=1` throughout the window.
+- `a_dcutr`/`b_dcutr` increase over time without helper actions.
+- `a_direct` or `b_direct` increase over time, indicating natural direct-path upgrades.
+
+Completion criterion for this step: one public relay operator and two private node operators are online, baseline devnet connect is active, no helper apparatus was used, and passive check-ins are being recorded for operator monitoring.
+
 ## Critical Configuration Notes
 
 ### NAT Behavior Primer (Brief)
@@ -748,6 +930,8 @@ to satisfy this requirement.
 
 ## Stopping Nodes
 
+If you are running **Twist Persistent Mode**, do not stop nodes here; keep them alive for long-window observation.
+
 ```bash
 pkill -9 kaspad
 ```
@@ -782,3 +966,4 @@ pkill kaspad
 - [ ] `result: Ok(ConnectionId(...))` in DCUtR event logs (for PASS/PASS-FLAKY)
 - [ ] `path: Direct` in bridge connection logs (for PASS/PASS-FLAKY)
 - [ ] `"path":"direct"` in helper peers output (for PASS/PASS-FLAKY)
+- [ ] Final handoff done: Node A + Node B + public relay left online for passive monitoring (Step 13)
