@@ -122,21 +122,24 @@ impl PruningProofManager {
                 let calculated_coloring_gd = self.coloring_ghostdag_manager.ghostdag(&parents);
                 let calculated_topology_gd = self.topology_ghostdag_manager.ghostdag(&parents);
                 // Override the ghostdag data with the real blue score and blue work
-                (GhostdagData {
-                    blue_score: header.blue_score,
-                    blue_work: header.blue_work,
-                    selected_parent: calculated_coloring_gd.selected_parent,
-                    mergeset_blues: calculated_coloring_gd.mergeset_blues,
-                    mergeset_reds: calculated_coloring_gd.mergeset_reds,
-                    blues_anticone_sizes: calculated_coloring_gd.blues_anticone_sizes,
-                }, GhostdagData {
-                    blue_score: header.blue_score,
-                    blue_work: header.blue_work,
-                    selected_parent: calculated_topology_gd.selected_parent,
-                    mergeset_blues: calculated_topology_gd.mergeset_blues,
-                    mergeset_reds: calculated_topology_gd.mergeset_reds,
-                    blues_anticone_sizes: calculated_topology_gd.blues_anticone_sizes,
-                })
+                (
+                    GhostdagData {
+                        blue_score: header.blue_score,
+                        blue_work: header.blue_work,
+                        selected_parent: calculated_coloring_gd.selected_parent,
+                        mergeset_blues: calculated_coloring_gd.mergeset_blues,
+                        mergeset_reds: calculated_coloring_gd.mergeset_reds,
+                        blues_anticone_sizes: calculated_coloring_gd.blues_anticone_sizes,
+                    },
+                    GhostdagData {
+                        blue_score: header.blue_score,
+                        blue_work: header.blue_work,
+                        selected_parent: calculated_topology_gd.selected_parent,
+                        mergeset_blues: calculated_topology_gd.mergeset_blues,
+                        mergeset_reds: calculated_topology_gd.mergeset_reds,
+                        blues_anticone_sizes: calculated_topology_gd.blues_anticone_sizes,
+                    },
+                )
             };
             self.coloring_ghostdag_store.insert(header.hash, Arc::new(gd.0)).unwrap();
             self.topology_ghostdag_store.insert(header.hash, Arc::new(gd.1)).unwrap();

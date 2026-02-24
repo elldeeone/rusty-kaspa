@@ -238,6 +238,7 @@ impl RpcApi for GrpcClient {
 
     route!(ping_call, Ping);
     route!(get_sync_status_call, GetSyncStatus);
+    route!(get_libp_2_p_status_call, GetLibp2pStatus);
     route!(get_server_info_call, GetServerInfo);
     route!(get_metrics_call, GetMetrics);
     route!(get_connections_call, GetConnections);
@@ -647,10 +648,10 @@ impl Inner {
     }
 
     fn send_connection_event(&self, event: ConnectionEvent) {
-        if let Some(ref connection_event_sender) = self.connection_event_sender {
-            if let Err(err) = connection_event_sender.try_send(event) {
-                debug!("Send connection event error: {err}");
-            }
+        if let Some(ref connection_event_sender) = self.connection_event_sender
+            && let Err(err) = connection_event_sender.try_send(event)
+        {
+            debug!("Send connection event error: {err}");
         }
     }
 

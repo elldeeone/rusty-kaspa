@@ -619,6 +619,13 @@ async fn sanity_test() {
                 })
             }
 
+            KaspadPayloadOps::GetLibp2pStatus => {
+                let rpc_client = client.clone();
+                tst!(op, {
+                    let _ = rpc_client.get_libp_2_p_status_call(None, GetLibp2pStatusRequest {}).await.unwrap();
+                })
+            }
+
             KaspadPayloadOps::GetDaaScoreTimestampEstimate => {
                 let rpc_client = client.clone();
                 tst!(op, {

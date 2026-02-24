@@ -32,6 +32,15 @@ use workflow_wasm::callback;
 use workflow_wasm::extensions::ObjectExtension;
 pub use workflow_wasm::serde::to_value;
 
+// When libp2p is not compiled in, provide dummy request/response types so the
+// generated interface still compiles under `--no-default-features`.
+#[cfg(not(feature = "libp2p"))]
+#[allow(dead_code)]
+type IGetLibp2pStatusRequest = ();
+#[cfg(not(feature = "libp2p"))]
+#[allow(dead_code)]
+type IGetLibp2pStatusResponse = ();
+
 declare! {
     IRpcConfig,
     r#"
@@ -671,11 +680,10 @@ impl RpcClient {
                                 }
                                 Ctl::Disconnect => {
                                     let listener_id = this.inner.listener_id.lock().unwrap().take();
-                                    if let Some(listener_id) = listener_id {
-                                        if let Err(err) = this.inner.client.unregister_listener(listener_id).await {
+                                    if let Some(listener_id) = listener_id
+                                        && let Err(err) = this.inner.client.unregister_listener(listener_id).await {
                                             log_error!("Error in unregister_listener: {:?}",err);
                                         }
-                                    }
                                 }
                             }
 
@@ -916,6 +924,7 @@ build_wrpc_wasm_bindgen_subscriptions!([
 // do not have arguments and the second one is for
 // functions that have a single argument (request).
 
+#[cfg(feature = "libp2p")]
 build_wrpc_wasm_bindgen_interface!(
     [
         // functions with optional arguments
@@ -978,6 +987,8 @@ build_wrpc_wasm_bindgen_interface!(
         /// Obtains basic information about the synchronization status of the Kaspa node.
         /// Returned information: Syncing status.
         GetSyncStatus,
+        /// Returns the current libp2p status (mode/identity/peer ID).
+        GetLibp2pStatus,
         /// Feerate estimates
         GetFeeEstimate,
         /// Retrieves the current network configuration.
@@ -1063,5 +1074,54 @@ build_wrpc_wasm_bindgen_interface!(
         /// Returned information: Virtual chain information. (Version 2)
         /// May be used to get fully populated transactions
         GetVirtualChainFromBlockV2
+    ]
+);
+
+#[cfg(not(feature = "libp2p"))]
+build_wrpc_wasm_bindgen_interface!(
+    [
+        // functions with optional arguments
+        GetBlockCount,
+        GetBlockDagInfo,
+        GetCoinSupply,
+        GetConnectedPeerInfo,
+        GetInfo,
+        GetPeerAddresses,
+        GetMetrics,
+        GetConnections,
+        GetSink,
+        GetSinkBlueScore,
+        Ping,
+        Shutdown,
+        GetServerInfo,
+        GetSyncStatus,
+        GetFeeEstimate,
+        GetCurrentNetwork,
+    ],
+    [
+        AddPeer,
+        Ban,
+        EstimateNetworkHashesPerSecond,
+        GetBalanceByAddress,
+        GetBalancesByAddresses,
+        GetBlock,
+        GetBlocks,
+        GetBlockTemplate,
+        GetCurrentBlockColor,
+        GetDaaScoreTimestampEstimate,
+        GetFeeEstimateExperimental,
+        GetHeaders,
+        GetMempoolEntries,
+        GetMempoolEntriesByAddresses,
+        GetMempoolEntry,
+        GetSubnetwork,
+        GetUtxosByAddresses,
+        GetVirtualChainFromBlock,
+        ResolveFinalityConflict,
+        SubmitBlock,
+        SubmitTransaction,
+        SubmitTransactionReplacement,
+        Unban,
+        GetUtxoReturnAddress
     ]
 );
