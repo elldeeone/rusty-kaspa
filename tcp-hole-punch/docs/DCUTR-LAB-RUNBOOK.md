@@ -346,8 +346,12 @@ nohup ~/rusty-kaspa/target/release/kaspad \
 ```
 libp2p autonat: role auto-promoted to public
 ```
-Note: AutoNAT promotion can take 5-10 minutes. If the line is missing in the first check window, keep waiting and re-check.
-For this step, treat missing promotion log as `FAIL` only after a full 10-minute window.
+Note: promotion is event-driven, not a fixed timer. In `auto` role, promotion requires:
+- enough AutoNAT public probe successes (default threshold: `3`)
+- at least one direct (non-relay) inbound libp2p connection
+- a usable external address
+
+If the line is missing in the first 10 minutes, keep waiting and re-check. Treat this step as `FAIL` only after an extended window (for example 20-30 minutes) with active peer traffic.
 
 ## Step 8: Max Peers Per Relay Cap
 
@@ -766,7 +770,8 @@ cargo run --bin kaspad --release -- --utxoindex --devnet --connect=23.118.8.163:
 
 ### 13.2 Public-node operator (relay) startup
 
-Use the Step 6.1 relay command (`--libp2p-role=public`) and keep that node online as the single public relay operator for this scenario.
+Use the Step 6.1 relay command pattern (`--libp2p-role=public`) and keep that node online as the single public relay operator for this scenario.
+For Step 13 parity, include the same baseline devnet args on relay too: `--utxoindex --devnet --connect=23.118.8.163:26611`.
 
 ### 13.3 Private-node operator startup (Node A and Node B)
 
@@ -898,19 +903,19 @@ Completion criterion for this step: one public relay operator and two private no
 - Symmetric or strict endpoint-dependent NATs commonly cause repeated DCUtR failures even when config is correct.
 - In this lab, if direct upgrade is unstable, verify NAT mode first before changing node settings.
 
-### Environment Variable is REQUIRED
+### AutoNAT Private-Address Flag (Env and CLI)
 
-**You MUST use the environment variable, not just the CLI flag:**
+Current code supports both forms. Runbook examples use env style for consistency.
 
 ```bash
-# CORRECT - This works:
+# Valid (env form):
 KASPAD_LIBP2P_AUTONAT_ALLOW_PRIVATE=true nohup kaspad ...
 
-# INCORRECT - This may NOT work:
+# Also valid (CLI form):
 nohup kaspad --libp2p-autonat-allow-private ...
 ```
 
-The environment variable ensures AutoNAT properly handles private IP ranges in the lab.
+Either form enables AutoNAT private-address handling for lab/NAT environments.
 
 ### External Multiaddrs Must Be NAT IP
 
