@@ -48,21 +48,20 @@ ssh -J root@10.0.3.11 ubuntu@192.168.1.10
 ssh -J root@10.0.3.11 ubuntu@192.168.2.10
 ```
 
-## Mandatory Prerequisite: Build With `libp2p` Feature (All Hosts)
+## Mandatory Prerequisite: Build Latest `kaspad` (All Hosts)
 
-`--libp2p-mode` and related flags are available **only** when `kaspad` is compiled with `--features libp2p`.
 Run this on Relay, Node A, and Node B before Step 1:
 
 ```bash
 cd ~/rusty-kaspa
-cargo build --release --bin kaspad --features libp2p
+cargo build --release --bin kaspad
 ~/rusty-kaspa/target/release/kaspad --help | grep -E -- "--libp2p-mode|--libp2p-role|--libp2p-helper-listen"
 ```
 
 Expected: grep prints those flags.
 
-If grep prints nothing, **stop** and rebuild with `--features libp2p` before continuing.
-If you run `cargo clean`, rebuild with the same `--features libp2p` command again.
+If grep prints nothing, **stop** and rebuild `kaspad` from this branch before continuing.
+If you run `cargo clean`, rebuild with the same `cargo build --release --bin kaspad` command again.
 
 ## Twist Persistent Mode (Leave Nodes Running)
 
@@ -85,16 +84,16 @@ When running `kaspad` via Cargo, include this baseline command:
 cargo run --bin kaspad --release -- --utxoindex --devnet --connect=23.118.8.163:26611
 ```
 
-For DCUtR/libp2p lab runs, append runbook flags to that baseline command (or use the built binary commands in this runbook). If using `cargo run` for libp2p-specific steps, include `--features libp2p`.
+For DCUtR/libp2p lab runs, append runbook flags to that baseline command (or use the built binary commands in this runbook).
 
 Example (Node A style, persistent mode):
 
 ```bash
-KASPAD_LIBP2P_AUTONAT_ALLOW_PRIVATE=true \
-nohup cargo run --features libp2p --bin kaspad --release -- \
+nohup cargo run --bin kaspad --release -- \
   --utxoindex --devnet --connect=23.118.8.163:26611 \
   --appdir=/tmp/kaspa-a \
   --libp2p-mode=bridge \
+  --libp2p-autonat-allow-private \
   --libp2p-identity-path=/tmp/node-a.key \
   --libp2p-helper-listen=127.0.0.1:38080 \
   --libp2p-reservations=/ip4/10.0.3.26/tcp/16112/p2p/RELAY_PEER_ID \
@@ -106,18 +105,18 @@ nohup cargo run --features libp2p --bin kaspad --release -- \
 
 SSH to relay and run:
 
-`KASPAD_LIBP2P_AUTONAT_ALLOW_PRIVATE=true` is **lab-only**. It allows AutoNAT to accept private/NATed observations in this topology. Do not keep it set for normal/public deployments.
+`--libp2p-autonat-allow-private` is **lab-only**. It allows AutoNAT to accept private/NATed observations in this topology. Do not keep it set for normal/public deployments.
 
 ```bash
 # Clean any existing instance
 pkill -9 kaspad
 rm -rf /tmp/kaspa-relay /tmp/relay.key
 
-# Start relay (MUST use env var for AutoNAT)
-KASPAD_LIBP2P_AUTONAT_ALLOW_PRIVATE=true \
+# Start relay (MUST include AutoNAT private flag)
 nohup ~/rusty-kaspa/target/release/kaspad \
   --appdir=/tmp/kaspa-relay \
   --libp2p-mode=bridge \
+  --libp2p-autonat-allow-private \
   --libp2p-identity-path=/tmp/relay.key \
   --libp2p-helper-listen=127.0.0.1:38080 \
   --nologfiles > /tmp/kaspa-relay.log 2>&1 &
@@ -138,11 +137,11 @@ SSH to Node A and run (replace `RELAY_PEER_ID`):
 pkill -9 kaspad
 rm -rf /tmp/kaspa-a /tmp/node-a.key
 
-# Start Node A (MUST use env var for AutoNAT)
-KASPAD_LIBP2P_AUTONAT_ALLOW_PRIVATE=true \
+# Start Node A (MUST include AutoNAT private flag)
 nohup ~/rusty-kaspa/target/release/kaspad \
   --appdir=/tmp/kaspa-a \
   --libp2p-mode=bridge \
+  --libp2p-autonat-allow-private \
   --libp2p-identity-path=/tmp/node-a.key \
   --libp2p-helper-listen=127.0.0.1:38080 \
   --libp2p-reservations=/ip4/10.0.3.26/tcp/16112/p2p/RELAY_PEER_ID \
@@ -171,11 +170,11 @@ SSH to Node B and run (replace `RELAY_PEER_ID`):
 pkill -9 kaspad
 rm -rf /tmp/kaspa-b /tmp/node-b.key
 
-# Start Node B (MUST use env var for AutoNAT)
-KASPAD_LIBP2P_AUTONAT_ALLOW_PRIVATE=true \
+# Start Node B (MUST include AutoNAT private flag)
 nohup ~/rusty-kaspa/target/release/kaspad \
   --appdir=/tmp/kaspa-b \
   --libp2p-mode=bridge \
+  --libp2p-autonat-allow-private \
   --libp2p-identity-path=/tmp/node-b.key \
   --libp2p-helper-listen=127.0.0.1:38080 \
   --libp2p-reservations=/ip4/10.0.3.26/tcp/16112/p2p/RELAY_PEER_ID \
@@ -247,10 +246,10 @@ This validates automatic relay selection via the Address Manager (new feature).
 pkill -9 kaspad
 rm -rf /tmp/kaspa-relay /tmp/relay.key
 
-KASPAD_LIBP2P_AUTONAT_ALLOW_PRIVATE=true \
 nohup ~/rusty-kaspa/target/release/kaspad \
   --appdir=/tmp/kaspa-relay \
   --libp2p-mode=bridge \
+  --libp2p-autonat-allow-private \
   --libp2p-role=public \
   --libp2p-identity-path=/tmp/relay.key \
   --libp2p-helper-listen=127.0.0.1:38080 \
@@ -267,10 +266,10 @@ grep "streaming swarm peer id" /tmp/kaspa-relay.log
 pkill -9 kaspad
 rm -rf /tmp/kaspa-a /tmp/node-a.key
 
-KASPAD_LIBP2P_AUTONAT_ALLOW_PRIVATE=true \
 nohup ~/rusty-kaspa/target/release/kaspad \
   --appdir=/tmp/kaspa-a \
   --libp2p-mode=bridge \
+  --libp2p-autonat-allow-private \
   --libp2p-role=auto \
   --libp2p-max-relays=1 \
   --libp2p-max-peers-per-relay=1 \
@@ -291,10 +290,10 @@ grep -E "relay auto|reservation" /tmp/kaspa-a.log
 pkill -9 kaspad
 rm -rf /tmp/kaspa-b /tmp/node-b.key
 
-KASPAD_LIBP2P_AUTONAT_ALLOW_PRIVATE=true \
 nohup ~/rusty-kaspa/target/release/kaspad \
   --appdir=/tmp/kaspa-b \
   --libp2p-mode=bridge \
+  --libp2p-autonat-allow-private \
   --libp2p-role=auto \
   --libp2p-max-relays=1 \
   --libp2p-max-peers-per-relay=1 \
@@ -329,10 +328,10 @@ This validates automatic role promotion on the relay when AutoNAT confirms publi
 pkill -9 kaspad
 rm -rf /tmp/kaspa-relay /tmp/relay.key
 
-KASPAD_LIBP2P_AUTONAT_ALLOW_PRIVATE=true \
 nohup ~/rusty-kaspa/target/release/kaspad \
   --appdir=/tmp/kaspa-relay \
   --libp2p-mode=bridge \
+  --libp2p-autonat-allow-private \
   --libp2p-role=auto \
   --libp2p-identity-path=/tmp/relay.key \
   --libp2p-helper-listen=127.0.0.1:38080 \
@@ -364,10 +363,10 @@ This validates that private/auto nodes enforce the per‑relay inbound cap.
 pkill -9 kaspad
 rm -rf /tmp/kaspa-a /tmp/node-a.key
 
-KASPAD_LIBP2P_AUTONAT_ALLOW_PRIVATE=true \
 nohup ~/rusty-kaspa/target/release/kaspad \
   --appdir=/tmp/kaspa-a \
   --libp2p-mode=bridge \
+  --libp2p-autonat-allow-private \
   --libp2p-role=auto \
   --libp2p-max-peers-per-relay=1 \
   --libp2p-identity-path=/tmp/node-a.key \
@@ -387,13 +386,13 @@ grep -E "peer id|reservation" /tmp/kaspa-a.log
 pkill -9 kaspad
 rm -rf /tmp/kaspa-c /tmp/node-c.key
 
-KASPAD_LIBP2P_AUTONAT_ALLOW_PRIVATE=true \
 nohup ~/rusty-kaspa/target/release/kaspad \
   --appdir=/tmp/kaspa-c \
   --listen=192.168.2.10:16121 \
   --rpclisten=192.168.2.10:16120 \
   --libp2p-listen-port=16122 \
   --libp2p-mode=bridge \
+  --libp2p-autonat-allow-private \
   --libp2p-role=auto \
   --libp2p-identity-path=/tmp/node-c.key \
   --libp2p-helper-listen=127.0.0.1:38081 \
@@ -426,10 +425,10 @@ Start relay as public (Step 6.1), then start Node A with a candidate missing the
 pkill -9 kaspad
 rm -rf /tmp/kaspa-a /tmp/node-a.key
 
-KASPAD_LIBP2P_AUTONAT_ALLOW_PRIVATE=true \
 nohup ~/rusty-kaspa/target/release/kaspad \
   --appdir=/tmp/kaspa-a \
   --libp2p-mode=bridge \
+  --libp2p-autonat-allow-private \
   --libp2p-role=auto \
   --libp2p-identity-path=/tmp/node-a.key \
   --libp2p-helper-listen=127.0.0.1:38080 \
@@ -452,10 +451,10 @@ Start Node A with a relay candidate but *no* extra source:
 pkill -9 kaspad
 rm -rf /tmp/kaspa-a /tmp/node-a.key
 
-KASPAD_LIBP2P_AUTONAT_ALLOW_PRIVATE=true \
 nohup ~/rusty-kaspa/target/release/kaspad \
   --appdir=/tmp/kaspa-a \
   --libp2p-mode=bridge \
+  --libp2p-autonat-allow-private \
   --libp2p-role=auto \
   --libp2p-identity-path=/tmp/node-a.key \
   --libp2p-helper-listen=127.0.0.1:38080 \
@@ -475,10 +474,10 @@ Restart with a second source and confirm it proceeds:
 pkill -9 kaspad
 rm -rf /tmp/kaspa-a /tmp/node-a.key
 
-KASPAD_LIBP2P_AUTONAT_ALLOW_PRIVATE=true \
 nohup ~/rusty-kaspa/target/release/kaspad \
   --appdir=/tmp/kaspa-a \
   --libp2p-mode=bridge \
+  --libp2p-autonat-allow-private \
   --libp2p-role=auto \
   --libp2p-identity-path=/tmp/node-a.key \
   --libp2p-helper-listen=127.0.0.1:38080 \
@@ -499,10 +498,10 @@ Start Node A with one invalid relay candidate and one valid:
 pkill -9 kaspad
 rm -rf /tmp/kaspa-a /tmp/node-a.key
 
-KASPAD_LIBP2P_AUTONAT_ALLOW_PRIVATE=true \
 nohup ~/rusty-kaspa/target/release/kaspad \
   --appdir=/tmp/kaspa-a \
   --libp2p-mode=bridge \
+  --libp2p-autonat-allow-private \
   --libp2p-role=auto \
   --libp2p-identity-path=/tmp/node-a.key \
   --libp2p-helper-listen=127.0.0.1:38080 \
@@ -524,10 +523,10 @@ If you want confirmation that synthetic relay hints are *not* dialed directly:
 
 ```bash
 RUST_LOG=debug \
-KASPAD_LIBP2P_AUTONAT_ALLOW_PRIVATE=true \
 nohup ~/rusty-kaspa/target/release/kaspad \
   --appdir=/tmp/kaspa-a \
   --libp2p-mode=bridge \
+  --libp2p-autonat-allow-private \
   --libp2p-role=auto \
   --libp2p-identity-path=/tmp/node-a.key \
   --libp2p-helper-listen=127.0.0.1:38080 \
@@ -554,12 +553,12 @@ Relay #1 (16111/16112) is already running. Start Relay #2:
 pkill -9 -f /tmp/kaspa-relay2 || true
 rm -rf /tmp/kaspa-relay2 /tmp/relay2.key
 
-KASPAD_LIBP2P_AUTONAT_ALLOW_PRIVATE=true \
 nohup ~/rusty-kaspa/target/release/kaspad \
   --appdir=/tmp/kaspa-relay2 \
   --listen=10.0.3.26:16211 \
   --rpclisten=10.0.3.26:16210 \
   --libp2p-mode=bridge \
+  --libp2p-autonat-allow-private \
   --libp2p-role=public \
   --libp2p-identity-path=/tmp/relay2.key \
   --libp2p-helper-listen=127.0.0.1:38081 \
@@ -580,7 +579,7 @@ grep "streaming swarm peer id" /tmp/kaspa-relay2.log
 --libp2p-relay-candidates=/ip4/10.0.3.26/tcp/16112,/ip4/10.0.3.26/tcp/16212
 ```
 
-If you want to keep a single relay, you can set `KASPAD_LIBP2P_RELAY_MIN_SOURCES=1` as a lab‑only override.
+If you want to keep a single relay, you can set `--libp2p-relay-min-sources=1` as a lab‑only override.
 
 3. Wait 60–120s to allow address gossip.
 4. Check Node A logs for relay hint selection and relay dial attempts:
@@ -613,7 +612,7 @@ grep -E "reservation failed|probe failed|skipping .* backoff|relay auto" /tmp/ka
 
 This validates that a relay that loses public status is removed and peers move to another relay.
 
-Lab note: for practical testing with a single relay, set `KASPAD_LIBP2P_RELAY_MIN_SOURCES=1` on Node A/B. When the relay stops, you may not see an explicit “releasing reservation” log line; verify by checking helper peers output (empty).
+Lab note: for practical testing with a single relay, set `--libp2p-relay-min-sources=1` on Node A/B. When the relay stops, you may not see an explicit “releasing reservation” log line; verify by checking helper peers output (empty).
 Lab note: to avoid waiting on reservation TTLs, you can restart Node A after the relay goes down to force immediate re‑selection.
 
 1. Start relay in `auto` role and wait for auto‑promotion (Step 7).
@@ -638,10 +637,11 @@ These checks cover behavior added after the original lab flow.
 pkill -9 kaspad
 rm -rf /tmp/kaspa-a /tmp/node-a.key
 
-RUST_LOG=debug KASPAD_LIBP2P_AUTONAT_ALLOW_PRIVATE=true \
+RUST_LOG=debug \
 nohup ~/rusty-kaspa/target/release/kaspad \
   --appdir=/tmp/kaspa-a \
   --libp2p-mode=bridge \
+  --libp2p-autonat-allow-private \
   --libp2p-role=auto \
   --libp2p-identity-path=/tmp/node-a.key \
   --libp2p-helper-listen=127.0.0.1:38080 \
@@ -714,13 +714,14 @@ grep -E "role auto-demoted to private" /tmp/kaspa-relay.log
 pkill -9 kaspad
 rm -rf /tmp/kaspa-c /tmp/node-c.key
 
-KASPAD_LIBP2P_RELAY_MIN_SOURCES=1 KASPAD_LIBP2P_AUTONAT_ALLOW_PRIVATE=true \
 nohup ~/rusty-kaspa/target/release/kaspad \
   --appdir=/tmp/kaspa-c \
   --listen=192.168.2.10:16121 \
   --rpclisten=192.168.2.10:16120 \
   --libp2p-listen-port=16122 \
   --libp2p-mode=bridge \
+  --libp2p-relay-min-sources=1 \
+  --libp2p-autonat-allow-private \
   --libp2p-role=auto \
   --libp2p-identity-path=/tmp/node-c.key \
   --libp2p-helper-listen=127.0.0.1:38081 \
@@ -781,11 +782,11 @@ Minimal autonomous examples:
 
 ```bash
 # Node A (private operator)
-KASPAD_LIBP2P_AUTONAT_ALLOW_PRIVATE=true \
-nohup cargo run --features libp2p --bin kaspad --release -- \
+nohup cargo run --bin kaspad --release -- \
   --utxoindex --devnet --connect=23.118.8.163:26611 \
   --appdir=/tmp/kaspa-a \
   --libp2p-mode=bridge \
+  --libp2p-autonat-allow-private \
   --libp2p-role=auto \
   --libp2p-identity-path=/tmp/node-a.key \
   --libp2p-external-multiaddrs=/ip4/10.0.3.61/tcp/16112 \
@@ -794,11 +795,11 @@ nohup cargo run --features libp2p --bin kaspad --release -- \
   --nologfiles > /tmp/kaspa-a.log 2>&1 &
 
 # Node B (private operator)
-KASPAD_LIBP2P_AUTONAT_ALLOW_PRIVATE=true \
-nohup cargo run --features libp2p --bin kaspad --release -- \
+nohup cargo run --bin kaspad --release -- \
   --utxoindex --devnet --connect=23.118.8.163:26611 \
   --appdir=/tmp/kaspa-b \
   --libp2p-mode=bridge \
+  --libp2p-autonat-allow-private \
   --libp2p-role=auto \
   --libp2p-identity-path=/tmp/node-b.key \
   --libp2p-external-multiaddrs=/ip4/10.0.3.62/tcp/16112 \
@@ -903,19 +904,14 @@ Completion criterion for this step: one public relay operator and two private no
 - Symmetric or strict endpoint-dependent NATs commonly cause repeated DCUtR failures even when config is correct.
 - In this lab, if direct upgrade is unstable, verify NAT mode first before changing node settings.
 
-### AutoNAT Private-Address Flag (Env and CLI)
-
-Current code supports both forms. Runbook examples use env style for consistency.
+### AutoNAT Private-Address Flag (CLI)
 
 ```bash
-# Valid (env form):
-KASPAD_LIBP2P_AUTONAT_ALLOW_PRIVATE=true nohup kaspad ...
-
-# Also valid (CLI form):
+# Valid:
 nohup kaspad --libp2p-autonat-allow-private ...
 ```
 
-Either form enables AutoNAT private-address handling for lab/NAT environments.
+This flag enables AutoNAT private-address handling for lab/NAT environments.
 
 ### External Multiaddrs Must Be NAT IP
 
@@ -949,10 +945,10 @@ pkill kaspad
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| `AttemptsExceeded(3)` | AutoNAT not allowing private IPs | Use `KASPAD_LIBP2P_AUTONAT_ALLOW_PRIVATE=true` env var |
+| `AttemptsExceeded(3)` | AutoNAT not allowing private IPs | Add `--libp2p-autonat-allow-private` to node startup args |
 | `AttemptsExceeded(3)` on first attempt only | Cold-start candidate/relay convergence | Apply Step 5 bounded retries (up to 3), then classify PASS/PASS-FLAKY/FAIL |
 | `AttemptsExceeded(3)` | NAT not full-cone | Load `nft_fullcone` kernel module on routers |
-| `unexpected argument '--libp2p-mode'` | `kaspad` binary built without `libp2p` feature | Rebuild with `cargo build --release --bin kaspad --features libp2p` and verify flags in `kaspad --help` |
+| `unexpected argument '--libp2p-mode'` | Old or wrong `kaspad` binary | Rebuild from this branch with `cargo build --release --bin kaspad` and verify flags in `kaspad --help` |
 | `reservation rejected` | Wrong relay peer ID | Verify relay peer ID in reservation multiaddr |
 | No `path: Direct` | External multiaddr wrong | Use NAT IP, not private IP |
 | Helper API timeout | Helper not started | Check `--libp2p-helper-listen` flag |
@@ -961,7 +957,7 @@ pkill kaspad
 
 - [ ] Full-cone NAT enabled on both routers
 - [ ] `kaspad --help` shows `--libp2p-mode` on Relay, Node A, Node B
-- [ ] `KASPAD_LIBP2P_AUTONAT_ALLOW_PRIVATE=true` env var set on ALL nodes
+- [ ] `--libp2p-autonat-allow-private` set on ALL nodes
 - [ ] `--libp2p-mode=bridge` on all nodes
 - [ ] `--libp2p-external-multiaddrs` set to NAT IP (not private IP)
 - [ ] `--libp2p-reservations` points to correct relay IP and peer ID
