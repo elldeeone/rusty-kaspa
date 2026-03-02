@@ -112,10 +112,11 @@ SSH to relay and run:
 pkill -9 kaspad
 rm -rf /tmp/kaspa-relay /tmp/relay.key
 
-# Start relay (MUST include AutoNAT private flag)
+# Start relay (MUST include public role + AutoNAT private flag for this lab topology)
 nohup ~/rusty-kaspa/target/release/kaspad \
   --appdir=/tmp/kaspa-relay \
   --libp2p-mode=bridge \
+  --libp2p-role=public \
   --libp2p-autonat-allow-private \
   --libp2p-identity-path=/tmp/relay.key \
   --libp2p-helper-listen=127.0.0.1:38080 \

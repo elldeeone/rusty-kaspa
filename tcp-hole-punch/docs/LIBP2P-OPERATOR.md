@@ -52,7 +52,7 @@
 
 ## Address metadata
 - NetAddress carries a `services` bitflag and optional `relay_port` to mark peers that can act as libp2p relays and which port to use. Defaults are zero/None so unaware peers ignore them.
-- The relay flag is set only when libp2p is enabled; address book merges metadata (bitwise OR on services, relay port upgraded if provided). No change to equality/hashing (still IP:port).
+- The relay flag is set only when the effective libp2p role is `public`; private/auto-private posture does not advertise relay capability. Address book merges metadata (bitwise OR on services, relay port upgraded if provided). No change to equality/hashing (still IP:port).
 - This wire addition is backwards-compatible (proto fields optional) and does not affect consensus or TCP behaviour when libp2p is off.
 
 ## Examples
