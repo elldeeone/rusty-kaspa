@@ -177,11 +177,9 @@ impl<
                 5. Cascade voting -- requires most thought for making incremental
         */
 
-        let current_parents = parents.to_vec();
-
         // g = find LCCA
         let mut conflict_genesis = self.common_chain_ancestor(parents);
-        let mut curr_subgroup = current_parents;
+        let mut curr_subgroup = parents.to_vec();
         let mut conflict_ordered_parents = vec![];
         debug!("conflict_genesis: {:#?}", conflict_genesis);
 
@@ -678,6 +676,7 @@ impl Ord for RankValue {
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
+    use std::str::FromStr;
     use std::{cell::RefCell, fs::File};
 
     use kaspa_consensus_core::HashMapCustomHasher;
@@ -1043,5 +1042,308 @@ mod tests {
             reachability.is_chain_ancestor_of(virtual_sp, new_sp_virtual),
             "The selected parent chain changed after attacker raised the rank of previously selected tip"
         )
+    }
+
+    #[test]
+    fn test_parent_ordering_stability() {
+        let genesis_hash = Hash::from_u64_word(1);
+        let mut reachability = MemoryReachabilityStore::new();
+        let mut relations = MemoryRelationsStore::new();
+        let headers_store = Arc::new(MemoryHeaderStore::new());
+
+        let dk_map = RefCell::new(HashMap::new());
+
+        let dagknight_store = Arc::new(MemoryDagknightStore::new(dk_map));
+
+        let dk_executor = DagknightExecutor {
+            genesis_hash,
+            dagknight_store: dagknight_store.clone(),
+            headers_store: headers_store.clone(),
+            reachability_service: MTReachabilityService::new(Arc::new(RwLock::new(reachability.clone()))),
+            relations_store: Arc::new(RwLock::new(relations.clone())),
+        };
+
+        let mut builder = DagBuilder::new(&mut reachability, &mut relations);
+        builder.init();
+        let mut add_block = |hash, parents: Vec<Hash>, blue_work, bits, blue_score, daa_score, selected_parent: Hash| -> Hash {
+            let mut header = Header::from_precomputed_hash(hash, parents.clone());
+            header.bits = bits;
+            header.blue_work = blue_work;
+            header.blue_score = blue_score;
+            header.daa_score = daa_score;
+            headers_store.insert(Arc::new(header));
+
+            builder.add_block_with_selected_parent(DagBlock::new(hash, parents.clone()), selected_parent);
+            hash
+        };
+
+        let mut test_blocks = vec![
+            (prefixed_hash("e89ebc"), vec![ORIGIN], Uint192::from_u64(843081024), 0x1e217aaa, 1657, 1656, ORIGIN),
+            (prefixed_hash("8174b6"), vec![ORIGIN], Uint192::from_u64(843081024), 0x1e217aaa, 1657, 1656, ORIGIN),
+            (prefixed_hash("201544"), vec![ORIGIN], Uint192::from_u64(843081024), 0x1e217aaa, 1657, 1656, ORIGIN),
+            (prefixed_hash("6a7e5c"), vec![ORIGIN], Uint192::from_u64(842579924), 0x1e218628, 1656, 1655, ORIGIN),
+            (prefixed_hash("580592"), vec![ORIGIN], Uint192::from_u64(843081024), 0x1e217aaa, 1657, 1656, ORIGIN),
+            (prefixed_hash("dd4f81"), vec![ORIGIN], Uint192::from_u64(843081024), 0x1e217aaa, 1657, 1656, ORIGIN),
+            (
+                prefixed_hash("86c4ff"),
+                vec![prefixed_hash("e89ebc"), prefixed_hash("580592"), prefixed_hash("201544"), prefixed_hash("6a7e5c")],
+                Uint192::from_u64(845084849),
+                0x1e216a52,
+                1661,
+                1660,
+                prefixed_hash("e89ebc"),
+            ),
+            (
+                prefixed_hash("97a14e"),
+                vec![
+                    prefixed_hash("e89ebc"),
+                    prefixed_hash("580592"),
+                    prefixed_hash("dd4f81"),
+                    prefixed_hash("201544"),
+                    prefixed_hash("6a7e5c"),
+                ],
+                Uint192::from_u64(845585973),
+                0x1e216bd8,
+                1662,
+                1661,
+                prefixed_hash("e89ebc"),
+            ),
+            (
+                prefixed_hash("29552f"),
+                vec![prefixed_hash("e89ebc"), prefixed_hash("6a7e5c")],
+                Uint192::from_u64(844082601),
+                0x1e217dd8,
+                1659,
+                1658,
+                prefixed_hash("e89ebc"),
+            ),
+            (
+                prefixed_hash("08db74"),
+                vec![prefixed_hash("97a14e"), prefixed_hash("86c4ff"), prefixed_hash("8174b6"), prefixed_hash("29552f")],
+                Uint192::from_u64(847592108),
+                0x1e2169a2,
+                1666,
+                1665,
+                prefixed_hash("97a14e"),
+            ),
+            (
+                prefixed_hash("01d3fe"),
+                vec![prefixed_hash("3a7b96"), prefixed_hash("6994eb"), prefixed_hash("c62de5"), prefixed_hash("fd4f24")],
+                Uint192::from_u64(851610005),
+                0x1e217441,
+                1674,
+                1673,
+                prefixed_hash("3a7b96"),
+            ),
+            (
+                prefixed_hash("715571"),
+                vec![
+                    prefixed_hash("f0f11f"),
+                    prefixed_hash("5bc45a"),
+                    prefixed_hash("6994eb"),
+                    prefixed_hash("c62de5"),
+                    prefixed_hash("3a7b96"),
+                ],
+                Uint192::from_u64(852614139),
+                0x1e21750d,
+                1676,
+                1675,
+                prefixed_hash("f0f11f"),
+            ),
+            (
+                prefixed_hash("f65ac9"),
+                vec![
+                    prefixed_hash("f0f11f"),
+                    prefixed_hash("5bc45a"),
+                    prefixed_hash("6994eb"),
+                    prefixed_hash("c62de5"),
+                    prefixed_hash("3a7b96"),
+                ],
+                Uint192::from_u64(852614139),
+                0x1e21750d,
+                1676,
+                1675,
+                prefixed_hash("f0f11f"),
+            ),
+            (
+                prefixed_hash("5bc45a"),
+                vec![prefixed_hash("08db74"), prefixed_hash("34fd9d"), prefixed_hash("fffb5a"), prefixed_hash("fd4f24")],
+                Uint192::from_u64(850103750),
+                0x1e216a8e,
+                1671,
+                1670,
+                prefixed_hash("08db74"),
+            ),
+            (
+                prefixed_hash("34fd9d"),
+                vec![prefixed_hash("86c4ff"), prefixed_hash("dd4f81"), prefixed_hash("8174b6"), prefixed_hash("29552f")],
+                Uint192::from_u64(847090116),
+                0x1e21630f,
+                1665,
+                1664,
+                prefixed_hash("86c4ff"),
+            ),
+            (
+                prefixed_hash("f0f11f"),
+                vec![prefixed_hash("08db74"), prefixed_hash("34fd9d"), prefixed_hash("fffb5a"), prefixed_hash("fd4f24")],
+                Uint192::from_u64(850103750),
+                0x1e216a8e,
+                1671,
+                1670,
+                prefixed_hash("08db74"),
+            ),
+            (
+                prefixed_hash("3a7b96"),
+                vec![prefixed_hash("fffb5a"), prefixed_hash("34fd9d"), prefixed_hash("97a14e"), prefixed_hash("557671")],
+                Uint192::from_u64(849099082),
+                0x1e2169d2,
+                1669,
+                1668,
+                prefixed_hash("fffb5a"),
+            ),
+            (
+                prefixed_hash("fd4f24"),
+                vec![prefixed_hash("557671"), prefixed_hash("97a14e"), prefixed_hash("86c4ff"), prefixed_hash("29552f")],
+                Uint192::from_u64(848094066),
+                0x1e216267,
+                1667,
+                1666,
+                prefixed_hash("557671"),
+            ),
+            (
+                prefixed_hash("b11117"),
+                vec![
+                    prefixed_hash("f0f11f"),
+                    prefixed_hash("5bc45a"),
+                    prefixed_hash("6994eb"),
+                    prefixed_hash("c62de5"),
+                    prefixed_hash("3a7b96"),
+                ],
+                Uint192::from_u64(852614139),
+                0x1e21750d,
+                1676,
+                1675,
+                prefixed_hash("f0f11f"),
+            ),
+            (
+                prefixed_hash("2c026c"),
+                vec![prefixed_hash("e37fb7"), prefixed_hash("5bc45a"), prefixed_hash("c6fcaf"), prefixed_hash("f0f11f")],
+                Uint192::from_u64(853617137),
+                0x1e216697,
+                1678,
+                1677,
+                prefixed_hash("e37fb7"),
+            ),
+            (
+                prefixed_hash("c6fcaf"),
+                vec![prefixed_hash("3a7b96"), prefixed_hash("6994eb"), prefixed_hash("c62de5"), prefixed_hash("fd4f24")],
+                Uint192::from_u64(851610005),
+                0x1e217441,
+                1674,
+                1673,
+                prefixed_hash("3a7b96"),
+            ),
+            (
+                prefixed_hash("c62de5"),
+                vec![prefixed_hash("08db74"), prefixed_hash("34fd9d"), prefixed_hash("fffb5a"), prefixed_hash("557671")],
+                Uint192::from_u64(849601204),
+                0x1e216d6a,
+                1670,
+                1669,
+                prefixed_hash("08db74"),
+            ),
+            (
+                prefixed_hash("2255a4"),
+                vec![
+                    prefixed_hash("f0f11f"),
+                    prefixed_hash("5bc45a"),
+                    prefixed_hash("6994eb"),
+                    prefixed_hash("c62de5"),
+                    prefixed_hash("3a7b96"),
+                ],
+                Uint192::from_u64(852614139),
+                0x1e21750d,
+                1676,
+                1675,
+                prefixed_hash("f0f11f"),
+            ),
+            (
+                prefixed_hash("557671"),
+                vec![
+                    prefixed_hash("e89ebc"),
+                    prefixed_hash("580592"),
+                    prefixed_hash("dd4f81"),
+                    prefixed_hash("8174b6"),
+                    prefixed_hash("201544"),
+                    prefixed_hash("6a7e5c"),
+                ],
+                Uint192::from_u64(846087097),
+                0x1e216c6d,
+                1663,
+                1662,
+                prefixed_hash("e89ebc"),
+            ),
+            (
+                prefixed_hash("6994eb"),
+                vec![prefixed_hash("34fd9d"), prefixed_hash("97a14e"), prefixed_hash("557671")],
+                Uint192::from_u64(848596574),
+                0x1e21678b,
+                1668,
+                1667,
+                prefixed_hash("34fd9d"),
+            ),
+            (
+                prefixed_hash("e37fb7"),
+                vec![prefixed_hash("3a7b96"), prefixed_hash("6994eb"), prefixed_hash("c62de5"), prefixed_hash("fd4f24")],
+                Uint192::from_u64(851610005),
+                0x1e217441,
+                1674,
+                1673,
+                prefixed_hash("3a7b96"),
+            ),
+            (
+                prefixed_hash("fffb5a"),
+                vec![prefixed_hash("86c4ff"), prefixed_hash("dd4f81"), prefixed_hash("8174b6"), prefixed_hash("29552f")],
+                Uint192::from_u64(847090116),
+                0x1e21630f,
+                1665,
+                1664,
+                prefixed_hash("86c4ff"),
+            ),
+        ];
+
+        test_blocks.sort_by_key(|(_, _, blue_work, _, _, _, _)| *blue_work);
+
+        for (hash, parents, blue_work, bits, blue_score, daa_score, selected_parent) in &test_blocks {
+            add_block(*hash, parents.clone(), *blue_work, *bits, *blue_score, *daa_score, *selected_parent);
+        }
+
+        // # Parents (unsorted): [f65ac92736c9d91e4b06e7c1120d53be3bd3361f468eaba8682d49aaf5be680f, 2c026c2c27bf0dd2819ae261344788a700a6d17bd29799ecd24d8765f420c144, 01d3fe79456d0824fd96a6dc73291ddb35081b6c48c0c4a443d406b2655ebedc, 71557118a55901ab90a5a591470a49740ef3a37357f94fd923d908156b6d5893, b111170bc0609baa9433f3600b37e56207fb720dcb46aa0d8ae716d220586c61, 2255a4f065d061fb621ee9a67597aef002550f4a0ab85149d64f9adebeb31223]
+        let mut parents = vec![
+            prefixed_hash("f65ac9"),
+            prefixed_hash("2c026c"),
+            prefixed_hash("01d3fe"),
+            prefixed_hash("715571"),
+            prefixed_hash("b11117"),
+            prefixed_hash("2255a4"),
+        ];
+        let base_result = dk_executor.dagknight(&parents);
+
+        parents.sort();
+        let sorted_result = dk_executor.dagknight(&parents);
+
+        assert_eq!(
+            base_result.selected_parent, sorted_result.selected_parent,
+            "Selected parent must be the same regardless of parent order"
+        );
+    }
+
+    fn prefixed_hash(s: &str) -> Hash {
+        // append 0s afte the base string to make it 64 chars long
+        let mut full_string = s.to_string();
+        while full_string.len() < 64 {
+            full_string.push('0');
+        }
+        Hash::from_str(&full_string).expect("Invalid hash string")
     }
 }
