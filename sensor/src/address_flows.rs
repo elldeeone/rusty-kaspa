@@ -37,11 +37,7 @@ pub struct ReceiveAddressesFlow {
 }
 
 impl ReceiveAddressesFlow {
-    pub fn new(
-        address_manager: Arc<Mutex<AddressManager>>,
-        router: Arc<Router>,
-        incoming_route: IncomingRoute,
-    ) -> Self {
+    pub fn new(address_manager: Arc<Mutex<AddressManager>>, router: Arc<Router>, incoming_route: IncomingRoute) -> Self {
         Self { address_manager, router, incoming_route }
     }
 
@@ -76,11 +72,7 @@ impl ReceiveAddressesFlow {
 
         // Validate address count
         if address_list.len() > MAX_ADDRESSES_RECEIVE {
-            return Err(ProtocolError::OtherOwned(format!(
-                "address count {} exceeded {}",
-                address_list.len(),
-                MAX_ADDRESSES_RECEIVE
-            )));
+            return Err(ProtocolError::OtherOwned(format!("address count {} exceeded {}", address_list.len(), MAX_ADDRESSES_RECEIVE)));
         }
 
         // Store addresses in address manager
@@ -109,11 +101,7 @@ pub struct SendAddressesFlow {
 }
 
 impl SendAddressesFlow {
-    pub fn new(
-        address_manager: Arc<Mutex<AddressManager>>,
-        router: Arc<Router>,
-        incoming_route: IncomingRoute,
-    ) -> Self {
+    pub fn new(address_manager: Arc<Mutex<AddressManager>>, router: Arc<Router>, incoming_route: IncomingRoute) -> Self {
         Self { address_manager, router, incoming_route }
     }
 

@@ -14,6 +14,35 @@ pub enum PeerClassification {
     Unknown,
 }
 
+/// Why a peer ended up with its final classification.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ClassificationReason {
+    AdvertisedProbeSuccess,
+    AdvertisedProbeTimeout,
+    AdvertisedProbeRefused,
+    AdvertisedProbeIoError,
+    MissingAdvertisedAddress,
+    AdvertisedPrivateAddress,
+    InvalidAdvertisedAddress,
+    ProbeRateLimited,
+}
+
+impl ClassificationReason {
+    pub fn as_metric_label(&self) -> &'static str {
+        match self {
+            Self::AdvertisedProbeSuccess => "advertised_probe_success",
+            Self::AdvertisedProbeTimeout => "advertised_probe_timeout",
+            Self::AdvertisedProbeRefused => "advertised_probe_refused",
+            Self::AdvertisedProbeIoError => "advertised_probe_io_error",
+            Self::MissingAdvertisedAddress => "missing_advertised_address",
+            Self::AdvertisedPrivateAddress => "advertised_private_address",
+            Self::InvalidAdvertisedAddress => "invalid_advertised_address",
+            Self::ProbeRateLimited => "probe_rate_limited",
+        }
+    }
+}
+
 /// A complete peer connection event with all metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PeerConnectionEvent {
@@ -41,6 +70,12 @@ pub struct PeerConnectionEvent {
     /// Peer's unique ID (from handshake, hex-encoded)
     pub peer_id: Option<String>,
 
+    /// Address the peer advertised in the Kaspa handshake, if any
+    pub advertised_address: Option<String>,
+
+    /// Address the sensor actively probed to classify the peer, if any
+    pub probe_target_address: Option<String>,
+
     /// Peer's advertised network
     pub network: String,
 
@@ -55,6 +90,9 @@ pub struct PeerConnectionEvent {
 
     /// Any error encountered during probing
     pub probe_error: Option<String>,
+
+    /// Why the peer received its final classification
+    pub classification_reason: Option<ClassificationReason>,
 }
 
 /// Direction of peer connection
@@ -84,6 +122,9 @@ pub struct ProbeResult {
 
     /// Error message if probe failed
     pub error: Option<String>,
+
+    /// Why this probe landed on its final result
+    pub reason: ClassificationReason,
 }
 
 /// Batch of events to be exported
@@ -110,7 +151,6 @@ impl PeerConnectionEvent {
         peer_port: u16,
         protocol_version: u32,
         user_agent: String,
-        peer_id: Option<String>,
         network: String,
         direction: ConnectionDirection,
     ) -> Self {
@@ -122,26 +162,70 @@ impl PeerConnectionEvent {
             peer_port,
             protocol_version,
             user_agent,
-            peer_id,
+            peer_id: None,
+            advertised_address: None,
+            probe_target_address: None,
             network,
             direction,
             classification: PeerClassification::Unknown,
             probe_duration_ms: None,
             probe_error: None,
+            classification_reason: None,
         }
     }
 
-    /// Update with probe result
-    pub fn with_probe_result(mut self, classification: PeerClassification, duration_ms: u64, error: Option<String>) -> Self {
+    /// Attach the peer ID captured from the handshake.
+    pub fn with_peer_id(mut self, peer_id: Option<String>) -> Self {
+        self.peer_id = peer_id;
+        self
+    }
+
+    /// Attach the peer's advertised Kaspa address from the handshake.
+    pub fn with_advertised_address(mut self, advertised_address: Option<String>) -> Self {
+        self.advertised_address = advertised_address;
+        self
+    }
+
+    /// Record the address the sensor actually used for the reverse probe.
+    pub fn with_probe_target_address(mut self, probe_target_address: Option<String>) -> Self {
+        self.probe_target_address = probe_target_address;
+        self
+    }
+
+    /// Update with a final classification.
+    pub fn with_classification(
+        mut self,
+        classification: PeerClassification,
+        reason: ClassificationReason,
+        duration_ms: Option<u64>,
+        error: Option<String>,
+    ) -> Self {
         self.classification = classification;
-        self.probe_duration_ms = Some(duration_ms);
+        self.classification_reason = Some(reason);
+        self.probe_duration_ms = duration_ms;
         self.probe_error = error;
         self
     }
 
+    /// Update with probe result
+    pub fn with_probe_result(
+        self,
+        classification: PeerClassification,
+        duration_ms: u64,
+        reason: ClassificationReason,
+        error: Option<String>,
+    ) -> Self {
+        self.with_classification(classification, reason, Some(duration_ms), error)
+    }
+
+    /// Get source address as string.
+    pub fn source_address(&self) -> String {
+        format!("{}:{}", self.peer_ip, self.peer_port)
+    }
+
     /// Get peer address as string
     pub fn peer_address(&self) -> String {
-        format!("{}:{}", self.peer_ip, self.peer_port)
+        self.source_address()
     }
 }
 
@@ -149,12 +233,7 @@ impl EventBatch {
     /// Create a new event batch
     pub fn new(sensor_id: String, events: Vec<PeerConnectionEvent>) -> Self {
         let count = events.len();
-        Self {
-            sensor_id,
-            batch_timestamp: Utc::now(),
-            events,
-            count,
-        }
+        Self { sensor_id, batch_timestamp: Utc::now(), events, count }
     }
 }
 
@@ -171,7 +250,6 @@ mod tests {
             16111,
             7,
             "kaspad:0.14.0".to_string(),
-            None,
             "kaspa-mainnet".to_string(),
             ConnectionDirection::Inbound,
         );
@@ -179,7 +257,8 @@ mod tests {
         assert_eq!(event.sensor_id, "sensor-001");
         assert_eq!(event.peer_port, 16111);
         assert_eq!(event.classification, PeerClassification::Unknown);
-        assert_eq!(event.peer_address(), "203.0.113.1:16111");
+        assert_eq!(event.source_address(), "203.0.113.1:16111");
+        assert_eq!(event.advertised_address, None);
     }
 
     #[test]
@@ -190,32 +269,33 @@ mod tests {
             16111,
             7,
             "kaspad:0.14.0".to_string(),
-            None,
             "kaspa-mainnet".to_string(),
             ConnectionDirection::Inbound,
-        );
+        )
+        .with_peer_id(Some("peer-123".to_string()))
+        .with_advertised_address(Some("203.0.113.1:16111".to_string()))
+        .with_probe_target_address(Some("203.0.113.1:16111".to_string()));
 
-        let event = event.with_probe_result(PeerClassification::Public, 250, None);
+        let event = event.with_probe_result(PeerClassification::Public, 250, ClassificationReason::AdvertisedProbeSuccess, None);
 
         assert_eq!(event.classification, PeerClassification::Public);
         assert_eq!(event.probe_duration_ms, Some(250));
         assert_eq!(event.probe_error, None);
+        assert_eq!(event.classification_reason, Some(ClassificationReason::AdvertisedProbeSuccess));
+        assert_eq!(event.peer_id.as_deref(), Some("peer-123"));
     }
 
     #[test]
     fn test_event_batch() {
-        let events = vec![
-            PeerConnectionEvent::new(
-                "sensor-001".to_string(),
-                IpAddr::from_str("203.0.113.1").unwrap(),
-                16111,
-                7,
-                "kaspad:0.14.0".to_string(),
-                None,
-                "kaspa-mainnet".to_string(),
-                ConnectionDirection::Inbound,
-            ),
-        ];
+        let events = vec![PeerConnectionEvent::new(
+            "sensor-001".to_string(),
+            IpAddr::from_str("203.0.113.1").unwrap(),
+            16111,
+            7,
+            "kaspad:0.14.0".to_string(),
+            "kaspa-mainnet".to_string(),
+            ConnectionDirection::Inbound,
+        )];
 
         let batch = EventBatch::new("sensor-001".to_string(), events);
         assert_eq!(batch.count, 1);
@@ -230,7 +310,6 @@ mod tests {
             16111,
             7,
             "kaspad:0.14.0".to_string(),
-            None,
             "kaspa-mainnet".to_string(),
             ConnectionDirection::Inbound,
         );

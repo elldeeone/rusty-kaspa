@@ -11,8 +11,12 @@ use tokio_postgres::NoTls;
 pub struct PeerEvent {
     pub sensor_id: String,
     pub peer_address: String,
+    pub peer_id: Option<String>,
+    pub advertised_address: Option<String>,
+    pub probe_target_address: Option<String>,
     pub event_type: String,
     pub classification: Option<String>,
+    pub classification_reason: Option<String>,
     pub timestamp: i64,
     pub metadata: Option<String>,
 }
@@ -50,20 +54,14 @@ impl PostgresWriter {
         pg_config.dbname = Some(config.database.clone());
         pg_config.user = Some(config.user.clone());
         pg_config.password = Some(password);
-        pg_config.manager = Some(ManagerConfig {
-            recycling_method: RecyclingMethod::Fast,
-        });
+        pg_config.manager = Some(ManagerConfig { recycling_method: RecyclingMethod::Fast });
 
         // Create connection pool
-        let pool = pg_config
-            .create_pool(Some(Runtime::Tokio1), NoTls)
-            .map_err(|e| format!("Failed to create PostgreSQL pool: {}", e))?;
+        let pool =
+            pg_config.create_pool(Some(Runtime::Tokio1), NoTls).map_err(|e| format!("Failed to create PostgreSQL pool: {}", e))?;
 
         // Test connection
-        let conn = pool
-            .get()
-            .await
-            .map_err(|e| format!("Failed to connect to PostgreSQL: {}", e))?;
+        let conn = pool.get().await.map_err(|e| format!("Failed to connect to PostgreSQL: {}", e))?;
 
         info!("Successfully connected to PostgreSQL at {}:{}", config.host, config.port);
 
@@ -73,8 +71,12 @@ impl PostgresWriter {
                 id BIGSERIAL PRIMARY KEY,
                 sensor_id TEXT NOT NULL,
                 peer_address TEXT NOT NULL,
+                peer_id TEXT,
+                advertised_address TEXT,
+                probe_target_address TEXT,
                 event_type TEXT NOT NULL,
                 classification TEXT,
+                classification_reason TEXT,
                 timestamp BIGINT NOT NULL,
                 metadata JSONB,
                 created_at TIMESTAMP DEFAULT NOW()
@@ -85,19 +87,17 @@ impl PostgresWriter {
         .map_err(|e| format!("Failed to create table: {}", e))?;
 
         // Create indexes for fast queries
-        let _ = conn
-            .execute(
-                "CREATE INDEX IF NOT EXISTS idx_peer_events_sensor_id ON peer_events(sensor_id)",
-                &[],
-            )
-            .await;
+        let _ = conn.execute("ALTER TABLE peer_events ADD COLUMN IF NOT EXISTS peer_id TEXT", &[]).await;
 
-        let _ = conn
-            .execute(
-                "CREATE INDEX IF NOT EXISTS idx_peer_events_timestamp ON peer_events(timestamp DESC)",
-                &[],
-            )
-            .await;
+        let _ = conn.execute("ALTER TABLE peer_events ADD COLUMN IF NOT EXISTS advertised_address TEXT", &[]).await;
+
+        let _ = conn.execute("ALTER TABLE peer_events ADD COLUMN IF NOT EXISTS probe_target_address TEXT", &[]).await;
+
+        let _ = conn.execute("ALTER TABLE peer_events ADD COLUMN IF NOT EXISTS classification_reason TEXT", &[]).await;
+
+        let _ = conn.execute("CREATE INDEX IF NOT EXISTS idx_peer_events_sensor_id ON peer_events(sensor_id)", &[]).await;
+
+        let _ = conn.execute("CREATE INDEX IF NOT EXISTS idx_peer_events_timestamp ON peer_events(timestamp DESC)", &[]).await;
 
         let _ = conn
             .execute(
@@ -154,7 +154,9 @@ impl PostgresWriter {
 
     /// Queue an event to be written (non-blocking)
     pub fn queue_event(&self, event: PeerEvent) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        self.event_tx.send(event).map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to queue event: {}", e))) })
+        self.event_tx.send(event).map_err(|e| -> Box<dyn std::error::Error + Send + Sync> {
+            Box::new(std::io::Error::other(format!("Failed to queue event: {}", e)))
+        })
     }
 
     /// Background loop that batches and writes events
@@ -231,22 +233,27 @@ impl PostgresWriter {
         let conn = self.pool.get().await?;
 
         // Build bulk insert query
-        let mut query = String::from("INSERT INTO peer_events (sensor_id, peer_address, peer_id, event_type, classification, timestamp, metadata) VALUES ");
+        let mut query = String::from(
+            "INSERT INTO peer_events (sensor_id, peer_address, peer_id, advertised_address, probe_target_address, event_type, classification, classification_reason, timestamp, metadata) VALUES ",
+        );
 
         let mut params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = Vec::new();
         let mut param_groups = Vec::new();
 
         for (i, _event) in batch.iter().enumerate() {
-            let offset = i * 7;
+            let offset = i * 10;
             param_groups.push(format!(
-                "(${}, ${}, ${}, ${}, ${}, ${}, ${}::jsonb)",
+                "(${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}::jsonb)",
                 offset + 1,
                 offset + 2,
                 offset + 3,
                 offset + 4,
                 offset + 5,
                 offset + 6,
-                offset + 7
+                offset + 7,
+                offset + 8,
+                offset + 9,
+                offset + 10
             ));
         }
 
@@ -256,38 +263,38 @@ impl PostgresWriter {
         // We need to build this carefully to maintain lifetimes
         let mut sensor_ids = Vec::new();
         let mut peer_addresses = Vec::new();
-        let mut peer_ids: Vec<Option<String>> = Vec::new();
+        let mut peer_ids = Vec::new();
+        let mut advertised_addresses = Vec::new();
+        let mut probe_target_addresses = Vec::new();
         let mut event_types = Vec::new();
         let mut classifications = Vec::new();
+        let mut classification_reasons = Vec::new();
         let mut timestamps = Vec::new();
         let mut metadatas = Vec::new();
 
         for event in batch.iter() {
             sensor_ids.push(&event.sensor_id);
             peer_addresses.push(&event.peer_address);
+            peer_ids.push(&event.peer_id);
+            advertised_addresses.push(&event.advertised_address);
+            probe_target_addresses.push(&event.probe_target_address);
             event_types.push(&event.event_type);
             classifications.push(&event.classification);
+            classification_reasons.push(&event.classification_reason);
             timestamps.push(&event.timestamp);
 
-            // Parse metadata String into JSON Value for PostgreSQL JSONB and extract peer_id
-            let (metadata_json, peer_id_value) = match &event.metadata {
+            // Parse metadata String into JSON Value for PostgreSQL JSONB.
+            let metadata_json = match &event.metadata {
                 Some(s) => match serde_json::from_str::<serde_json::Value>(s) {
-                    Ok(v) => {
-                        // Extract peer_id from metadata
-                        let peer_id = v.get("peer_id")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string());
-                        (v, peer_id)
-                    }
+                    Ok(v) => v,
                     Err(e) => {
                         warn!("Failed to parse metadata JSON for {}: {}", event.peer_address, e);
-                        (serde_json::Value::Null, None)
+                        serde_json::Value::Null
                     }
                 },
-                None => (serde_json::Value::Null, None),
+                None => serde_json::Value::Null,
             };
             metadatas.push(metadata_json);
-            peer_ids.push(peer_id_value);
         }
 
         // Build params vector
@@ -295,8 +302,11 @@ impl PostgresWriter {
             params.push(&sensor_ids[i] as &(dyn tokio_postgres::types::ToSql + Sync));
             params.push(&peer_addresses[i] as &(dyn tokio_postgres::types::ToSql + Sync));
             params.push(&peer_ids[i] as &(dyn tokio_postgres::types::ToSql + Sync));
+            params.push(&advertised_addresses[i] as &(dyn tokio_postgres::types::ToSql + Sync));
+            params.push(&probe_target_addresses[i] as &(dyn tokio_postgres::types::ToSql + Sync));
             params.push(&event_types[i] as &(dyn tokio_postgres::types::ToSql + Sync));
             params.push(&classifications[i] as &(dyn tokio_postgres::types::ToSql + Sync));
+            params.push(&classification_reasons[i] as &(dyn tokio_postgres::types::ToSql + Sync));
             params.push(&timestamps[i] as &(dyn tokio_postgres::types::ToSql + Sync));
             params.push(&metadatas[i] as &(dyn tokio_postgres::types::ToSql + Sync));
         }
@@ -343,8 +353,12 @@ mod tests {
         let event = PeerEvent {
             sensor_id: "test-sensor".to_string(),
             peer_address: "192.168.1.1:16111".to_string(),
+            peer_id: Some("peer-123".to_string()),
+            advertised_address: Some("192.168.1.1:16111".to_string()),
+            probe_target_address: Some("192.168.1.1:16111".to_string()),
             event_type: "discovered".to_string(),
             classification: Some("public".to_string()),
+            classification_reason: Some("advertised_probe_success".to_string()),
             timestamp: 1234567890,
             metadata: Some(r#"{"test": "data"}"#.to_string()),
         };

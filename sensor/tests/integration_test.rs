@@ -3,21 +3,39 @@
 //! These tests verify end-to-end functionality of the sensor components.
 
 use kaspa_sensor::{
-    config::{DatabaseConfig, ExportConfig, MetricsConfig, ProbingConfig, SensorConfig, SensorIdentity, NetworkConfig},
-    export::EventExporter,
+    config::{DatabaseConfig, ExportConfig, MetricsConfig, NetworkConfig, ProbingConfig, SensorConfig, SensorIdentity},
     metrics::SensorMetrics,
-    models::{ConnectionDirection, PeerClassification, PeerConnectionEvent},
+    models::{ClassificationReason, ConnectionDirection, PeerClassification, PeerConnectionEvent},
     prober::ActiveProber,
     storage::EventStorage,
 };
 use std::net::IpAddr;
-use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
-use tempfile::TempDir;
+use uuid::Uuid;
+
+struct TestTempDir(std::path::PathBuf);
+
+impl TestTempDir {
+    fn new() -> Self {
+        let path = std::env::temp_dir().join(format!("kaspa-sensor-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&path).expect("failed to create temp dir");
+        Self(path)
+    }
+
+    fn path(&self) -> &std::path::Path {
+        &self.0
+    }
+}
+
+impl Drop for TestTempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
 
 /// Create a test configuration with temp directories
-fn create_test_config(temp_dir: &TempDir) -> SensorConfig {
+fn create_test_config(temp_dir: &TestTempDir) -> SensorConfig {
     SensorConfig {
         sensor: SensorIdentity {
             sensor_id: "test-sensor-001".to_string(),
@@ -25,22 +43,16 @@ fn create_test_config(temp_dir: &TempDir) -> SensorConfig {
             environment: Some("test".to_string()),
         },
         network: NetworkConfig {
-            listen_address: "127.0.0.1:0".to_string(),  // Random port
+            listen_address: "127.0.0.1:0".to_string(), // Random port
             network_type: "mainnet".to_string(),
             max_inbound_connections: 10,
             max_outbound_connections: 5,
             dns_seeders: vec![],
             peers_per_seeder: 0,
         },
-        probing: ProbingConfig {
-            enabled: true,
-            timeout_ms: 1000,
-            delay_ms: 10,
-            max_concurrent_probes: 5,
-            skip_private_ips: true,
-        },
+        probing: ProbingConfig { enabled: true, timeout_ms: 1000, delay_ms: 10, max_concurrent_probes: 5, skip_private_ips: true },
         export: ExportConfig {
-            enabled: false,  // Disabled for tests
+            enabled: false, // Disabled for tests
             backend: "http".to_string(),
             endpoint: None,
             api_key: None,
@@ -53,11 +65,12 @@ fn create_test_config(temp_dir: &TempDir) -> SensorConfig {
             path: temp_dir.path().join("test-events.db"),
             pool_size: 5,
             retention_days: 7,
-            enable_wal: false,  // Disable WAL for tests
+            enable_wal: false, // Disable WAL for tests
             addressdb_path: temp_dir.path().join("test-addresses.db"),
+            postgres: None,
         },
         metrics: MetricsConfig {
-            enabled: false,  // Disabled for tests
+            enabled: false, // Disabled for tests
             address: "127.0.0.1:0".to_string(),
         },
     }
@@ -65,7 +78,7 @@ fn create_test_config(temp_dir: &TempDir) -> SensorConfig {
 
 #[test]
 fn test_storage_lifecycle() {
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = TestTempDir::new();
     let config = create_test_config(&temp_dir);
 
     // Create storage
@@ -114,40 +127,33 @@ fn test_storage_lifecycle() {
 
 #[tokio::test]
 async fn test_prober_public_classification() {
-    let config = ProbingConfig {
-        enabled: true,
-        timeout_ms: 2000,
-        delay_ms: 0,
-        max_concurrent_probes: 10,
-        skip_private_ips: false,
-    };
+    let config = ProbingConfig { enabled: true, timeout_ms: 2000, delay_ms: 0, max_concurrent_probes: 10, skip_private_ips: true };
 
     let prober = ActiveProber::new(config);
 
-    // Test probing localhost (should be classified as private even if connectable)
-    let (classification, duration) = prober.probe_peer("127.0.0.1:80").await.expect("Probe failed");
+    let (classification, duration, reason) = prober.probe_peer("127.0.0.1:80").await.expect("Probe failed");
 
-    // Localhost should be classified as private due to IP address
     assert_eq!(classification, PeerClassification::Private);
+    assert_eq!(reason, ClassificationReason::AdvertisedPrivateAddress);
     assert!(duration < 3000); // Should complete quickly
 }
 
 #[tokio::test]
 async fn test_prober_private_classification() {
-    let config = ProbingConfig {
-        enabled: true,
-        timeout_ms: 1000,
-        delay_ms: 0,
-        max_concurrent_probes: 10,
-        skip_private_ips: false,
-    };
+    let config = ProbingConfig { enabled: true, timeout_ms: 1000, delay_ms: 0, max_concurrent_probes: 10, skip_private_ips: false };
 
     let prober = ActiveProber::new(config);
 
     // Test probing unreachable address
-    let (classification, _duration) = prober.probe_peer("192.168.255.254:9999").await.expect("Probe failed");
+    let (classification, _duration, reason) = prober.probe_peer("192.168.255.254:9999").await.expect("Probe failed");
 
     assert_eq!(classification, PeerClassification::Private);
+    assert!(matches!(
+        reason,
+        ClassificationReason::AdvertisedProbeIoError
+            | ClassificationReason::AdvertisedProbeRefused
+            | ClassificationReason::AdvertisedProbeTimeout
+    ));
 }
 
 #[tokio::test]
@@ -157,15 +163,16 @@ async fn test_prober_skip_private_ips() {
         timeout_ms: 1000,
         delay_ms: 0,
         max_concurrent_probes: 10,
-        skip_private_ips: true,  // Skip private IPs
+        skip_private_ips: true, // Skip private IPs
     };
 
     let prober = ActiveProber::new(config);
 
     // Private IP should be skipped and immediately classified as private
-    let (classification, duration) = prober.probe_peer("10.0.0.1:16111").await.expect("Probe failed");
+    let (classification, duration, reason) = prober.probe_peer("10.0.0.1:16111").await.expect("Probe failed");
 
     assert_eq!(classification, PeerClassification::Private);
+    assert_eq!(reason, ClassificationReason::AdvertisedPrivateAddress);
     assert!(duration < 100); // Should be instant
 }
 
@@ -189,6 +196,10 @@ fn test_metrics_creation_and_recording() {
     metrics.record_probe(PeerClassification::Private, 1.0);
     assert_eq!(metrics.peers_classified_private.get(), 1);
 
+    metrics.record_unknown_classification();
+    metrics.record_classification_reason("missing_advertised_address");
+    assert_eq!(metrics.peers_classified_unknown.get(), 1);
+
     // Test metrics gathering
     let output = metrics.gather();
     assert!(output.contains("sensor_connections_active"));
@@ -197,7 +208,7 @@ fn test_metrics_creation_and_recording() {
 
 #[test]
 fn test_config_validation() {
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = TestTempDir::new();
     let mut config = create_test_config(&temp_dir);
 
     // Valid config should pass
@@ -238,11 +249,15 @@ fn test_event_with_probe_result() {
     assert_eq!(event.probe_duration_ms, None);
 
     // Update with probe result
-    let event = event.with_probe_result(PeerClassification::Public, 250, None);
+    let event = event
+        .with_advertised_address(Some("203.0.113.1:16111".to_string()))
+        .with_probe_target_address(Some("203.0.113.1:16111".to_string()))
+        .with_probe_result(PeerClassification::Public, 250, ClassificationReason::AdvertisedProbeSuccess, None);
 
     assert_eq!(event.classification, PeerClassification::Public);
     assert_eq!(event.probe_duration_ms, Some(250));
     assert_eq!(event.probe_error, None);
+    assert_eq!(event.classification_reason, Some(ClassificationReason::AdvertisedProbeSuccess));
 
     // Test with error
     let event = PeerConnectionEvent::new(
@@ -258,16 +273,18 @@ fn test_event_with_probe_result() {
     let event = event.with_probe_result(
         PeerClassification::Private,
         0,
+        ClassificationReason::AdvertisedProbeRefused,
         Some("Connection refused".to_string()),
     );
 
     assert_eq!(event.classification, PeerClassification::Private);
     assert_eq!(event.probe_error, Some("Connection refused".to_string()));
+    assert_eq!(event.classification_reason, Some(ClassificationReason::AdvertisedProbeRefused));
 }
 
 #[tokio::test]
 async fn test_full_event_pipeline() {
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = TestTempDir::new();
     let config = create_test_config(&temp_dir);
 
     // Initialize components
@@ -294,10 +311,13 @@ async fn test_full_event_pipeline() {
 
     // Probe the peer
     let peer_addr = format!("{}:{}", peer_ip, peer_port);
-    let (classification, duration_ms) = prober.probe_peer(&peer_addr).await.expect("Probe failed");
+    let (classification, duration_ms, reason) = prober.probe_peer(&peer_addr).await.expect("Probe failed");
 
     // Update event with probe result
-    event = event.with_probe_result(classification, duration_ms, None);
+    event = event
+        .with_advertised_address(Some(peer_addr.clone()))
+        .with_probe_target_address(Some(peer_addr.clone()))
+        .with_probe_result(classification, duration_ms, reason, None);
 
     // Store event
     storage.insert_event(&event).expect("Failed to insert event");

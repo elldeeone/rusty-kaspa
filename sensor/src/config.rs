@@ -235,11 +235,7 @@ fn default_max_outbound_connections() -> usize {
 }
 
 fn default_dns_seeders() -> Vec<String> {
-    vec![
-        "seeder1.kaspad.net".to_string(),
-        "seeder2.kaspad.net".to_string(),
-        "seeder3.kaspad.net".to_string(),
-    ]
+    vec!["seeder1.kaspad.net".to_string(), "seeder2.kaspad.net".to_string(), "seeder3.kaspad.net".to_string()]
 }
 
 fn default_peers_per_seeder() -> usize {
@@ -267,7 +263,7 @@ fn default_skip_private_ips() -> bool {
 }
 
 fn default_enable_export() -> bool {
-    false  // Disabled by default since no endpoint is configured
+    false // Disabled by default since no endpoint is configured
 }
 
 fn default_export_backend() -> String {
@@ -349,11 +345,7 @@ fn default_postgres_max_retries() -> usize {
 impl Default for SensorConfig {
     fn default() -> Self {
         Self {
-            sensor: SensorIdentity {
-                sensor_id: "default-sensor".to_string(),
-                description: None,
-                environment: None,
-            },
+            sensor: SensorIdentity { sensor_id: "default-sensor".to_string(), description: None, environment: None },
             network: NetworkConfig {
                 listen_address: default_listen_address(),
                 network_type: default_network_type(),
@@ -387,10 +379,7 @@ impl Default for SensorConfig {
                 addressdb_path: default_addressdb_path(),
                 postgres: None,
             },
-            metrics: MetricsConfig {
-                enabled: default_enable_metrics(),
-                address: default_metrics_address(),
-            },
+            metrics: MetricsConfig { enabled: default_enable_metrics(), address: default_metrics_address() },
         }
     }
 }
@@ -427,8 +416,8 @@ impl SensorConfig {
 
     /// Save configuration to a TOML file
     pub fn save_to_file(&self, path: &PathBuf) -> Result<(), ConfigError> {
-        let contents = toml::to_string_pretty(self)
-            .map_err(|e| ConfigError::ValidationError(format!("Failed to serialize config: {}", e)))?;
+        let contents =
+            toml::to_string_pretty(self).map_err(|e| ConfigError::ValidationError(format!("Failed to serialize config: {}", e)))?;
         std::fs::write(path, contents)?;
         Ok(())
     }

@@ -18,10 +18,10 @@ pub mod prober;
 pub mod storage;
 
 // Re-export commonly used types
-pub use config::{SensorConfig, ProbingConfig, ExportConfig, DatabaseConfig, MetricsConfig, PostgresConfig};
+pub use config::{DatabaseConfig, ExportConfig, MetricsConfig, PostgresConfig, ProbingConfig, SensorConfig};
 pub use export::EventExporter;
 pub use metrics::SensorMetrics;
-pub use models::{PeerConnectionEvent, PeerClassification, ConnectionDirection, EventBatch};
-pub use postgres::{PostgresWriter, PeerEvent};
+pub use models::{ClassificationReason, ConnectionDirection, EventBatch, PeerClassification, PeerConnectionEvent};
+pub use postgres::{PeerEvent, PostgresWriter};
 pub use prober::{ActiveProber, ProbeError};
 pub use storage::{EventStorage, StorageStatistics};

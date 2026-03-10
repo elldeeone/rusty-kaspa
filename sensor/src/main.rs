@@ -1,6 +1,10 @@
 use kaspa_sensor::{
-    config::SensorConfig, export::EventExporter, metrics::SensorMetrics, models::{ConnectionDirection, PeerConnectionEvent},
-    prober::ActiveProber, storage::EventStorage,
+    config::SensorConfig,
+    export::EventExporter,
+    metrics::SensorMetrics,
+    models::{ClassificationReason, ConnectionDirection, PeerClassification, PeerConnectionEvent},
+    prober::ActiveProber,
+    storage::EventStorage,
 };
 
 use clap::Parser;
@@ -9,14 +13,15 @@ use kaspa_connectionmanager::ConnectionManager;
 use kaspa_consensus_core::config::Config as ConsensusConfig;
 use kaspa_consensus_core::network::NetworkType;
 use kaspa_core::task::tick::TickService;
-use kaspa_core::{info, warn, error};
+use kaspa_core::{error, info, warn};
 use kaspa_database::prelude::ConnBuilder;
 use kaspa_p2p_lib::common::ProtocolError;
-use kaspa_p2p_lib::{Adaptor, ConnectionInitializer, Hub, KaspadHandshake, Router};
 use kaspa_p2p_lib::pb::VersionMessage;
-use kaspa_utils::networking::ContextualNetAddress;
+use kaspa_p2p_lib::{Adaptor, ConnectionInitializer, Hub, KaspadHandshake, Router};
+use kaspa_utils::networking::{ContextualNetAddress, NetAddress};
 use kaspa_utils_tower::counters::TowerConnectionCounters;
 use parking_lot::Mutex;
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -196,12 +201,7 @@ async fn main() {
         }
     };
 
-    let adaptor = match Adaptor::bidirectional(
-        listen_addr,
-        hub,
-        initializer.clone(),
-        Arc::new(TowerConnectionCounters::default()),
-    ) {
+    let adaptor = match Adaptor::bidirectional(listen_addr, hub, initializer.clone(), Arc::new(TowerConnectionCounters::default())) {
         Ok(a) => {
             info!("P2P service started on {}", config.network.listen_address);
             a
@@ -263,11 +263,11 @@ async fn main() {
     // This handles DNS seeders, address manager, and automatic connection rotation
     let connection_manager = ConnectionManager::new(
         adaptor.clone(),
-        config.network.max_outbound_connections,  // outbound target
-        config.network.max_inbound_connections,   // inbound limit
-        consensus_config.dns_seeders,             // static DNS seeder list
-        16111,                                     // default port
-        address_manager.clone(),                  // for peer discovery
+        config.network.max_outbound_connections, // outbound target
+        config.network.max_inbound_connections,  // inbound limit
+        consensus_config.dns_seeders,            // static DNS seeder list
+        16111,                                   // default port
+        address_manager.clone(),                 // for peer discovery
     );
 
     info!("Connection manager started - will maintain {} outbound connections", config.network.max_outbound_connections);
@@ -289,7 +289,7 @@ async fn main() {
 
     info!("Shutting down services...");
     tick_service.shutdown();
-    drop(db);  // Close database connection
+    drop(db); // Close database connection
 
     // Final stats
     if let Ok(stats) = storage.get_statistics() {
@@ -321,27 +321,57 @@ impl SensorConnectionInitializer {
         storage: Arc<EventStorage>,
         metrics: Arc<SensorMetrics>,
     ) -> Self {
-        let prober = if config.probing.enabled {
-            Some(ActiveProber::with_metrics(config.probing.clone(), metrics.clone()))
-        } else {
-            None
-        };
+        let prober =
+            if config.probing.enabled { Some(ActiveProber::with_metrics(config.probing.clone(), metrics.clone())) } else { None };
 
-        Self {
-            address_manager,
-            consensus_config,
-            config,
-            storage,
-            metrics,
-            prober: Arc::new(RwLock::new(prober)),
+        Self { address_manager, consensus_config, config, storage, metrics, prober: Arc::new(RwLock::new(prober)) }
+    }
+}
+
+fn resolve_advertised_socket(peer_version: &VersionMessage) -> Result<Option<SocketAddr>, ClassificationReason> {
+    let Some(address) = peer_version.address.clone() else {
+        return Ok(None);
+    };
+
+    let net_address = NetAddress::try_from(address).map_err(|_| ClassificationReason::InvalidAdvertisedAddress)?;
+    Ok(Some(net_address.into()))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum InboundProbePlan {
+    Probe { advertised_address: String },
+    Unknown { advertised_address: Option<String>, reason: ClassificationReason, error: Option<String> },
+}
+
+fn plan_inbound_probe(peer_version: &VersionMessage, skip_private_ips: bool) -> InboundProbePlan {
+    match resolve_advertised_socket(peer_version) {
+        Ok(Some(advertised_socket)) => {
+            let advertised_address = advertised_socket.to_string();
+            if skip_private_ips && ActiveProber::is_private_address(&advertised_socket) {
+                InboundProbePlan::Unknown {
+                    advertised_address: Some(advertised_address),
+                    reason: ClassificationReason::AdvertisedPrivateAddress,
+                    error: None,
+                }
+            } else {
+                InboundProbePlan::Probe { advertised_address }
+            }
         }
+        Ok(None) => {
+            InboundProbePlan::Unknown { advertised_address: None, reason: ClassificationReason::MissingAdvertisedAddress, error: None }
+        }
+        Err(reason) => InboundProbePlan::Unknown {
+            advertised_address: None,
+            reason,
+            error: Some("failed to parse advertised address".to_string()),
+        },
     }
 }
 
 #[async_trait::async_trait]
 impl ConnectionInitializer for SensorConnectionInitializer {
     async fn initialize_connection(&self, router: Arc<Router>) -> Result<(), ProtocolError> {
-        let peer_address = router.net_address().to_string();
+        let source_address = router.net_address().to_string();
         let is_outbound = router.is_outbound();
 
         // Record connection in metrics
@@ -371,7 +401,7 @@ impl ConnectionInitializer for SensorConnectionInitializer {
 
         info!(
             "Handshake complete with {} - UserAgent: {} (Protocol: {})",
-            peer_address, peer_version.user_agent, peer_version.protocol_version
+            source_address, peer_version.user_agent, peer_version.protocol_version
         );
 
         // Launch address gossip flows immediately after ready exchange
@@ -380,10 +410,10 @@ impl ConnectionInitializer for SensorConnectionInitializer {
         kaspa_sensor::address_flows::launch_address_flows(self.address_manager.clone(), router.clone());
 
         // Parse peer address
-        let (peer_ip, peer_port) = match peer_address.parse::<std::net::SocketAddr>() {
+        let (peer_ip, peer_port) = match source_address.parse::<SocketAddr>() {
             Ok(addr) => (addr.ip(), addr.port()),
             Err(_) => {
-                warn!("Failed to parse peer address: {}", peer_address);
+                warn!("Failed to parse peer address: {}", source_address);
                 self.metrics.record_connection_closed();
                 return Ok(());
             }
@@ -391,11 +421,7 @@ impl ConnectionInitializer for SensorConnectionInitializer {
 
         // Create connection event
         // Convert peer ID from bytes to hex string
-        let peer_id = if !peer_version.id.is_empty() {
-            Some(hex::encode(&peer_version.id))
-        } else {
-            None
-        };
+        let peer_id = if !peer_version.id.is_empty() { Some(hex::encode(&peer_version.id)) } else { None };
 
         let event = PeerConnectionEvent::new(
             self.config.sensor.sensor_id.clone(),
@@ -403,50 +429,89 @@ impl ConnectionInitializer for SensorConnectionInitializer {
             peer_port,
             peer_version.protocol_version as u32,
             peer_version.user_agent.clone(),
-            peer_id,
             self.consensus_config.network_name().to_string(),
             if is_outbound { ConnectionDirection::Outbound } else { ConnectionDirection::Inbound },
-        );
+        )
+        .with_peer_id(peer_id);
 
         // Perform active probe if enabled and inbound
         if !is_outbound {
             if let Some(ref prober) = *self.prober.read().await {
-                let peer_addr_clone = peer_address.clone();
                 let prober_clone = prober.clone();
                 let metrics_clone = self.metrics.clone();
                 let storage_clone = self.storage.clone();
-                let event_clone = event.clone();
-
-                tokio::spawn(async move {
-                    match prober_clone.probe_peer(&peer_addr_clone).await {
-                        Ok((classification, duration_ms)) => {
-                            info!("Peer {} classified as {:?} ({}ms)", peer_addr_clone, classification, duration_ms);
-
-                            let updated_event = event_clone.with_probe_result(classification, duration_ms, None);
-
-                            // Store event
-                            if let Err(e) = storage_clone.insert_event(&updated_event) {
-                                error!("Failed to store event: {}", e);
-                            }
-                        }
-                        Err(e) => {
-                            warn!("Failed to probe {}: {}", peer_addr_clone, e);
-
-                            let updated_event = event_clone.with_probe_result(
-                                kaspa_sensor::models::PeerClassification::Private,
-                                0,
-                                Some(e.to_string()),
+                match plan_inbound_probe(&peer_version, self.config.probing.skip_private_ips) {
+                    InboundProbePlan::Probe { advertised_address } => {
+                        if advertised_address != source_address {
+                            info!(
+                                "Peer source address differs from advertised address: source={}, advertised={}",
+                                source_address, advertised_address
                             );
+                        }
+                        let event_clone = event
+                            .clone()
+                            .with_advertised_address(Some(advertised_address.clone()))
+                            .with_probe_target_address(Some(advertised_address.clone()));
 
-                            // Store event even if probe failed
-                            if let Err(e) = storage_clone.insert_event(&updated_event) {
-                                error!("Failed to store event: {}", e);
+                        tokio::spawn(async move {
+                            match prober_clone.probe_peer(&advertised_address).await {
+                                Ok((classification, duration_ms, reason)) => {
+                                    info!(
+                                        "Peer {} classified as {:?} via {} ({}ms)",
+                                        event_clone.source_address(),
+                                        classification,
+                                        advertised_address,
+                                        duration_ms
+                                    );
+                                    metrics_clone.record_classification_reason(reason.as_metric_label());
+
+                                    let updated_event = event_clone.with_probe_result(classification, duration_ms, reason, None);
+
+                                    if let Err(e) = storage_clone.insert_event(&updated_event) {
+                                        error!("Failed to store event: {}", e);
+                                    }
+                                }
+                                Err(e) => {
+                                    let reason = match e {
+                                        kaspa_sensor::prober::ProbeError::RateLimitExceeded => ClassificationReason::ProbeRateLimited,
+                                        kaspa_sensor::prober::ProbeError::InvalidAddress(_) => {
+                                            ClassificationReason::InvalidAdvertisedAddress
+                                        }
+                                        _ => ClassificationReason::AdvertisedProbeIoError,
+                                    };
+                                    warn!("Failed to probe {}: {}", advertised_address, e);
+                                    metrics_clone.record_probe_error("probe_failed");
+                                    metrics_clone.record_classification_reason(reason.as_metric_label());
+                                    metrics_clone.record_unknown_classification();
+
+                                    let updated_event = event_clone.with_classification(
+                                        PeerClassification::Unknown,
+                                        reason,
+                                        None,
+                                        Some(e.to_string()),
+                                    );
+
+                                    if let Err(e) = storage_clone.insert_event(&updated_event) {
+                                        error!("Failed to store event: {}", e);
+                                    }
+                                }
                             }
-
-                            metrics_clone.record_probe_error("probe_failed");
+                        });
+                    }
+                    InboundProbePlan::Unknown { advertised_address, reason, error } => {
+                        let updated_event = event.clone().with_advertised_address(advertised_address).with_classification(
+                            PeerClassification::Unknown,
+                            reason,
+                            None,
+                            error,
+                        );
+                        self.metrics.record_classification_reason(reason.as_metric_label());
+                        self.metrics.record_unknown_classification();
+                        if let Err(e) = self.storage.insert_event(&updated_event) {
+                            error!("Failed to store event: {}", e);
                         }
                     }
-                });
+                }
             } else {
                 // Store event without probing
                 if let Err(e) = self.storage.insert_event(&event) {
@@ -461,5 +526,96 @@ impl ConnectionInitializer for SensorConnectionInitializer {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use kaspa_utils::networking::IpAddress;
+    use std::net::Ipv4Addr;
+
+    fn version_message_with_address(address: Option<kaspa_p2p_lib::pb::NetAddress>) -> VersionMessage {
+        VersionMessage {
+            protocol_version: 7,
+            services: 0,
+            timestamp: 0,
+            address,
+            id: vec![],
+            user_agent: "/kaspad:test/".to_string(),
+            disable_relay_tx: false,
+            subnetwork_id: None,
+            network: "mainnet".to_string(),
+        }
+    }
+
+    #[test]
+    fn inbound_probe_plan_uses_public_advertised_address() {
+        let address = NetAddress::new(IpAddress::from(Ipv4Addr::new(203, 0, 113, 9)), 16111);
+        let peer_version = version_message_with_address(Some(address.into()));
+
+        let plan = plan_inbound_probe(&peer_version, true);
+
+        assert_eq!(plan, InboundProbePlan::Probe { advertised_address: "203.0.113.9:16111".to_string() });
+    }
+
+    #[test]
+    fn inbound_probe_plan_marks_missing_advertised_as_unknown() {
+        let peer_version = version_message_with_address(None);
+
+        let plan = plan_inbound_probe(&peer_version, true);
+
+        assert_eq!(
+            plan,
+            InboundProbePlan::Unknown {
+                advertised_address: None,
+                reason: ClassificationReason::MissingAdvertisedAddress,
+                error: None,
+            }
+        );
+    }
+
+    #[test]
+    fn inbound_probe_plan_marks_private_advertised_as_unknown() {
+        let address = NetAddress::new(IpAddress::from(Ipv4Addr::new(10, 0, 0, 5)), 16111);
+        let peer_version = version_message_with_address(Some(address.into()));
+
+        let plan = plan_inbound_probe(&peer_version, true);
+
+        assert_eq!(
+            plan,
+            InboundProbePlan::Unknown {
+                advertised_address: Some("10.0.0.5:16111".to_string()),
+                reason: ClassificationReason::AdvertisedPrivateAddress,
+                error: None,
+            }
+        );
+    }
+
+    #[test]
+    fn inbound_probe_plan_marks_invalid_advertised_as_unknown() {
+        let peer_version =
+            version_message_with_address(Some(kaspa_p2p_lib::pb::NetAddress { timestamp: 0, ip: vec![1, 2, 3], port: 16111 }));
+
+        let plan = plan_inbound_probe(&peer_version, true);
+
+        assert_eq!(
+            plan,
+            InboundProbePlan::Unknown {
+                advertised_address: None,
+                reason: ClassificationReason::InvalidAdvertisedAddress,
+                error: Some("failed to parse advertised address".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn inbound_probe_plan_allows_private_advertised_when_private_ips_are_enabled() {
+        let address = NetAddress::new(IpAddress::from(Ipv4Addr::new(10, 0, 0, 5)), 16111);
+        let peer_version = version_message_with_address(Some(address.into()));
+
+        let plan = plan_inbound_probe(&peer_version, false);
+
+        assert_eq!(plan, InboundProbePlan::Probe { advertised_address: "10.0.0.5:16111".to_string() });
     }
 }

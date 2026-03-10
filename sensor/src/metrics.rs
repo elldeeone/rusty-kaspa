@@ -1,14 +1,11 @@
 use crate::config::MetricsConfig;
 use crate::models::PeerClassification;
 use log::{error, info};
-use prometheus::{
-    Histogram, HistogramOpts, IntCounter, IntCounterVec,
-    IntGauge, Opts, Registry,
-};
+use prometheus::{Histogram, HistogramOpts, IntCounter, IntCounterVec, IntGauge, Opts, Registry};
 use std::sync::Arc;
 use thiserror::Error;
-use tokio::net::TcpListener;
 use tokio::io::AsyncWriteExt;
+use tokio::net::TcpListener;
 
 #[derive(Debug, Error)]
 pub enum MetricsError {
@@ -42,6 +39,8 @@ pub struct SensorMetrics {
     // Classification metrics
     pub peers_classified_public: IntCounter,
     pub peers_classified_private: IntCounter,
+    pub peers_classified_unknown: IntCounter,
+    pub classification_reasons_total: IntCounterVec,
 
     // Export metrics
     pub exports_total: IntCounterVec,
@@ -63,35 +62,21 @@ impl SensorMetrics {
         let registry = Registry::new();
 
         // Connection metrics
-        let connections_total = IntCounterVec::new(
-            Opts::new("sensor_connections_total", "Total number of peer connections"),
-            &["direction", "result"],
-        )?;
+        let connections_total =
+            IntCounterVec::new(Opts::new("sensor_connections_total", "Total number of peer connections"), &["direction", "result"])?;
         registry.register(Box::new(connections_total.clone()))?;
 
-        let connections_active = IntGauge::new(
-            "sensor_connections_active",
-            "Number of currently active connections",
-        )?;
+        let connections_active = IntGauge::new("sensor_connections_active", "Number of currently active connections")?;
         registry.register(Box::new(connections_active.clone()))?;
 
-        let connections_inbound = IntCounter::new(
-            "sensor_connections_inbound_total",
-            "Total inbound connections",
-        )?;
+        let connections_inbound = IntCounter::new("sensor_connections_inbound_total", "Total inbound connections")?;
         registry.register(Box::new(connections_inbound.clone()))?;
 
-        let connections_outbound = IntCounter::new(
-            "sensor_connections_outbound_total",
-            "Total outbound connections",
-        )?;
+        let connections_outbound = IntCounter::new("sensor_connections_outbound_total", "Total outbound connections")?;
         registry.register(Box::new(connections_outbound.clone()))?;
 
         // Probe metrics
-        let probes_total = IntCounterVec::new(
-            Opts::new("sensor_probes_total", "Total number of peer probes"),
-            &["result"],
-        )?;
+        let probes_total = IntCounterVec::new(Opts::new("sensor_probes_total", "Total number of peer probes"), &["result"])?;
         registry.register(Box::new(probes_total.clone()))?;
 
         let probe_duration = Histogram::with_opts(
@@ -100,30 +85,29 @@ impl SensorMetrics {
         )?;
         registry.register(Box::new(probe_duration.clone()))?;
 
-        let probe_errors_total = IntCounterVec::new(
-            Opts::new("sensor_probe_errors_total", "Total probe errors"),
-            &["error_type"],
-        )?;
+        let probe_errors_total = IntCounterVec::new(Opts::new("sensor_probe_errors_total", "Total probe errors"), &["error_type"])?;
         registry.register(Box::new(probe_errors_total.clone()))?;
 
         // Classification metrics
-        let peers_classified_public = IntCounter::new(
-            "sensor_peers_classified_public_total",
-            "Number of peers classified as public",
-        )?;
+        let peers_classified_public = IntCounter::new("sensor_peers_classified_public_total", "Number of peers classified as public")?;
         registry.register(Box::new(peers_classified_public.clone()))?;
 
-        let peers_classified_private = IntCounter::new(
-            "sensor_peers_classified_private_total",
-            "Number of peers classified as private",
-        )?;
+        let peers_classified_private =
+            IntCounter::new("sensor_peers_classified_private_total", "Number of peers classified as private")?;
         registry.register(Box::new(peers_classified_private.clone()))?;
 
-        // Export metrics
-        let exports_total = IntCounterVec::new(
-            Opts::new("sensor_exports_total", "Total export attempts"),
-            &["result"],
+        let peers_classified_unknown =
+            IntCounter::new("sensor_peers_classified_unknown_total", "Number of peers classified as unknown")?;
+        registry.register(Box::new(peers_classified_unknown.clone()))?;
+
+        let classification_reasons_total = IntCounterVec::new(
+            Opts::new("sensor_classification_reasons_total", "Total classifications grouped by reason"),
+            &["reason"],
         )?;
+        registry.register(Box::new(classification_reasons_total.clone()))?;
+
+        // Export metrics
+        let exports_total = IntCounterVec::new(Opts::new("sensor_exports_total", "Total export attempts"), &["result"])?;
         registry.register(Box::new(exports_total.clone()))?;
 
         let export_batch_size = Histogram::with_opts(
@@ -132,36 +116,21 @@ impl SensorMetrics {
         )?;
         registry.register(Box::new(export_batch_size.clone()))?;
 
-        let export_errors_total = IntCounterVec::new(
-            Opts::new("sensor_export_errors_total", "Total export errors"),
-            &["error_type"],
-        )?;
+        let export_errors_total = IntCounterVec::new(Opts::new("sensor_export_errors_total", "Total export errors"), &["error_type"])?;
         registry.register(Box::new(export_errors_total.clone()))?;
 
         // Storage metrics
-        let storage_events_total = IntGauge::new(
-            "sensor_storage_events_total",
-            "Total events in storage",
-        )?;
+        let storage_events_total = IntGauge::new("sensor_storage_events_total", "Total events in storage")?;
         registry.register(Box::new(storage_events_total.clone()))?;
 
-        let storage_pending_exports = IntGauge::new(
-            "sensor_storage_pending_exports",
-            "Number of events pending export",
-        )?;
+        let storage_pending_exports = IntGauge::new("sensor_storage_pending_exports", "Number of events pending export")?;
         registry.register(Box::new(storage_pending_exports.clone()))?;
 
-        let storage_size_bytes = IntGauge::new(
-            "sensor_storage_size_bytes",
-            "Database size in bytes",
-        )?;
+        let storage_size_bytes = IntGauge::new("sensor_storage_size_bytes", "Database size in bytes")?;
         registry.register(Box::new(storage_size_bytes.clone()))?;
 
         // System metrics
-        let uptime_seconds = IntGauge::new(
-            "sensor_uptime_seconds",
-            "Sensor uptime in seconds",
-        )?;
+        let uptime_seconds = IntGauge::new("sensor_uptime_seconds", "Sensor uptime in seconds")?;
         registry.register(Box::new(uptime_seconds.clone()))?;
 
         Ok(Self {
@@ -175,6 +144,8 @@ impl SensorMetrics {
             probe_errors_total,
             peers_classified_public,
             peers_classified_private,
+            peers_classified_unknown,
+            classification_reasons_total,
             exports_total,
             export_batch_size,
             export_errors_total,
@@ -222,8 +193,18 @@ impl SensorMetrics {
         match classification {
             PeerClassification::Public => self.peers_classified_public.inc(),
             PeerClassification::Private => self.peers_classified_private.inc(),
-            PeerClassification::Unknown => {}
+            PeerClassification::Unknown => self.peers_classified_unknown.inc(),
         }
+    }
+
+    /// Record the reason attached to a classification decision.
+    pub fn record_classification_reason(&self, reason: &str) {
+        self.classification_reasons_total.with_label_values(&[reason]).inc();
+    }
+
+    /// Record a classification that did not come from an active probe result.
+    pub fn record_unknown_classification(&self) {
+        self.peers_classified_unknown.inc();
     }
 
     /// Record a probe error
@@ -287,10 +268,10 @@ impl SensorMetrics {
 
                             // Read the HTTP request line
                             match reader.read_line(&mut request_line).await {
-                                Ok(0) => return, // Connection closed
+                                Ok(0) => {} // Connection closed
                                 Ok(_) => {
                                     // Parse request line (e.g., "GET /metrics HTTP/1.1")
-                                    let parts: Vec<&str> = request_line.trim().split_whitespace().collect();
+                                    let parts: Vec<&str> = request_line.split_whitespace().collect();
 
                                     if parts.len() >= 2 {
                                         let method = parts[0];

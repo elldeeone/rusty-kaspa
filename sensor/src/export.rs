@@ -44,16 +44,9 @@ impl EventExporter {
             return Err(ExportError::ConfigError("Export endpoint required when export is enabled".to_string()));
         }
 
-        let client = Client::builder()
-            .timeout(Duration::from_secs(30))
-            .build()?;
+        let client = Client::builder().timeout(Duration::from_secs(30)).build()?;
 
-        Ok(Self {
-            config,
-            client,
-            storage,
-            shutdown_tx: None,
-        })
+        Ok(Self { config, client, storage, shutdown_tx: None })
     }
 
     /// Start the export worker loop
@@ -63,8 +56,7 @@ impl EventExporter {
             return Ok(());
         }
 
-        info!("Starting event exporter (backend: {}, interval: {}s)",
-              self.config.backend, self.config.interval_secs);
+        info!("Starting event exporter (backend: {}, interval: {}s)", self.config.backend, self.config.interval_secs);
 
         let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
         self.shutdown_tx = Some(shutdown_tx);
@@ -97,9 +89,7 @@ impl EventExporter {
     /// Export a batch of events
     async fn export_batch(config: &ExportConfig, client: &Client, storage: &EventStorage) -> ExportResult<()> {
         // Get unexported events from storage
-        let events = storage
-            .get_unexported_events(config.batch_size)
-            .map_err(|e| ExportError::StorageError(e.to_string()))?;
+        let events = storage.get_unexported_events(config.batch_size).map_err(|e| ExportError::StorageError(e.to_string()))?;
 
         if events.is_empty() {
             debug!("No events to export");
@@ -120,9 +110,7 @@ impl EventExporter {
                 Ok(_) => {
                     // Mark events as exported
                     let event_ids: Vec<String> = events.iter().map(|e| e.event_id.clone()).collect();
-                    storage
-                        .mark_events_exported(&event_ids)
-                        .map_err(|e| ExportError::StorageError(e.to_string()))?;
+                    storage.mark_events_exported(&event_ids).map_err(|e| ExportError::StorageError(e.to_string()))?;
 
                     info!("Successfully exported {} events", events.len());
                     return Ok(());
@@ -133,8 +121,13 @@ impl EventExporter {
 
                     if retry_count <= config.max_retries {
                         let backoff = config.retry_backoff_secs * retry_count as u64;
-                        warn!("Export failed (attempt {}/{}), retrying in {}s: {}",
-                              retry_count, config.max_retries, backoff, last_error.as_ref().unwrap());
+                        warn!(
+                            "Export failed (attempt {}/{}), retrying in {}s: {}",
+                            retry_count,
+                            config.max_retries,
+                            backoff,
+                            last_error.as_ref().unwrap()
+                        );
                         time::sleep(Duration::from_secs(backoff)).await;
                     }
                 }
@@ -146,9 +139,8 @@ impl EventExporter {
 
     /// Send a batch to the configured endpoint
     async fn send_batch(config: &ExportConfig, client: &Client, batch: &EventBatch) -> ExportResult<()> {
-        let endpoint = config.endpoint.as_ref().ok_or_else(|| {
-            ExportError::ConfigError("Export endpoint not configured".to_string())
-        })?;
+        let endpoint =
+            config.endpoint.as_ref().ok_or_else(|| ExportError::ConfigError("Export endpoint not configured".to_string()))?;
 
         match config.backend.as_str() {
             "http" | "webhook" => Self::send_http(client, endpoint, config.api_key.as_deref(), batch).await,
@@ -158,15 +150,8 @@ impl EventExporter {
     }
 
     /// Send batch via HTTP POST
-    async fn send_http(
-        client: &Client,
-        endpoint: &str,
-        api_key: Option<&str>,
-        batch: &EventBatch,
-    ) -> ExportResult<()> {
-        let mut request = client
-            .post(endpoint)
-            .json(&batch);
+    async fn send_http(client: &Client, endpoint: &str, api_key: Option<&str>, batch: &EventBatch) -> ExportResult<()> {
+        let mut request = client.post(endpoint).json(&batch);
 
         if let Some(key) = api_key {
             request = request.header("Authorization", format!("Bearer {}", key));
@@ -185,29 +170,18 @@ impl EventExporter {
     }
 
     /// Send batch to Firestore
-    async fn send_firestore(
-        client: &Client,
-        endpoint: &str,
-        api_key: Option<&str>,
-        batch: &EventBatch,
-    ) -> ExportResult<()> {
+    async fn send_firestore(client: &Client, endpoint: &str, api_key: Option<&str>, batch: &EventBatch) -> ExportResult<()> {
         // Firestore REST API format
         // endpoint should be like: https://firestore.googleapis.com/v1/projects/{project}/databases/{database}/documents/{collection}
 
-        let api_key = api_key.ok_or_else(|| {
-            ExportError::ConfigError("API key required for Firestore".to_string())
-        })?;
+        let api_key = api_key.ok_or_else(|| ExportError::ConfigError("API key required for Firestore".to_string()))?;
 
         // Send each event as a separate document
         for event in &batch.events {
             let document = Self::convert_to_firestore_document(event)?;
 
             let url = format!("{}?key={}", endpoint, api_key);
-            let response = client
-                .post(&url)
-                .json(&document)
-                .send()
-                .await?;
+            let response = client.post(&url).json(&document).send().await?;
 
             if !response.status().is_success() {
                 let status = response.status();
@@ -232,9 +206,19 @@ impl EventExporter {
                 "peer_port": {"integerValue": event.peer_port.to_string()},
                 "protocol_version": {"integerValue": event.protocol_version.to_string()},
                 "user_agent": {"stringValue": event.user_agent},
+                "peer_id": {"stringValue": event.peer_id.clone().unwrap_or_default()},
+                "advertised_address": {"stringValue": event.advertised_address.clone().unwrap_or_default()},
+                "probe_target_address": {"stringValue": event.probe_target_address.clone().unwrap_or_default()},
                 "network": {"stringValue": event.network},
                 "direction": {"stringValue": serde_json::to_string(&event.direction)?},
                 "classification": {"stringValue": serde_json::to_string(&event.classification)?},
+                "classification_reason": {
+                    "stringValue": event
+                        .classification_reason
+                        .map(|reason| serde_json::to_string(&reason))
+                        .transpose()?
+                        .unwrap_or_default()
+                },
                 "probe_duration_ms": {
                     "integerValue": event.probe_duration_ms.map(|d| d.to_string()).unwrap_or_default()
                 },
@@ -291,6 +275,7 @@ mod tests {
             retention_days: 30,
             enable_wal: false,
             addressdb_path: PathBuf::from(":memory:"),
+            postgres: None,
         };
 
         let storage = Arc::new(EventStorage::new(&db_config).unwrap());
@@ -308,10 +293,14 @@ mod tests {
             "kaspad:0.14.0".to_string(),
             "kaspa-mainnet".to_string(),
             ConnectionDirection::Inbound,
-        );
+        )
+        .with_peer_id(Some("peer-123".to_string()))
+        .with_advertised_address(Some("203.0.113.1:16111".to_string()))
+        .with_probe_target_address(Some("203.0.113.1:16111".to_string()));
 
         let doc = EventExporter::convert_to_firestore_document(&event).unwrap();
         assert!(doc["fields"]["event_id"]["stringValue"].is_string());
         assert!(doc["fields"]["peer_ip"]["stringValue"].is_string());
+        assert_eq!(doc["fields"]["peer_id"]["stringValue"], "peer-123");
     }
 }

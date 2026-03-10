@@ -1,6 +1,6 @@
 use crate::config::DatabaseConfig;
-use crate::models::{PeerConnectionEvent, PeerClassification};
-use crate::postgres::{PostgresWriter, PeerEvent};
+use crate::models::{PeerClassification, PeerConnectionEvent};
+use crate::postgres::{PeerEvent, PostgresWriter};
 use chrono::{DateTime, Utc};
 use log::{debug, error, info, warn};
 use r2d2::Pool;
@@ -35,35 +35,68 @@ pub struct EventStorage {
     postgres: Option<Arc<PostgresWriter>>,
 }
 
+fn postgres_classification(event: &PeerConnectionEvent) -> Option<String> {
+    match event.classification {
+        PeerClassification::Public => Some("public".to_string()),
+        PeerClassification::Private => Some("private".to_string()),
+        PeerClassification::Unknown if event.classification_reason.is_some() => Some("unknown".to_string()),
+        PeerClassification::Unknown => None,
+    }
+}
+
+fn build_postgres_event(event: &PeerConnectionEvent) -> PeerEvent {
+    let source_address = event.peer_address();
+    let metadata = serde_json::json!({
+        "protocol_version": event.protocol_version,
+        "user_agent": event.user_agent,
+        "peer_id": event.peer_id,
+        "source_address": source_address,
+        "advertised_address": event.advertised_address,
+        "probe_target_address": event.probe_target_address,
+        "network": event.network,
+        "direction": event.direction,
+        "classification_reason": event.classification_reason,
+        "probe_duration_ms": event.probe_duration_ms,
+        "probe_error": event.probe_error,
+    });
+
+    PeerEvent {
+        sensor_id: event.sensor_id.clone(),
+        peer_address: event.peer_address(),
+        peer_id: event.peer_id.clone(),
+        advertised_address: event.advertised_address.clone(),
+        probe_target_address: event.probe_target_address.clone(),
+        event_type: "discovered".to_string(),
+        classification: postgres_classification(event),
+        classification_reason: event.classification_reason.map(|reason| reason.as_metric_label().to_string()),
+        timestamp: event.timestamp.timestamp(),
+        metadata: Some(metadata.to_string()),
+    }
+}
+
 impl EventStorage {
     /// Create a new event storage instance
     pub fn new(config: &DatabaseConfig) -> StorageResult<Self> {
         let enable_wal = config.enable_wal;
-        let manager = SqliteConnectionManager::file(&config.path)
-            .with_init(move |conn| {
-                // Enable WAL mode for better concurrency if configured
-                if enable_wal {
-                    conn.execute_batch("PRAGMA journal_mode = WAL;")?;
-                }
-                // Performance optimizations
-                conn.execute_batch(
-                    "
+        let manager = SqliteConnectionManager::file(&config.path).with_init(move |conn| {
+            // Enable WAL mode for better concurrency if configured
+            if enable_wal {
+                conn.execute_batch("PRAGMA journal_mode = WAL;")?;
+            }
+            // Performance optimizations
+            conn.execute_batch(
+                "
                     PRAGMA synchronous = NORMAL;
                     PRAGMA cache_size = -64000;
                     PRAGMA temp_store = MEMORY;
                     ",
-                )?;
-                Ok(())
-            });
+            )?;
+            Ok(())
+        });
 
-        let pool = Pool::builder()
-            .max_size(config.pool_size)
-            .build(manager)?;
+        let pool = Pool::builder().max_size(config.pool_size).build(manager)?;
 
-        let storage = Self {
-            pool: Arc::new(pool),
-            postgres: None,
-        };
+        let storage = Self { pool: Arc::new(pool), postgres: None };
 
         // Initialize database schema
         storage.init_schema()?;
@@ -73,10 +106,7 @@ impl EventStorage {
     }
 
     /// Create a new event storage with PostgreSQL integration
-    pub async fn new_with_postgres(
-        config: &DatabaseConfig,
-        sensor_identity: &crate::config::SensorIdentity,
-    ) -> StorageResult<Self> {
+    pub async fn new_with_postgres(config: &DatabaseConfig, sensor_identity: &crate::config::SensorIdentity) -> StorageResult<Self> {
         // Initialize local SQLite storage
         let mut storage = Self::new(config)?;
 
@@ -113,11 +143,14 @@ impl EventStorage {
                 protocol_version INTEGER NOT NULL,
                 user_agent TEXT NOT NULL,
                 peer_id TEXT,
+                advertised_address TEXT,
+                probe_target_address TEXT,
                 network TEXT NOT NULL,
                 direction TEXT NOT NULL,
                 classification TEXT NOT NULL,
                 probe_duration_ms INTEGER,
                 probe_error TEXT,
+                classification_reason TEXT,
                 exported INTEGER DEFAULT 0,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             );
@@ -142,8 +175,36 @@ impl EventStorage {
             ",
         )?;
 
+        self.ensure_peer_event_columns(&conn)?;
+
         debug!("Database schema initialized");
         Ok(())
+    }
+
+    fn ensure_peer_event_columns(&self, conn: &rusqlite::Connection) -> StorageResult<()> {
+        for (column, column_type) in
+            [("advertised_address", "TEXT"), ("probe_target_address", "TEXT"), ("classification_reason", "TEXT")]
+        {
+            if !self.sqlite_column_exists(conn, "peer_events", column)? {
+                conn.execute(&format!("ALTER TABLE peer_events ADD COLUMN {} {}", column, column_type), [])?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn sqlite_column_exists(&self, conn: &rusqlite::Connection, table: &str, column: &str) -> StorageResult<bool> {
+        let pragma = format!("PRAGMA table_info({})", table);
+        let mut stmt = conn.prepare(&pragma)?;
+        let columns = stmt.query_map([], |row| row.get::<_, String>(1))?;
+
+        for existing in columns {
+            if existing? == column {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
     }
 
     /// Insert a new peer connection event (writes to both SQLite and PostgreSQL)
@@ -153,13 +214,15 @@ impl EventStorage {
 
         let classification_str = serde_json::to_string(&event.classification)?;
         let direction_str = serde_json::to_string(&event.direction)?;
+        let classification_reason_str = event.classification_reason.map(|reason| serde_json::to_string(&reason)).transpose()?;
 
         conn.execute(
             "INSERT INTO peer_events (
                 event_id, timestamp, sensor_id, peer_ip, peer_port,
-                protocol_version, user_agent, peer_id, network, direction, classification,
-                probe_duration_ms, probe_error
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                protocol_version, user_agent, peer_id, advertised_address, probe_target_address,
+                network, direction, classification, probe_duration_ms, probe_error,
+                classification_reason
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
             params![
                 &event.event_id,
                 event.timestamp.to_rfc3339(),
@@ -169,11 +232,14 @@ impl EventStorage {
                 event.protocol_version as i64,
                 &event.user_agent,
                 &event.peer_id,
+                &event.advertised_address,
+                &event.probe_target_address,
                 &event.network,
                 direction_str,
                 classification_str,
                 event.probe_duration_ms.map(|d| d as i64),
                 &event.probe_error,
+                classification_reason_str,
             ],
         )?;
 
@@ -182,32 +248,7 @@ impl EventStorage {
 
         // Write to PostgreSQL (asynchronous, non-blocking)
         if let Some(pg_writer) = &self.postgres {
-            let peer_address = format!("{}:{}", event.peer_ip, event.peer_port);
-            let classification = match &event.classification {
-                PeerClassification::Public => Some("public".to_string()),
-                PeerClassification::Private => Some("private".to_string()),
-                PeerClassification::Unknown => None,
-            };
-
-            // Build metadata JSON
-            let metadata = serde_json::json!({
-                "protocol_version": event.protocol_version,
-                "user_agent": event.user_agent,
-                "peer_id": event.peer_id,
-                "network": event.network,
-                "direction": event.direction,
-                "probe_duration_ms": event.probe_duration_ms,
-                "probe_error": event.probe_error,
-            });
-
-            let pg_event = PeerEvent {
-                sensor_id: event.sensor_id.clone(),
-                peer_address,
-                event_type: "discovered".to_string(),
-                classification,
-                timestamp: event.timestamp.timestamp(),
-                metadata: Some(metadata.to_string()),
-            };
+            let pg_event = build_postgres_event(event);
 
             if let Err(e) = pg_writer.queue_event(pg_event) {
                 warn!("Failed to queue event for PostgreSQL: {}", e);
@@ -226,8 +267,9 @@ impl EventStorage {
 
         let mut stmt = conn.prepare(
             "SELECT event_id, timestamp, sensor_id, peer_ip, peer_port,
-                    protocol_version, user_agent, network, direction, classification,
-                    probe_duration_ms, probe_error
+                    protocol_version, user_agent, peer_id, advertised_address,
+                    probe_target_address, network, direction, classification,
+                    probe_duration_ms, probe_error, classification_reason
              FROM peer_events
              WHERE exported = 0
              ORDER BY timestamp ASC
@@ -242,16 +284,12 @@ impl EventStorage {
                     .map(|dt| dt.with_timezone(&Utc))?;
 
                 let peer_ip_str: String = row.get(3)?;
-                let peer_ip = peer_ip_str.parse()
-                    .map_err(|_| rusqlite::Error::InvalidQuery)?;
+                let peer_ip = peer_ip_str.parse().map_err(|_| rusqlite::Error::InvalidQuery)?;
 
-                let direction_str: String = row.get(9)?;
-                let direction = serde_json::from_str(&direction_str)
-                    .map_err(|_| rusqlite::Error::InvalidQuery)?;
-
-                let classification_str: String = row.get(10)?;
-                let classification = serde_json::from_str(&classification_str)
-                    .map_err(|_| rusqlite::Error::InvalidQuery)?;
+                let classification_reason = row
+                    .get::<_, Option<String>>(15)?
+                    .map(|reason| serde_json::from_str(&reason).map_err(|_| rusqlite::Error::InvalidQuery))
+                    .transpose()?;
 
                 Ok(PeerConnectionEvent {
                     event_id: row.get(0)?,
@@ -262,11 +300,18 @@ impl EventStorage {
                     protocol_version: row.get::<_, i64>(5)? as u32,
                     user_agent: row.get(6)?,
                     peer_id: row.get(7)?,
-                    network: row.get(8)?,
-                    direction,
-                    classification,
-                    probe_duration_ms: row.get::<_, Option<i64>>(11)?.map(|d| d as u64),
-                    probe_error: row.get(12)?,
+                    advertised_address: row.get(8)?,
+                    probe_target_address: row.get(9)?,
+                    network: row.get(10)?,
+                    direction: row
+                        .get::<_, String>(11)
+                        .and_then(|value| serde_json::from_str(&value).map_err(|_| rusqlite::Error::InvalidQuery))?,
+                    classification: row
+                        .get::<_, String>(12)
+                        .and_then(|value| serde_json::from_str(&value).map_err(|_| rusqlite::Error::InvalidQuery))?,
+                    probe_duration_ms: row.get::<_, Option<i64>>(13)?.map(|d| d as u64),
+                    probe_error: row.get(14)?,
+                    classification_reason,
                 })
             })?
             .collect::<SqliteResult<Vec<_>>>()?;
@@ -316,13 +361,11 @@ impl EventStorage {
             |row| row.get(0),
         )?;
 
-        let oldest_event: Option<String> = conn
-            .query_row("SELECT timestamp FROM peer_events ORDER BY timestamp ASC LIMIT 1", [], |row| row.get(0))
-            .optional()?;
+        let oldest_event: Option<String> =
+            conn.query_row("SELECT timestamp FROM peer_events ORDER BY timestamp ASC LIMIT 1", [], |row| row.get(0)).optional()?;
 
-        let newest_event: Option<String> = conn
-            .query_row("SELECT timestamp FROM peer_events ORDER BY timestamp DESC LIMIT 1", [], |row| row.get(0))
-            .optional()?;
+        let newest_event: Option<String> =
+            conn.query_row("SELECT timestamp FROM peer_events ORDER BY timestamp DESC LIMIT 1", [], |row| row.get(0)).optional()?;
 
         Ok(StorageStatistics {
             total_events: total_events as usize,
@@ -342,10 +385,7 @@ impl EventStorage {
         let cutoff = Utc::now() - chrono::Duration::days(retention_days as i64);
         let cutoff_str = cutoff.to_rfc3339();
 
-        let deleted = conn.execute(
-            "DELETE FROM peer_events WHERE timestamp < ?1 AND exported = 1",
-            params![cutoff_str],
-        )?;
+        let deleted = conn.execute("DELETE FROM peer_events WHERE timestamp < ?1 AND exported = 1", params![cutoff_str])?;
 
         if deleted > 0 {
             info!("Cleaned up {} old events beyond {} days retention", deleted, retention_days);
@@ -386,8 +426,9 @@ pub struct StorageStatistics {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{ConnectionDirection, PeerConnectionEvent};
+    use crate::models::{ClassificationReason, ConnectionDirection, PeerConnectionEvent};
     use std::net::IpAddr;
+    use std::path::PathBuf;
     use std::str::FromStr;
 
     #[test]
@@ -398,6 +439,7 @@ mod tests {
             retention_days: 30,
             enable_wal: false,
             addressdb_path: PathBuf::from(":memory:"),
+            postgres: None,
         };
 
         let storage = EventStorage::new(&config).unwrap();
@@ -412,6 +454,7 @@ mod tests {
             retention_days: 30,
             enable_wal: false,
             addressdb_path: PathBuf::from(":memory:"),
+            postgres: None,
         };
 
         let storage = EventStorage::new(&config).unwrap();
@@ -424,13 +467,18 @@ mod tests {
             "kaspad:0.14.0".to_string(),
             "kaspa-mainnet".to_string(),
             ConnectionDirection::Inbound,
-        );
+        )
+        .with_peer_id(Some("peer-123".to_string()))
+        .with_advertised_address(Some("203.0.113.1:16111".to_string()))
+        .with_probe_target_address(Some("203.0.113.1:16111".to_string()));
 
         storage.insert_event(&event).unwrap();
 
         let events = storage.get_unexported_events(10).unwrap();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].sensor_id, "test-sensor");
+        assert_eq!(events[0].peer_id.as_deref(), Some("peer-123"));
+        assert_eq!(events[0].advertised_address.as_deref(), Some("203.0.113.1:16111"));
     }
 
     #[test]
@@ -441,6 +489,7 @@ mod tests {
             retention_days: 30,
             enable_wal: false,
             addressdb_path: PathBuf::from(":memory:"),
+            postgres: None,
         };
 
         let storage = EventStorage::new(&config).unwrap();
@@ -475,6 +524,7 @@ mod tests {
             retention_days: 30,
             enable_wal: false,
             addressdb_path: PathBuf::from(":memory:"),
+            postgres: None,
         };
 
         let storage = EventStorage::new(&config).unwrap();
@@ -487,7 +537,10 @@ mod tests {
             "kaspad:0.14.0".to_string(),
             "kaspa-mainnet".to_string(),
             ConnectionDirection::Inbound,
-        ).with_probe_result(PeerClassification::Public, 250, None);
+        )
+        .with_advertised_address(Some("203.0.113.1:16111".to_string()))
+        .with_probe_target_address(Some("203.0.113.1:16111".to_string()))
+        .with_probe_result(PeerClassification::Public, 250, crate::models::ClassificationReason::AdvertisedProbeSuccess, None);
 
         storage.insert_event(&event).unwrap();
 
@@ -495,5 +548,65 @@ mod tests {
         assert_eq!(stats.total_events, 1);
         assert_eq!(stats.public_peers, 1);
         assert_eq!(stats.private_peers, 0);
+    }
+
+    #[test]
+    fn test_build_postgres_event_keeps_peer_address_as_source_address() {
+        let event = PeerConnectionEvent::new(
+            "test-sensor".to_string(),
+            IpAddr::from_str("198.51.100.7").unwrap(),
+            16110,
+            7,
+            "kaspad:0.14.0".to_string(),
+            "kaspa-mainnet".to_string(),
+            ConnectionDirection::Inbound,
+        )
+        .with_advertised_address(Some("203.0.113.9:17111".to_string()))
+        .with_probe_target_address(Some("203.0.113.9:17111".to_string()))
+        .with_probe_result(PeerClassification::Public, 250, ClassificationReason::AdvertisedProbeSuccess, None);
+
+        let pg_event = build_postgres_event(&event);
+
+        assert_eq!(pg_event.peer_address, "198.51.100.7:16110");
+        assert_eq!(pg_event.advertised_address.as_deref(), Some("203.0.113.9:17111"));
+        assert_eq!(pg_event.probe_target_address.as_deref(), Some("203.0.113.9:17111"));
+        assert_eq!(pg_event.classification.as_deref(), Some("public"));
+    }
+
+    #[test]
+    fn test_build_postgres_event_persists_terminal_unknown_classification() {
+        let event = PeerConnectionEvent::new(
+            "test-sensor".to_string(),
+            IpAddr::from_str("198.51.100.7").unwrap(),
+            16110,
+            7,
+            "kaspad:0.14.0".to_string(),
+            "kaspa-mainnet".to_string(),
+            ConnectionDirection::Inbound,
+        )
+        .with_classification(PeerClassification::Unknown, ClassificationReason::MissingAdvertisedAddress, None, None);
+
+        let pg_event = build_postgres_event(&event);
+
+        assert_eq!(pg_event.classification.as_deref(), Some("unknown"));
+        assert_eq!(pg_event.classification_reason.as_deref(), Some("missing_advertised_address"));
+    }
+
+    #[test]
+    fn test_build_postgres_event_leaves_pending_unknown_unclassified() {
+        let event = PeerConnectionEvent::new(
+            "test-sensor".to_string(),
+            IpAddr::from_str("198.51.100.7").unwrap(),
+            16110,
+            7,
+            "kaspad:0.14.0".to_string(),
+            "kaspa-mainnet".to_string(),
+            ConnectionDirection::Outbound,
+        );
+
+        let pg_event = build_postgres_event(&event);
+
+        assert_eq!(pg_event.classification, None);
+        assert_eq!(pg_event.classification_reason, None);
     }
 }

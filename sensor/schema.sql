@@ -7,8 +7,11 @@ CREATE TABLE IF NOT EXISTS peer_events (
     sensor_id TEXT NOT NULL,
     peer_address TEXT NOT NULL,
     peer_id TEXT,
+    advertised_address TEXT,
+    probe_target_address TEXT,
     event_type TEXT NOT NULL,
     classification TEXT,
+    classification_reason TEXT,
     timestamp BIGINT NOT NULL,
     metadata JSONB,
     created_at TIMESTAMP DEFAULT NOW()
