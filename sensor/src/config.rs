@@ -118,6 +118,10 @@ pub struct ExportConfig {
     #[serde(default)]
     pub api_key: Option<String>,
 
+    /// Shared secret for kasnodes-compatible HMAC request signing
+    #[serde(default)]
+    pub hmac_secret: Option<String>,
+
     /// Batch size for exports
     #[serde(default = "default_export_batch_size")]
     pub batch_size: usize,
@@ -366,6 +370,7 @@ impl Default for SensorConfig {
                 backend: default_export_backend(),
                 endpoint: None,
                 api_key: None,
+                hmac_secret: None,
                 batch_size: default_export_batch_size(),
                 interval_secs: default_export_interval_secs(),
                 max_retries: default_max_retries(),

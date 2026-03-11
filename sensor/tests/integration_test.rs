@@ -56,6 +56,7 @@ fn create_test_config(temp_dir: &TestTempDir) -> SensorConfig {
             backend: "http".to_string(),
             endpoint: None,
             api_key: None,
+            hmac_secret: None,
             batch_size: 10,
             interval_secs: 60,
             max_retries: 2,

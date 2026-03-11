@@ -1,8 +1,11 @@
 use crate::config::ExportConfig;
 use crate::models::{EventBatch, PeerConnectionEvent};
 use crate::storage::EventStorage;
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use hmac::{Hmac, Mac};
 use log::{debug, error, info, warn};
 use reqwest::Client;
+use sha2::Sha256;
 use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
@@ -143,18 +146,32 @@ impl EventExporter {
             config.endpoint.as_ref().ok_or_else(|| ExportError::ConfigError("Export endpoint not configured".to_string()))?;
 
         match config.backend.as_str() {
-            "http" | "webhook" => Self::send_http(client, endpoint, config.api_key.as_deref(), batch).await,
+            "http" | "webhook" => {
+                Self::send_http(client, endpoint, config.api_key.as_deref(), config.hmac_secret.as_deref(), batch).await
+            }
             "firestore" => Self::send_firestore(client, endpoint, config.api_key.as_deref(), batch).await,
             other => Err(ExportError::ConfigError(format!("Unsupported backend: {}", other))),
         }
     }
 
     /// Send batch via HTTP POST
-    async fn send_http(client: &Client, endpoint: &str, api_key: Option<&str>, batch: &EventBatch) -> ExportResult<()> {
-        let mut request = client.post(endpoint).json(&batch);
+    async fn send_http(
+        client: &Client,
+        endpoint: &str,
+        api_key: Option<&str>,
+        hmac_secret: Option<&str>,
+        batch: &EventBatch,
+    ) -> ExportResult<()> {
+        let payload = serde_json::to_vec(batch)?;
+        let mut request = client.post(endpoint).header("Content-Type", "application/json").body(payload.clone());
 
         if let Some(key) = api_key {
             request = request.header("Authorization", format!("Bearer {}", key));
+        }
+
+        if let Some(secret) = hmac_secret {
+            request =
+                request.header("X-Sensor-ID", &batch.sensor_id).header("X-Sensor-Signature", Self::sign_payload(secret, &payload)?);
         }
 
         let response = request.send().await?;
@@ -167,6 +184,13 @@ impl EventExporter {
             let body = response.text().await.unwrap_or_default();
             Err(ExportError::ConfigError(format!("HTTP {} - {}", status, body)))
         }
+    }
+
+    fn sign_payload(secret: &str, payload: &[u8]) -> ExportResult<String> {
+        let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())
+            .map_err(|e| ExportError::ConfigError(format!("Invalid HMAC secret: {}", e)))?;
+        mac.update(payload);
+        Ok(BASE64_STANDARD.encode(mac.finalize().into_bytes()))
     }
 
     /// Send batch to Firestore
@@ -255,6 +279,8 @@ mod tests {
     use std::net::IpAddr;
     use std::path::PathBuf;
     use std::str::FromStr;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
 
     #[test]
     fn test_exporter_creation() {
@@ -263,6 +289,7 @@ mod tests {
             backend: "http".to_string(),
             endpoint: None,
             api_key: None,
+            hmac_secret: None,
             batch_size: 100,
             interval_secs: 60,
             max_retries: 3,
@@ -302,5 +329,80 @@ mod tests {
         assert!(doc["fields"]["event_id"]["stringValue"].is_string());
         assert!(doc["fields"]["peer_ip"]["stringValue"].is_string());
         assert_eq!(doc["fields"]["peer_id"]["stringValue"], "peer-123");
+    }
+
+    #[test]
+    fn test_sign_payload_base64_hmac_sha256() {
+        let signature = EventExporter::sign_payload("super-secret", br#"{"hello":"world"}"#).unwrap();
+        assert_eq!(signature, "5wDDfJLTJLjXr4cfnNOxikeVi5Cy4qZleyqDMRlZ048=");
+    }
+
+    #[tokio::test]
+    async fn test_send_http_includes_kasnodes_auth_headers() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut buffer = Vec::new();
+            let mut header_end = None;
+
+            while header_end.is_none() {
+                let mut chunk = [0_u8; 1024];
+                let read = stream.read(&mut chunk).await.unwrap();
+                assert!(read > 0);
+                buffer.extend_from_slice(&chunk[..read]);
+                header_end = buffer.windows(4).position(|window| window == b"\r\n\r\n");
+            }
+
+            let header_end = header_end.unwrap() + 4;
+            let header_bytes = &buffer[..header_end];
+            let headers = String::from_utf8(header_bytes.to_vec()).unwrap();
+            let content_length = headers
+                .lines()
+                .find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.eq_ignore_ascii_case("content-length").then(|| value.trim().parse::<usize>().unwrap())
+                })
+                .unwrap();
+
+            let mut body = buffer[header_end..].to_vec();
+            while body.len() < content_length {
+                let mut chunk = vec![0_u8; content_length - body.len()];
+                let read = stream.read(&mut chunk).await.unwrap();
+                assert!(read > 0);
+                body.extend_from_slice(&chunk[..read]);
+            }
+
+            stream.write_all(b"HTTP/1.1 202 Accepted\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok").await.unwrap();
+
+            (headers, body)
+        });
+
+        let client = Client::builder().timeout(Duration::from_secs(5)).build().unwrap();
+        let event = PeerConnectionEvent::new(
+            "sensor-nyc".to_string(),
+            IpAddr::from_str("203.0.113.7").unwrap(),
+            16111,
+            7,
+            "kaspad:0.16.0".to_string(),
+            "kaspa-mainnet".to_string(),
+            ConnectionDirection::Inbound,
+        )
+        .with_peer_id(Some("peer-abc".to_string()));
+        let batch = EventBatch::new("sensor-nyc".to_string(), vec![event]);
+
+        EventExporter::send_http(&client, &format!("http://{}", address), Some("legacy-token"), Some("shared-secret"), &batch)
+            .await
+            .unwrap();
+
+        let (headers, body) = server.await.unwrap();
+        let expected_signature = EventExporter::sign_payload("shared-secret", &body).unwrap();
+
+        assert!(headers.contains("POST / HTTP/1.1"));
+        assert!(headers.contains("authorization: Bearer legacy-token"));
+        assert!(headers.contains("x-sensor-id: sensor-nyc"));
+        assert!(headers.contains(&format!("x-sensor-signature: {}", expected_signature)));
+        assert_eq!(serde_json::from_slice::<EventBatch>(&body).unwrap().sensor_id, "sensor-nyc");
     }
 }

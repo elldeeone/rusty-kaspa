@@ -3215,12 +3215,14 @@ name = "kaspa-sensor"
 version = "0.2.5"
 dependencies = [
  "async-trait",
+ "base64",
  "chrono",
  "clap 4.5.19",
  "deadpool-postgres",
  "env_logger 0.11.6",
  "futures",
  "hex",
+ "hmac",
  "itertools 0.13.0",
  "kaspa-addressmanager",
  "kaspa-connectionmanager",
@@ -3241,6 +3243,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror",
  "tokio",
  "tokio-postgres",
