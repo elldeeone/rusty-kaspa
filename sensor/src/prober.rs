@@ -137,12 +137,21 @@ impl ActiveProber {
                 ipv4.is_loopback() || ipv4.is_private() || ipv4.is_link_local() || ipv4.is_broadcast() || ipv4.is_multicast()
             }
             std::net::IpAddr::V6(ipv6) => {
-                ipv6.is_loopback()
-                    || ipv6.is_multicast()
-                    || ipv6.is_unspecified()
-                    // Check for IPv6 private ranges
-                    || (ipv6.segments()[0] & 0xfe00) == 0xfc00 // Unique local
-                    || (ipv6.segments()[0] & 0xffc0) == 0xfe80 // Link local
+                if let Some(mapped) = ipv6.to_ipv4_mapped() {
+                    mapped.is_loopback()
+                        || mapped.is_private()
+                        || mapped.is_link_local()
+                        || mapped.is_broadcast()
+                        || mapped.is_multicast()
+                        || mapped.is_unspecified()
+                } else {
+                    ipv6.is_loopback()
+                        || ipv6.is_multicast()
+                        || ipv6.is_unspecified()
+                        // Check for IPv6 private ranges
+                        || (ipv6.segments()[0] & 0xfe00) == 0xfc00 // Unique local
+                        || (ipv6.segments()[0] & 0xffc0) == 0xfe80 // Link local
+                }
             }
         }
     }
@@ -202,6 +211,14 @@ mod tests {
 
         // Public address
         let addr: SocketAddr = "8.8.8.8:8080".parse().unwrap();
+        assert!(!ActiveProber::is_private_address(&addr));
+
+        // IPv4-mapped private address
+        let addr: SocketAddr = "[::ffff:10.0.0.1]:8080".parse().unwrap();
+        assert!(ActiveProber::is_private_address(&addr));
+
+        // IPv4-mapped public address
+        let addr: SocketAddr = "[::ffff:8.8.8.8]:8080".parse().unwrap();
         assert!(!ActiveProber::is_private_address(&addr));
     }
 

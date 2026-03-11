@@ -337,6 +337,33 @@ fn resolve_advertised_socket(peer_version: &VersionMessage) -> Result<Option<Soc
     Ok(Some(net_address.into()))
 }
 
+fn validate_advertised_socket(advertised_socket: SocketAddr) -> Result<(), ClassificationReason> {
+    if advertised_socket.port() == 0 {
+        return Err(ClassificationReason::InvalidAdvertisedAddress);
+    }
+
+    match advertised_socket.ip() {
+        std::net::IpAddr::V4(ipv4) => {
+            if ipv4.is_unspecified() || ipv4.is_broadcast() {
+                return Err(ClassificationReason::InvalidAdvertisedAddress);
+            }
+        }
+        std::net::IpAddr::V6(ipv6) => {
+            if ipv6.is_unspecified() {
+                return Err(ClassificationReason::InvalidAdvertisedAddress);
+            }
+
+            if let Some(mapped) = ipv6.to_ipv4_mapped() {
+                if mapped.is_unspecified() || mapped.is_broadcast() {
+                    return Err(ClassificationReason::InvalidAdvertisedAddress);
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum InboundProbePlan {
     Probe { advertised_address: String },
@@ -347,6 +374,14 @@ fn plan_inbound_probe(peer_version: &VersionMessage, skip_private_ips: bool) -> 
     match resolve_advertised_socket(peer_version) {
         Ok(Some(advertised_socket)) => {
             let advertised_address = advertised_socket.to_string();
+            if validate_advertised_socket(advertised_socket).is_err() {
+                return InboundProbePlan::Unknown {
+                    advertised_address: Some(advertised_address),
+                    reason: ClassificationReason::InvalidAdvertisedAddress,
+                    error: Some("advertised address is invalid or unusable".to_string()),
+                };
+            }
+
             if skip_private_ips && ActiveProber::is_private_address(&advertised_socket) {
                 InboundProbePlan::Unknown {
                     advertised_address: Some(advertised_address),
@@ -605,6 +640,23 @@ mod tests {
                 advertised_address: None,
                 reason: ClassificationReason::InvalidAdvertisedAddress,
                 error: Some("failed to parse advertised address".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn inbound_probe_plan_marks_zero_port_advertised_as_unknown() {
+        let address = NetAddress::new(IpAddress::from(Ipv4Addr::UNSPECIFIED), 0);
+        let peer_version = version_message_with_address(Some(address.into()));
+
+        let plan = plan_inbound_probe(&peer_version, true);
+
+        assert_eq!(
+            plan,
+            InboundProbePlan::Unknown {
+                advertised_address: Some("0.0.0.0:0".to_string()),
+                reason: ClassificationReason::InvalidAdvertisedAddress,
+                error: Some("advertised address is invalid or unusable".to_string()),
             }
         );
     }
