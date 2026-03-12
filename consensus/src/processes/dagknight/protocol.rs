@@ -1,6 +1,6 @@
 use std::{
-    cmp::Ordering,
-    collections::HashSet,
+    cell::Cell,
+    collections::{HashMap, HashSet},
     sync::{Arc, OnceLock},
 };
 
@@ -125,11 +125,11 @@ pub fn cleanup_conflict_locks() {
     }
 }
 
-struct GroupMetadata<'a> {
+struct GroupMetadata {
     conflict_genesis: Hash,
-    // store as a slice for flexibility (Vec or &[Hash] will coerce)
-    subgroup: &'a [Hash],
-    rank_value: RankValue,
+    subgroup: Arc<Vec<Hash>>,
+    k: KType,
+    selected_parent: SortableBlock,
 }
 
 /// A struct encapsulating the logic and algorithms of the DAGKNIGHT protocol
@@ -185,31 +185,39 @@ impl<
 
         // g = find LCCA
         let mut conflict_genesis = self.common_chain_ancestor(parents);
-        let mut curr_subgroup = current_parents;
+        let mut curr_subgroup = Arc::new(parents.to_vec());
         let mut conflict_ordered_parents = vec![];
         debug!("conflict_genesis: {:#?}", conflict_genesis);
 
         while curr_subgroup.len() > 1 {
-            let group_map = curr_subgroup
+            let agreement_grouping: HashMap<Hash, Arc<Vec<Hash>>> = curr_subgroup
                 .iter()
                 .copied()
-                .into_group_map_by(|&parent| self.reachability_service.get_next_chain_ancestor(parent, conflict_genesis));
+                .into_group_map_by(|&parent| self.reachability_service.get_next_chain_ancestor(parent, conflict_genesis))
+                .into_iter()
+                .map(|(k, v)| (k, Arc::new(v)))
+                .collect();
 
             // Shortcut condition to avoid doing unnecessary work
-            if group_map.len() == 1 {
+            if agreement_grouping.len() == 1 {
                 // There is exactly one group, we don't rank anymore.
-                let (_, subgroup) = group_map.iter().next().unwrap();
-                curr_subgroup = subgroup.to_vec();
-                conflict_genesis = self.common_chain_ancestor(subgroup);
+                let (_, subgroup) = agreement_grouping.iter().next().unwrap();
+                curr_subgroup = subgroup.clone();
+                let next_conflict_genesis = self.common_chain_ancestor(&curr_subgroup);
+                assert_ne!(
+                    next_conflict_genesis, conflict_genesis,
+                    "Expected the conflict genesis to change after skipping a level of the conflict hierarchy but got {}",
+                    conflict_genesis
+                );
+                conflict_genesis = next_conflict_genesis;
                 continue;
             }
 
             // Pick a "winner" among these subgroups
-            let (winning_conflict_genesis, winning_subgroup): (Hash, &[Hash]) = {
-                let mut best_groups: Vec<GroupMetadata> = vec![];
+            let (winning_conflict_genesis, winning_subgroup) = {
                 let mut blue_work_map = BlockHashMap::new();
 
-                let max_blue_work = group_map.iter().max_by_key(|(_, subgroup)| {
+                let max_blue_work = agreement_grouping.iter().max_by_key(|(_, subgroup)| {
                     // Max by the max blue work in the subgroup, to prioritize groups with higher blue work in their members
                     subgroup
                         .iter()
@@ -230,7 +238,7 @@ impl<
                 if let Some((_, subgroup)) = max_blue_work {
                     let max_blue_work_after_genesis =
                         subgroup.iter().map(|&b| blue_work_map.get(&b).copied().unwrap()).max().unwrap() - curr_genesis_blue_work;
-                    for (&g_conflict_genesis, subgroup) in group_map.iter() {
+                    for (&g_conflict_genesis, subgroup) in agreement_grouping.iter() {
                         let subgroup_max_blue_work_after_genesis =
                             subgroup.iter().map(|&b| blue_work_map.get(&b).copied().unwrap()).max().unwrap() - curr_genesis_blue_work;
                         // a group is only worth considering if its blue work is more than 5% of
@@ -252,7 +260,7 @@ impl<
                     None
                 };
 
-                let filtered_group_iter = group_map.iter().filter(|(_, subgroup)| {
+                let filtered_group_iter = agreement_grouping.iter().filter(|(_, subgroup)| {
                     if let Some(max_blue_work_after_genesis) = max_blue_work_after_genesis_opt {
                         let subgroup_max_blue_work_after_genesis =
                             subgroup.iter().map(|&b| blue_work_map.get(&b).copied().unwrap()).max().unwrap() - curr_genesis_blue_work;
@@ -271,51 +279,14 @@ impl<
                         "Only one subgroup under conflict genesis {:#?} passed the blue work filter, selecting it as the winner",
                         conflict_genesis
                     );
-                    (*conflict_genesis, subgroup)
+                    (*conflict_genesis, subgroup.clone())
                 } else {
-                    // either none passed the filter or multiple groups remain; fall back to ranking
-                    if filtered_group_iter.clone().count() == 0 {
-                        debug!("No subgroups passed the blue work filter, considering all groups for ranking");
-                    } else {
-                        debug!("Multiple subgroups passed the blue work filter, ranking them to find the winner");
-                    }
+                    let best_groups = self.rank(conflict_genesis, &agreement_grouping, &curr_subgroup);
 
-                    // sort the resulting iterator by blue score (descending) then hash ascending
-                    let filtered_group_iter = filtered_group_iter.sorted_by(|a, b| {
-                        // Prioritize groups by higher blue score (descending), then by hash (ascending)
-                        let a_score = self.headers_store.get_header(a.1[0]).unwrap().blue_score;
-                        let b_score = self.headers_store.get_header(b.1[0]).unwrap().blue_score;
-                        // higher blue score first
-                        b_score.cmp(&a_score).then_with(|| a.0.cmp(b.0))
-                    });
-
-                    for (curr_conflict_genesis, subgroup) in filtered_group_iter {
-                        debug!("Subgroup under conflict genesis {:#?} has members: {:#?}", curr_conflict_genesis, subgroup);
-                        let best_k = best_groups.get(0).map(|g| g.rank_value.k);
-                        let rank_value = self.rank(conflict_genesis, subgroup, &curr_subgroup, best_k);
-                        let curr_k = rank_value.k;
-                        let group_metadata = GroupMetadata { rank_value, conflict_genesis: *curr_conflict_genesis, subgroup };
-
-                        if let Some(inner_best_rank) = best_k {
-                            match curr_k.cmp(&inner_best_rank) {
-                                Ordering::Less => {
-                                    // Tie breaking by hash
-                                    best_groups = vec![group_metadata];
-                                }
-                                Ordering::Equal => {
-                                    best_groups.push(group_metadata);
-                                }
-                                _ => {}
-                            }
-                        } else {
-                            best_groups = vec![group_metadata];
-                        }
-                    }
-
-                    let final_winner: (Hash, &[Hash]) = if best_groups.len() > 1 {
+                    let final_winner: (Hash, Arc<Vec<Hash>>) = if best_groups.len() > 1 {
                         self.tie_breaking(&best_groups)
                     } else {
-                        let single_winner = best_groups.first().expect("best_groups is non-empty");
+                        let single_winner = best_groups.into_iter().next().expect("best_groups should be non-empty after filtering");
                         (single_winner.conflict_genesis, single_winner.subgroup)
                     };
 
@@ -325,16 +296,16 @@ impl<
             };
 
             // Add the non-winners to the ordered parents
-            group_map.iter().for_each(|(&conflict_genesis, subgroup)| {
+            agreement_grouping.iter().for_each(|(&conflict_genesis, subgroup)| {
                 // TODO[DK]: Asserting here that order of the non-winning parents within a conflict hierarchy doesn't matter
                 if conflict_genesis != winning_conflict_genesis {
-                    conflict_ordered_parents.extend(subgroup);
+                    conflict_ordered_parents.extend(subgroup.as_ref().iter().copied());
                 }
             });
 
-            curr_subgroup = winning_subgroup.to_vec();
+            curr_subgroup = winning_subgroup;
             // Skip to the top-most new common chain ancestor:
-            conflict_genesis = self.common_chain_ancestor(winning_subgroup);
+            conflict_genesis = self.common_chain_ancestor(&curr_subgroup);
         }
         assert_eq!(1, curr_subgroup.len(), "Expected dagknight to have only a single parent at the end");
 
@@ -430,28 +401,53 @@ impl<
     /// Tie-breaking rule in case of multiple winning subgroups with the same rank value.
     /// TODO[DK]: This tie breaking rule only compares RankValue right now. Implement a proper one
     /// according to the paper
-    fn tie_breaking<'a>(&self, subgroups: &[GroupMetadata<'a>]) -> (Hash, &'a [Hash]) {
-        let winning_subgroup = subgroups.iter().min_by_key(|g| &g.rank_value).expect("subgroups is non-empty");
-        (winning_subgroup.conflict_genesis, winning_subgroup.subgroup)
+    fn tie_breaking(&self, subgroups: &[GroupMetadata]) -> (Hash, Arc<Vec<Hash>>) {
+        debug!("Winning groups had rank k = {}", subgroups[0].k);
+        let winning_subgroup = subgroups.iter().min_by_key(|g| &g.selected_parent).expect("subgroups is non-empty");
+        (winning_subgroup.conflict_genesis, winning_subgroup.subgroup.clone())
     }
 
     /// Follows the Calculate-Rank algorithm in the DK paper
     ///
     /// Currently returns both the Rank and a selected parent (deviates from the paper) since the tie breaking logic
-    /// in the caller is simply using blue_work + hash to break ties between subgroups
-    /// TODO[DK]: Remove selected_parent from the RankValue and properly implement Tie-Breaking
-    fn rank(&self, conflict_genesis: Hash, subgroup: &[Hash], all_tips: &[Hash], best_k: Option<KType>) -> RankValue {
-        let subgroup_first = subgroup[0];
+    /// in the caller is simply using blue_work + hash to break ties between subgroups.
+    ///
+    /// Returns an array of winning subgroups with their metadata
+    fn rank(
+        &self,
+        conflict_genesis: Hash,
+        agreeing_subgroups: &HashMap<Hash, Arc<Vec<Hash>>>,
+        all_tips: &[Hash],
+    ) -> Vec<GroupMetadata> {
+        let mut group_map = Cell::new(agreeing_subgroups.clone());
+        let best_groups_cell = Cell::new(vec![]);
+        let evaluate = |k: KType| -> Option<()> {
+            let (filtered_groups_kv, best_groups): (HashMap<_, _>, Vec<GroupMetadata>) = group_map
+                .get_mut()
+                .iter()
+                .filter_map(|(curr_conflict_genesis, subgroup)| {
+                    // `subgroup` is an `&Arc<Vec<Hash>>` here; pass a `&[Hash]` to the colouring function
+                    self.select_parent_from_k_colouring(conflict_genesis, subgroup.as_ref(), &all_tips, k).map(|selected_parent| {
+                        (
+                            (*curr_conflict_genesis, subgroup.clone()),
+                            GroupMetadata { conflict_genesis: *curr_conflict_genesis, subgroup: subgroup.clone(), k, selected_parent },
+                        )
+                    })
+                })
+                .unzip();
 
-        let evaluate =
-            |k: KType| -> Option<SortableBlock> { self.select_parent_from_k_colouring(conflict_genesis, subgroup, all_tips, k) };
+            if filtered_groups_kv.is_empty() {
+                None
+            } else {
+                group_map.swap(&Cell::new(filtered_groups_kv));
+                best_groups_cell.swap(&Cell::new(best_groups));
+                Some(())
+            }
+        };
 
-        let search_result = RankSearcher::search(evaluate, best_k);
-
-        match search_result {
-            Some(result) => RankValue { k: result.k, selected_parent: result.result },
-            None => RankValue { k: u16::MAX, selected_parent: SortableBlock { hash: subgroup_first, blue_work: 0.into() } },
-        }
+        let _search_result = RankSearcher::search(evaluate);
+        // let (best_k) = search_result.map(|r| (r.k, r.result)).unwrap();
+        best_groups_cell.take()
     }
 
     /// Applies a coloring to the conflict zone, and determines if the
@@ -718,36 +714,6 @@ impl DagPlan {
 
     pub fn genesis(&self) -> u64 {
         self.genesis
-    }
-}
-
-#[derive(PartialEq, Eq, Debug)]
-pub struct RankValue {
-    pub k: KType,
-    pub selected_parent: SortableBlock,
-}
-
-impl PartialOrd for RankValue {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for RankValue {
-    /// Sample ordering:
-    /// { k: 0, sp_bw: 1} < { k: 1, sp_bw: 1}   => one "k" is lower than another
-    /// { k: 0, sp_bw: 10} < { k: 0, sp_bw: 1}  => same "k", different blue work. rankvalue with higher bw comes first
-    /// { k: 1, sp_bw: 5, sp_hash: 77} < { k: 1, sp_bw: 5, sp_hash: 66} => same "k" and "bw", rankvalue with higher sp hash value comes first
-    fn cmp(&self, other: &Self) -> Ordering {
-        if self.k == other.k {
-            // let ordering = self.selected_parent.cmp(&other.selected_parent);
-            // NOTE: When ordering by RankValue and k is the same, a "smaller" rank would mean a "greater" selected parent
-            let ordering = other.selected_parent.cmp(&self.selected_parent);
-            // println!("a: {} | b: {} | ordering: {:?}", self.selected_parent.blue_work, other.selected_parent.blue_work, ordering);
-            return ordering;
-        }
-
-        self.k.cmp(&other.k)
     }
 }
 
@@ -1155,240 +1121,37 @@ mod tests {
             hash
         };
 
-        let mut test_blocks = vec![
-            (prefixed_hash("e89ebc"), vec![ORIGIN], Uint192::from_u64(843081024), 0x1e217aaa, 1657, 1656, ORIGIN),
-            (prefixed_hash("8174b6"), vec![ORIGIN], Uint192::from_u64(843081024), 0x1e217aaa, 1657, 1656, ORIGIN),
-            (prefixed_hash("201544"), vec![ORIGIN], Uint192::from_u64(843081024), 0x1e217aaa, 1657, 1656, ORIGIN),
-            (prefixed_hash("6a7e5c"), vec![ORIGIN], Uint192::from_u64(842579924), 0x1e218628, 1656, 1655, ORIGIN),
-            (prefixed_hash("580592"), vec![ORIGIN], Uint192::from_u64(843081024), 0x1e217aaa, 1657, 1656, ORIGIN),
-            (prefixed_hash("dd4f81"), vec![ORIGIN], Uint192::from_u64(843081024), 0x1e217aaa, 1657, 1656, ORIGIN),
-            (
-                prefixed_hash("86c4ff"),
-                vec![prefixed_hash("e89ebc"), prefixed_hash("580592"), prefixed_hash("201544"), prefixed_hash("6a7e5c")],
-                Uint192::from_u64(845084849),
-                0x1e216a52,
-                1661,
-                1660,
-                prefixed_hash("e89ebc"),
-            ),
-            (
-                prefixed_hash("97a14e"),
-                vec![
-                    prefixed_hash("e89ebc"),
-                    prefixed_hash("580592"),
-                    prefixed_hash("dd4f81"),
-                    prefixed_hash("201544"),
-                    prefixed_hash("6a7e5c"),
-                ],
-                Uint192::from_u64(845585973),
-                0x1e216bd8,
-                1662,
-                1661,
-                prefixed_hash("e89ebc"),
-            ),
-            (
-                prefixed_hash("29552f"),
-                vec![prefixed_hash("e89ebc"), prefixed_hash("6a7e5c")],
-                Uint192::from_u64(844082601),
-                0x1e217dd8,
-                1659,
-                1658,
-                prefixed_hash("e89ebc"),
-            ),
-            (
-                prefixed_hash("08db74"),
-                vec![prefixed_hash("97a14e"), prefixed_hash("86c4ff"), prefixed_hash("8174b6"), prefixed_hash("29552f")],
-                Uint192::from_u64(847592108),
-                0x1e2169a2,
-                1666,
-                1665,
-                prefixed_hash("97a14e"),
-            ),
-            (
-                prefixed_hash("01d3fe"),
-                vec![prefixed_hash("3a7b96"), prefixed_hash("6994eb"), prefixed_hash("c62de5"), prefixed_hash("fd4f24")],
-                Uint192::from_u64(851610005),
-                0x1e217441,
-                1674,
-                1673,
-                prefixed_hash("3a7b96"),
-            ),
-            (
-                prefixed_hash("715571"),
-                vec![
-                    prefixed_hash("f0f11f"),
-                    prefixed_hash("5bc45a"),
-                    prefixed_hash("6994eb"),
-                    prefixed_hash("c62de5"),
-                    prefixed_hash("3a7b96"),
-                ],
-                Uint192::from_u64(852614139),
-                0x1e21750d,
-                1676,
-                1675,
-                prefixed_hash("f0f11f"),
-            ),
-            (
-                prefixed_hash("f65ac9"),
-                vec![
-                    prefixed_hash("f0f11f"),
-                    prefixed_hash("5bc45a"),
-                    prefixed_hash("6994eb"),
-                    prefixed_hash("c62de5"),
-                    prefixed_hash("3a7b96"),
-                ],
-                Uint192::from_u64(852614139),
-                0x1e21750d,
-                1676,
-                1675,
-                prefixed_hash("f0f11f"),
-            ),
-            (
-                prefixed_hash("5bc45a"),
-                vec![prefixed_hash("08db74"), prefixed_hash("34fd9d"), prefixed_hash("fffb5a"), prefixed_hash("fd4f24")],
-                Uint192::from_u64(850103750),
-                0x1e216a8e,
-                1671,
-                1670,
-                prefixed_hash("08db74"),
-            ),
-            (
-                prefixed_hash("34fd9d"),
-                vec![prefixed_hash("86c4ff"), prefixed_hash("dd4f81"), prefixed_hash("8174b6"), prefixed_hash("29552f")],
-                Uint192::from_u64(847090116),
-                0x1e21630f,
-                1665,
-                1664,
-                prefixed_hash("86c4ff"),
-            ),
-            (
-                prefixed_hash("f0f11f"),
-                vec![prefixed_hash("08db74"), prefixed_hash("34fd9d"), prefixed_hash("fffb5a"), prefixed_hash("fd4f24")],
-                Uint192::from_u64(850103750),
-                0x1e216a8e,
-                1671,
-                1670,
-                prefixed_hash("08db74"),
-            ),
-            (
-                prefixed_hash("3a7b96"),
-                vec![prefixed_hash("fffb5a"), prefixed_hash("34fd9d"), prefixed_hash("97a14e"), prefixed_hash("557671")],
-                Uint192::from_u64(849099082),
-                0x1e2169d2,
-                1669,
-                1668,
-                prefixed_hash("fffb5a"),
-            ),
-            (
-                prefixed_hash("fd4f24"),
-                vec![prefixed_hash("557671"), prefixed_hash("97a14e"), prefixed_hash("86c4ff"), prefixed_hash("29552f")],
-                Uint192::from_u64(848094066),
-                0x1e216267,
-                1667,
-                1666,
-                prefixed_hash("557671"),
-            ),
-            (
-                prefixed_hash("b11117"),
-                vec![
-                    prefixed_hash("f0f11f"),
-                    prefixed_hash("5bc45a"),
-                    prefixed_hash("6994eb"),
-                    prefixed_hash("c62de5"),
-                    prefixed_hash("3a7b96"),
-                ],
-                Uint192::from_u64(852614139),
-                0x1e21750d,
-                1676,
-                1675,
-                prefixed_hash("f0f11f"),
-            ),
-            (
-                prefixed_hash("2c026c"),
-                vec![prefixed_hash("e37fb7"), prefixed_hash("5bc45a"), prefixed_hash("c6fcaf"), prefixed_hash("f0f11f")],
-                Uint192::from_u64(853617137),
-                0x1e216697,
-                1678,
-                1677,
-                prefixed_hash("e37fb7"),
-            ),
-            (
-                prefixed_hash("c6fcaf"),
-                vec![prefixed_hash("3a7b96"), prefixed_hash("6994eb"), prefixed_hash("c62de5"), prefixed_hash("fd4f24")],
-                Uint192::from_u64(851610005),
-                0x1e217441,
-                1674,
-                1673,
-                prefixed_hash("3a7b96"),
-            ),
-            (
-                prefixed_hash("c62de5"),
-                vec![prefixed_hash("08db74"), prefixed_hash("34fd9d"), prefixed_hash("fffb5a"), prefixed_hash("557671")],
-                Uint192::from_u64(849601204),
-                0x1e216d6a,
-                1670,
-                1669,
-                prefixed_hash("08db74"),
-            ),
-            (
-                prefixed_hash("2255a4"),
-                vec![
-                    prefixed_hash("f0f11f"),
-                    prefixed_hash("5bc45a"),
-                    prefixed_hash("6994eb"),
-                    prefixed_hash("c62de5"),
-                    prefixed_hash("3a7b96"),
-                ],
-                Uint192::from_u64(852614139),
-                0x1e21750d,
-                1676,
-                1675,
-                prefixed_hash("f0f11f"),
-            ),
-            (
-                prefixed_hash("557671"),
-                vec![
-                    prefixed_hash("e89ebc"),
-                    prefixed_hash("580592"),
-                    prefixed_hash("dd4f81"),
-                    prefixed_hash("8174b6"),
-                    prefixed_hash("201544"),
-                    prefixed_hash("6a7e5c"),
-                ],
-                Uint192::from_u64(846087097),
-                0x1e216c6d,
-                1663,
-                1662,
-                prefixed_hash("e89ebc"),
-            ),
-            (
-                prefixed_hash("6994eb"),
-                vec![prefixed_hash("34fd9d"), prefixed_hash("97a14e"), prefixed_hash("557671")],
-                Uint192::from_u64(848596574),
-                0x1e21678b,
-                1668,
-                1667,
-                prefixed_hash("34fd9d"),
-            ),
-            (
-                prefixed_hash("e37fb7"),
-                vec![prefixed_hash("3a7b96"), prefixed_hash("6994eb"), prefixed_hash("c62de5"), prefixed_hash("fd4f24")],
-                Uint192::from_u64(851610005),
-                0x1e217441,
-                1674,
-                1673,
-                prefixed_hash("3a7b96"),
-            ),
-            (
-                prefixed_hash("fffb5a"),
-                vec![prefixed_hash("86c4ff"), prefixed_hash("dd4f81"), prefixed_hash("8174b6"), prefixed_hash("29552f")],
-                Uint192::from_u64(847090116),
-                0x1e21630f,
-                1665,
-                1664,
-                prefixed_hash("86c4ff"),
-            ),
-        ];
+        let json_filename = "test_parent_ordering_stability.json";
+        let file = File::open(json_filename).expect("Unable to open JSON file");
+        let json_data: serde_json::Value = serde_json::from_reader(file).expect("Unable to parse JSON");
+
+        let tips: Vec<Hash> = json_data["tips"].as_array().unwrap().iter().map(|t| prefixed_hash(t.as_str().unwrap())).collect();
+
+        let blocks = json_data["blocks"].as_array().expect("Blocks is not an array");
+
+        let test_blocks: Vec<(Hash, Vec<Hash>, Uint192, u32, u64, u64, Hash)> = blocks
+            .iter()
+            .map(|block| {
+                let id = prefixed_hash(block["id"].as_str().unwrap());
+                let parents: Vec<Hash> = if block["parents"].as_array().map(|a| a.is_empty()).unwrap_or(false) {
+                    vec![ORIGIN]
+                } else {
+                    block["parents"].as_array().unwrap().iter().map(|p| prefixed_hash(p.as_str().unwrap())).collect()
+                };
+                let blue_work = Uint192::from_u64(block["blue_work"].as_str().unwrap().parse::<u64>().unwrap());
+                let bits = u32::from_str_radix(block["bits"].as_str().unwrap(), 16).unwrap();
+                let blue_score = block["blue_score"].as_u64().unwrap();
+                let daa_score = block["daa_score"].as_u64().unwrap();
+                let selected_parent = if block["selected_parent"].is_null() {
+                    ORIGIN
+                } else {
+                    prefixed_hash(block["selected_parent"].as_str().unwrap())
+                };
+                (id, parents, blue_work, bits, blue_score, daa_score, selected_parent)
+            })
+            .collect();
+
+        let mut test_blocks = test_blocks;
 
         test_blocks.sort_by_key(|(_, _, blue_work, _, _, _, _)| *blue_work);
 
@@ -1396,15 +1159,7 @@ mod tests {
             add_block(*hash, parents.clone(), *blue_work, *bits, *blue_score, *daa_score, *selected_parent);
         }
 
-        // # Parents (unsorted): [f65ac92736c9d91e4b06e7c1120d53be3bd3361f468eaba8682d49aaf5be680f, 2c026c2c27bf0dd2819ae261344788a700a6d17bd29799ecd24d8765f420c144, 01d3fe79456d0824fd96a6dc73291ddb35081b6c48c0c4a443d406b2655ebedc, 71557118a55901ab90a5a591470a49740ef3a37357f94fd923d908156b6d5893, b111170bc0609baa9433f3600b37e56207fb720dcb46aa0d8ae716d220586c61, 2255a4f065d061fb621ee9a67597aef002550f4a0ab85149d64f9adebeb31223]
-        let mut parents = vec![
-            prefixed_hash("f65ac9"),
-            prefixed_hash("2c026c"),
-            prefixed_hash("01d3fe"),
-            prefixed_hash("715571"),
-            prefixed_hash("b11117"),
-            prefixed_hash("2255a4"),
-        ];
+        let mut parents = tips.clone();
         let base_result = dk_executor.dagknight(&parents);
 
         parents.sort();
@@ -1417,11 +1172,8 @@ mod tests {
     }
 
     fn prefixed_hash(s: &str) -> Hash {
-        // append 0s afte the base string to make it 64 chars long
-        let mut full_string = s.to_string();
-        while full_string.len() < 64 {
-            full_string.push('0');
-        }
-        Hash::from_str(&full_string).expect("Invalid hash string")
+        let mut hex = [b'0'; 64];
+        hex[..s.len()].copy_from_slice(s.as_bytes());
+        Hash::from_str(std::str::from_utf8(&hex).unwrap()).expect("Invalid hash string")
     }
 }
