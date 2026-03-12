@@ -53,6 +53,60 @@ impl RankSearcher {
 
         result.map(|r| RankSearchResult { k: lkg_k, result: r })
     }
+
+    pub fn search_old<T, F>(evaluate: F, best_k: Option<KType>) -> Option<RankSearchResult<T>>
+    where
+        F: Fn(KType) -> Option<T>,
+    {
+        let mut result = None;
+
+        let starting_k = best_k.unwrap_or(0);
+        let mut increments: KType = 1;
+        let mut lkg_k: KType = starting_k;
+        let mut lower_k: KType = 0;
+        let mut found_lkg = false;
+
+        while !found_lkg && lkg_k != u16::MAX {
+            if let Some(best) = best_k {
+                if lower_k > best {
+                    debug!("Aborting upper bound search since lower_k = {} > best known k = {}", lower_k, best);
+                    return None;
+                }
+            }
+
+            debug!("Finding upper bound k = {}", lkg_k);
+            if let Some(r) = evaluate(lkg_k) {
+                debug!("Found a valid result at upper bound k = {}", lkg_k);
+                result = Some(r);
+                found_lkg = true;
+            } else {
+                lower_k = lkg_k + 1;
+                lkg_k = increments;
+                increments = increments.saturating_mul(2);
+            }
+        }
+
+        while lower_k < lkg_k {
+            if let Some(best) = best_k {
+                if lower_k > best {
+                    debug!("Aborting lower bound search since lower_k = {} > best known k = {}", lower_k, best);
+                    return None;
+                }
+            }
+
+            let k_to_check = lower_k + ((lkg_k - lower_k) / 2);
+
+            if let Some(r) = evaluate(k_to_check) {
+                debug!("Found a valid result at mid k = {} | low = {} | hi = {}", k_to_check, lower_k, lkg_k);
+                lkg_k = k_to_check;
+                result = Some(r);
+            } else {
+                lower_k = k_to_check + 1;
+            }
+        }
+
+        result.map(|r| RankSearchResult { k: lkg_k, result: r })
+    }
 }
 
 #[cfg(test)]
