@@ -10,6 +10,49 @@ use tokio::net::TcpStream;
 use tokio::sync::Semaphore;
 use tokio::time::timeout;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProbeTargetKind {
+    Advertised,
+    SourceDefaultPort,
+}
+
+impl ProbeTargetKind {
+    pub fn success_reason(self) -> ClassificationReason {
+        match self {
+            Self::Advertised => ClassificationReason::AdvertisedProbeSuccess,
+            Self::SourceDefaultPort => ClassificationReason::SourceDefaultPortProbeSuccess,
+        }
+    }
+
+    pub fn timeout_reason(self) -> ClassificationReason {
+        match self {
+            Self::Advertised => ClassificationReason::AdvertisedProbeTimeout,
+            Self::SourceDefaultPort => ClassificationReason::SourceDefaultPortProbeTimeout,
+        }
+    }
+
+    pub fn refused_reason(self) -> ClassificationReason {
+        match self {
+            Self::Advertised => ClassificationReason::AdvertisedProbeRefused,
+            Self::SourceDefaultPort => ClassificationReason::SourceDefaultPortProbeRefused,
+        }
+    }
+
+    pub fn io_error_reason(self) -> ClassificationReason {
+        match self {
+            Self::Advertised => ClassificationReason::AdvertisedProbeIoError,
+            Self::SourceDefaultPort => ClassificationReason::SourceDefaultPortProbeIoError,
+        }
+    }
+
+    pub fn private_address_reason(self) -> ClassificationReason {
+        match self {
+            Self::Advertised => ClassificationReason::AdvertisedPrivateAddress,
+            Self::SourceDefaultPort => ClassificationReason::SourceDefaultPortPrivateAddress,
+        }
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum ProbeError {
     #[error("Connection timeout")]
@@ -53,6 +96,15 @@ impl ActiveProber {
 
     /// Probe a peer to determine if it's publicly accessible
     pub async fn probe_peer(&self, address: &str) -> Result<(PeerClassification, u64, ClassificationReason), ProbeError> {
+        self.probe_peer_with_kind(address, ProbeTargetKind::Advertised).await
+    }
+
+    /// Probe a peer to determine if it's publicly accessible, while tagging which target we used.
+    pub async fn probe_peer_with_kind(
+        &self,
+        address: &str,
+        target_kind: ProbeTargetKind,
+    ) -> Result<(PeerClassification, u64, ClassificationReason), ProbeError> {
         // Acquire semaphore permit for rate limiting
         let _permit = self.semaphore.try_acquire().map_err(|_| ProbeError::RateLimitExceeded)?;
 
@@ -68,7 +120,7 @@ impl ActiveProber {
             if let Some(ref metrics) = self.metrics {
                 metrics.record_probe(PeerClassification::Private, duration_ms as f64 / 1000.0);
             }
-            return Ok((PeerClassification::Private, duration_ms, ClassificationReason::AdvertisedPrivateAddress));
+            return Ok((PeerClassification::Private, duration_ms, target_kind.private_address_reason()));
         }
 
         // Add delay before probing if configured
@@ -83,7 +135,7 @@ impl ActiveProber {
             Ok(Ok(_stream)) => {
                 // Successfully connected - peer is public
                 debug!("Successfully probed peer {} - classified as Public", address);
-                (PeerClassification::Public, ClassificationReason::AdvertisedProbeSuccess)
+                (PeerClassification::Public, target_kind.success_reason())
             }
             Ok(Err(e)) => {
                 // Connection failed - peer is private or unreachable
@@ -103,8 +155,8 @@ impl ActiveProber {
                 (
                     PeerClassification::Private,
                     match e.kind() {
-                        std::io::ErrorKind::ConnectionRefused => ClassificationReason::AdvertisedProbeRefused,
-                        _ => ClassificationReason::AdvertisedProbeIoError,
+                        std::io::ErrorKind::ConnectionRefused => target_kind.refused_reason(),
+                        _ => target_kind.io_error_reason(),
                     },
                 )
             }
@@ -116,7 +168,7 @@ impl ActiveProber {
                     metrics.record_probe_error("timeout");
                 }
 
-                (PeerClassification::Private, ClassificationReason::AdvertisedProbeTimeout)
+                (PeerClassification::Private, target_kind.timeout_reason())
             }
         };
 
@@ -197,6 +249,18 @@ mod tests {
         let (classification, _, reason) = prober.probe_peer("10.0.0.1:16111").await.unwrap();
         assert_eq!(classification, PeerClassification::Private);
         assert_eq!(reason, ClassificationReason::AdvertisedPrivateAddress);
+    }
+
+    #[tokio::test]
+    async fn test_source_default_port_private_reason() {
+        let config = ProbingConfig { enabled: true, timeout_ms: 1000, delay_ms: 0, max_concurrent_probes: 10, skip_private_ips: true };
+
+        let prober = ActiveProber::new(config);
+
+        let (classification, _, reason) =
+            prober.probe_peer_with_kind("10.0.0.1:16111", ProbeTargetKind::SourceDefaultPort).await.unwrap();
+        assert_eq!(classification, PeerClassification::Private);
+        assert_eq!(reason, ClassificationReason::SourceDefaultPortPrivateAddress);
     }
 
     #[test]
