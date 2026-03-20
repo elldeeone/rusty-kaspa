@@ -1,6 +1,5 @@
 use std::{
     cell::Cell,
-    cmp::Ordering,
     collections::{HashMap, HashSet},
     sync::{Arc, OnceLock},
 };
@@ -180,16 +179,9 @@ impl<
                 5. Cascade voting -- requires most thought for making incremental
         */
 
-        let mut current_parents = parents.to_vec();
-        // TODO[DK]: Remove this later
-        current_parents.sort();
-
-        // cleanup after, along with sorting above
-        let use_new_logic = self.headers_store.get_daa_score(current_parents[0]).unwrap() >= 20_500_000;
-
         // g = find LCCA
-        let mut conflict_genesis = self.common_chain_ancestor(&current_parents);
-        let mut curr_subgroup = Arc::new(current_parents.to_vec());
+        let mut conflict_genesis = self.common_chain_ancestor(&parents);
+        let mut curr_subgroup = Arc::new(parents.to_vec());
         let mut conflict_ordered_parents = vec![];
         debug!("conflict_genesis: {:#?}", conflict_genesis);
 
@@ -285,49 +277,7 @@ impl<
                     );
                     (*conflict_genesis, subgroup.clone())
                 } else {
-                    let best_groups = if !use_new_logic {
-                        let mut best_groups = Vec::new();
-
-                        // sort the resulting iterator by blue score (descending) then hash ascending
-                        let filtered_group_iter = filtered_group_iter.sorted_by(|a, b| {
-                            // Prioritize groups by higher blue score (descending), then by hash (ascending)
-                            let a_score = self.headers_store.get_header(a.1[0]).unwrap().blue_score;
-                            let b_score = self.headers_store.get_header(b.1[0]).unwrap().blue_score;
-                            // higher blue score first
-                            b_score.cmp(&a_score).then_with(|| a.0.cmp(b.0))
-                        });
-
-                        for (curr_conflict_genesis, subgroup) in filtered_group_iter {
-                            debug!("Subgroup under conflict genesis {:#?} has members: {:#?}", curr_conflict_genesis, subgroup);
-                            let best_k = best_groups.get(0).map(|g: &GroupMetadata| g.k);
-                            let (curr_k, selected_parent) = self.rank_old(conflict_genesis, subgroup, &curr_subgroup, best_k);
-                            let group_metadata = GroupMetadata {
-                                k: curr_k,
-                                conflict_genesis: *curr_conflict_genesis,
-                                selected_parent,
-                                subgroup: subgroup.clone(),
-                            };
-
-                            if let Some(inner_best_rank) = best_k {
-                                match curr_k.cmp(&inner_best_rank) {
-                                    Ordering::Less => {
-                                        // Tie breaking by hash
-                                        best_groups = vec![group_metadata];
-                                    }
-                                    Ordering::Equal => {
-                                        best_groups.push(group_metadata);
-                                    }
-                                    _ => {}
-                                }
-                            } else {
-                                best_groups = vec![group_metadata];
-                            }
-                        }
-
-                        best_groups
-                    } else {
-                        self.rank(conflict_genesis, &agreement_grouping, &curr_subgroup)
-                    };
+                    let best_groups = self.rank(conflict_genesis, &agreement_grouping, &curr_subgroup);
 
                     let final_winner: (Hash, Arc<Vec<Hash>>) = if best_groups.len() > 1 {
                         self.tie_breaking(&best_groups)
@@ -496,21 +446,6 @@ impl<
         best_groups_cell.take()
     }
 
-    /// in the caller is simply using blue_work + hash to break ties between subgroups
-    /// TODO[DK]: Remove selected_parent from the RankValue and properly implement Tie-Breaking
-    fn rank_old(&self, conflict_genesis: Hash, subgroup: &[Hash], all_tips: &[Hash], best_k: Option<KType>) -> (KType, SortableBlock) {
-        let subgroup_first = subgroup[0];
-
-        let evaluate =
-            |k: KType| -> Option<SortableBlock> { self.select_parent_from_k_colouring(conflict_genesis, subgroup, all_tips, k) };
-
-        let search_result = RankSearcher::search_old(evaluate, best_k);
-
-        match search_result {
-            Some(result) => (result.k, result.result),
-            None => (u16::MAX, SortableBlock { hash: subgroup_first, blue_work: 0.into() }),
-        }
-    }
     /// Applies a coloring to the conflict zone, and determines if the
     /// coloring represents a majority over "g" only (as opposed to full UMC)
     /// TODO[DK]: Implement full UMC cascade voting after coloring
