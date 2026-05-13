@@ -20,7 +20,7 @@ const FRAG_CHUNK_LEN: usize = LORA_APP_MTU - FRAG_HEADER_LEN;
 
 #[derive(Parser, Debug)]
 #[command(name = "lora-bridge")]
-#[command(about = "Bridge existing KUDP datagrams over Waveshare SX126X UART LoRa modules.")]
+#[command(about = "Bridge existing KUDP datagrams over Waveshare SX126X UART LoRa modules without changing KUDP bytes.")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -28,9 +28,9 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Command {
-    /// Read one or more KUDP datagrams and transmit them over a serial LoRa device.
+    /// Read KUDP datagrams from a file or UDP socket and transmit them over a serial LoRa device.
     Tx(TxArgs),
-    /// Receive KUDP datagrams from a serial LoRa device and write or forward them.
+    /// Receive KUDP datagrams from a serial LoRa device and write them to a file/stdout/UDP socket.
     Rx(RxArgs),
     /// Read the module configuration response in hardware config mode.
     ConfigRead(ConfigReadArgs),
@@ -38,11 +38,11 @@ enum Command {
 
 #[derive(Args, Debug)]
 struct SerialArgs {
-    /// Serial device path, for example /dev/lora-left or /dev/lora-right.
+    /// Serial device path, for example /dev/lora-left or /dev/lora-right. Wrong device or jumper mode usually shows up as open/read timeout errors.
     #[arg(long)]
     serial: PathBuf,
 
-    /// UART baud rate. The lab Waveshare SX126X config uses 9600.
+    /// UART baud rate. The tested Waveshare SX126X config uses 9600.
     #[arg(long, default_value_t = DEFAULT_BAUD)]
     baud: u32,
 
@@ -64,15 +64,15 @@ struct TxArgs {
     #[arg(long, required_if_eq("input", "file"))]
     file: Option<PathBuf>,
 
-    /// Local UDP socket to bind and read one datagram from.
+    /// Local UDP socket to bind and read KUDP datagrams from. Use --count for multi-datagram live-producer runs.
     #[arg(long, required_if_eq("input", "udp"))]
     udp_bind: Option<SocketAddr>,
 
-    /// Waveshare fixed-send 6-byte prefix as hex, default 000041000041.
+    /// Waveshare fixed-send 6-byte prefix as hex: dest_hi dest_lo freq src_hi src_lo src_freq.
     #[arg(long, default_value = "000041000041")]
     fixed_prefix_hex: String,
 
-    /// Sleep this many milliseconds between LoRa writes.
+    /// Sleep this many milliseconds between serial writes. 1500 ms is the tested minimum; 2500 ms was used for live runs.
     #[arg(long, default_value_t = 1500)]
     inter_frame_delay_ms: u64,
 
@@ -80,11 +80,11 @@ struct TxArgs {
     #[arg(long)]
     no_fragment: bool,
 
-    /// Bridge datagram id used in fragmented LoRa envelopes.
+    /// Bridge datagram id used in fragmented LoRa envelopes. Incremented automatically for each datagram in a multi-count TX run.
     #[arg(long, default_value_t = 1)]
     datagram_id: u32,
 
-    /// Number of datagrams to read from the input source and send.
+    /// Number of datagrams to read from the input source and send. File input always sends the file once.
     #[arg(long, default_value_t = 1)]
     count: usize,
 }
@@ -110,7 +110,7 @@ struct RxArgs {
     #[arg(long, default_value_t = 1)]
     count: usize,
 
-    /// Overall receive timeout in milliseconds.
+    /// Overall receive timeout in milliseconds. If fragments are pending, timeout errors include the pending fragment summary.
     #[arg(long, default_value_t = 30_000)]
     timeout_ms: u64,
 
@@ -198,7 +198,13 @@ fn rx(args: RxArgs) -> Result<()> {
     let mut recovered = 0usize;
 
     while recovered < args.count {
-        let raw = read_lora_packet(&mut *port, deadline, packet_idle).context("read LoRa packet")?;
+        let raw = match read_lora_packet(&mut *port, deadline, packet_idle) {
+            Ok(raw) => raw,
+            Err(err) if reassembly.has_pending() => {
+                bail!("read LoRa packet failed with pending fragments: {}; cause: {err}", reassembly.pending_summary())
+            }
+            Err(err) => return Err(err).context("read LoRa packet"),
+        };
         let app_payload = strip_waveshare_rx(&raw)?;
         if let Some(datagram) = reassembly.push(app_payload)? {
             ensure_kudp(&datagram)?;
@@ -367,6 +373,23 @@ impl Reassembler {
         eprintln!("received fragment {}/{} for datagram {}", frag_ix + 1, frag_cnt, datagram_id);
         Ok(None)
     }
+
+    fn has_pending(&self) -> bool {
+        !self.pending.is_empty()
+    }
+
+    fn pending_summary(&self) -> String {
+        if self.pending.is_empty() {
+            return "none".to_string();
+        }
+        self.pending
+            .iter()
+            .map(|(id, pending)| {
+                format!("datagram_id={id} received={}/{} total_len={}", pending.received_count(), pending.frag_cnt, pending.total_len)
+            })
+            .collect::<Vec<_>>()
+            .join("; ")
+    }
 }
 
 struct PendingDatagram {
@@ -390,6 +413,10 @@ impl PendingDatagram {
 
     fn is_complete(&self) -> bool {
         self.fragments.iter().all(Option::is_some)
+    }
+
+    fn received_count(&self) -> usize {
+        self.fragments.iter().filter(|fragment| fragment.is_some()).count()
     }
 
     fn assemble(self) -> Result<Vec<u8>> {
@@ -489,6 +516,17 @@ mod tests {
         bytes
     }
 
+    fn fragment_frame(datagram_id: u32, frag_ix: u16, frag_cnt: u16, total_len: u16, payload: &[u8]) -> Vec<u8> {
+        let mut frame = Vec::with_capacity(FRAG_HEADER_LEN + payload.len());
+        frame.extend_from_slice(FRAG_MAGIC);
+        frame.extend_from_slice(&datagram_id.to_le_bytes());
+        frame.extend_from_slice(&frag_ix.to_le_bytes());
+        frame.extend_from_slice(&frag_cnt.to_le_bytes());
+        frame.extend_from_slice(&total_len.to_le_bytes());
+        frame.extend_from_slice(payload);
+        frame
+    }
+
     #[test]
     fn raw_delta_sized_datagram_is_single_packet() {
         let datagram = kudp_datagram(200);
@@ -510,6 +548,87 @@ mod tests {
     }
 
     #[test]
+    fn out_of_order_fragments_reassemble() {
+        let datagram = kudp_datagram(329);
+        let frames = fragment_datagram(&datagram, 11, false).unwrap();
+
+        let mut reassembler = Reassembler::default();
+        assert!(reassembler.push(&frames[1]).unwrap().is_none());
+        let out = reassembler.push(&frames[0]).unwrap().unwrap();
+        assert_eq!(out, datagram);
+    }
+
+    #[test]
+    fn duplicate_fragment_does_not_complete_until_missing_fragment_arrives() {
+        let datagram = kudp_datagram(329);
+        let frames = fragment_datagram(&datagram, 12, false).unwrap();
+
+        let mut reassembler = Reassembler::default();
+        assert!(reassembler.push(&frames[0]).unwrap().is_none());
+        assert!(reassembler.push(&frames[0]).unwrap().is_none());
+        assert_eq!(reassembler.pending_summary(), "datagram_id=12 received=1/2 total_len=329");
+
+        let out = reassembler.push(&frames[1]).unwrap().unwrap();
+        assert_eq!(out, datagram);
+    }
+
+    #[test]
+    fn interleaved_datagram_ids_are_kept_separate() {
+        let first = fragment_datagram(&kudp_datagram(329), 21, false).unwrap();
+        let second = fragment_datagram(&kudp_datagram(330), 22, false).unwrap();
+
+        let mut reassembler = Reassembler::default();
+        assert!(reassembler.push(&first[0]).unwrap().is_none());
+        assert!(reassembler.push(&second[0]).unwrap().is_none());
+        assert!(reassembler.pending_summary().contains("datagram_id=21 received=1/2 total_len=329"));
+        assert!(reassembler.pending_summary().contains("datagram_id=22 received=1/2 total_len=330"));
+
+        let first_out = reassembler.push(&first[1]).unwrap().unwrap();
+        assert_eq!(first_out.len(), 329);
+        assert!(reassembler.pending_summary().contains("datagram_id=22 received=1/2 total_len=330"));
+    }
+
+    #[test]
+    fn malformed_fragments_are_rejected() {
+        let mut reassembler = Reassembler::default();
+        assert!(reassembler.push(b"not-kudp-or-frag").is_err());
+        assert!(reassembler.push(FRAG_MAGIC).is_err());
+        assert!(reassembler.push(&fragment_frame(1, 0, 0, 16, b"x")).is_err());
+        assert!(reassembler.push(&fragment_frame(1, 2, 2, 16, b"x")).is_err());
+        assert!(reassembler.push(&fragment_frame(1, 0, 2, 0, b"x")).is_err());
+        assert!(reassembler.push(&fragment_frame(1, 0, 2, 16, b"")).is_err());
+    }
+
+    #[test]
+    fn fragment_metadata_changes_are_rejected() {
+        let mut reassembler = Reassembler::default();
+        assert!(reassembler.push(&fragment_frame(33, 0, 2, 20, b"KUDPaaaa")).unwrap().is_none());
+        let err = reassembler.push(&fragment_frame(33, 1, 2, 21, b"bbbb")).unwrap_err();
+        assert!(err.to_string().contains("fragment metadata changed"));
+    }
+
+    #[test]
+    fn reassembled_length_mismatch_is_reported() {
+        let mut reassembler = Reassembler::default();
+        assert!(reassembler.push(&fragment_frame(44, 0, 2, 20, b"KUDPaaaa")).unwrap().is_none());
+        let err = reassembler.push(&fragment_frame(44, 1, 2, 20, b"bbbb")).unwrap_err();
+        assert!(err.to_string().contains("reassembled length mismatch"));
+    }
+
+    #[test]
+    fn pending_summary_exposes_missing_fragment_state() {
+        let datagram = kudp_datagram(329);
+        let frames = fragment_datagram(&datagram, 55, false).unwrap();
+        let mut reassembler = Reassembler::default();
+
+        assert!(!reassembler.has_pending());
+        assert_eq!(reassembler.pending_summary(), "none");
+        assert!(reassembler.push(&frames[0]).unwrap().is_none());
+        assert!(reassembler.has_pending());
+        assert_eq!(reassembler.pending_summary(), "datagram_id=55 received=1/2 total_len=329");
+    }
+
+    #[test]
     fn no_fragment_rejects_oversized_datagram() {
         let datagram = kudp_datagram(329);
         assert!(fragment_datagram(&datagram, 7, true).is_err());
@@ -525,7 +644,18 @@ mod tests {
     }
 
     #[test]
+    fn rejects_too_short_waveshare_rx_packet() {
+        assert!(strip_waveshare_rx(&[0x00, 0x00, 0x41]).is_err());
+    }
+
+    #[test]
     fn fixed_prefix_accepts_spaced_hex() {
         assert_eq!(parse_fixed_prefix("00 00 41 00 00 41").unwrap(), [0x00, 0x00, 0x41, 0x00, 0x00, 0x41]);
+    }
+
+    #[test]
+    fn fixed_prefix_rejects_wrong_length_and_bad_hex() {
+        assert!(parse_fixed_prefix("00 00 41").is_err());
+        assert!(parse_fixed_prefix("00 00 41 00 00 zz").is_err());
     }
 }

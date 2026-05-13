@@ -4,6 +4,10 @@
 Waveshare SX126X UART LoRa modules. It does not change consensus behavior and
 does not change the `KUDP` wire format.
 
+Start with the consolidated prototype guide at
+[`udp/docs/lora-prototype.md`](../../docs/lora-prototype.md) for the complete
+Phase 0/Phase 1 lab checklist and current limits.
+
 ## Hardware Setup
 
 Lab assumptions:
@@ -139,9 +143,9 @@ cargo run -p lora-bridge -- rx \
   --udp-target 127.0.0.1:28515
 ```
 
-Forwarding to `kaspad` is a later integration milestone. The MVP acceptance
-test is byte equality between the generated input files and recovered output
-files.
+The standalone bridge acceptance test is byte equality between the generated
+input files and recovered output files. The follow-up labs then forward
+recovered datagrams into kaspad UDP ingest.
 
 The follow-up devnet lab that forwards recovered LoRa datagrams into kaspad's
 existing UDP ingest path is documented in
