@@ -136,7 +136,10 @@ mod tests {
             log_verbosity: String::new(),
             admin_remote_allowed: false,
             admin_token_file: None,
-            network_id: NetworkId::new(network),
+            network_id: match network {
+                NetworkType::Testnet => NetworkId::with_suffix(network, 10),
+                _ => NetworkId::new(network),
+            },
         }
     }
 

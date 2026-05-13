@@ -2,7 +2,10 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use kaspa_grpc_client::GrpcClient;
 use kaspa_rpc_core::api::rpc::RpcApi;
-use std::path::PathBuf;
+use std::{
+    path::PathBuf,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 #[derive(Parser, Debug)]
 #[command(name = "udp-rpc-digests")]
@@ -189,13 +192,18 @@ async fn compare_local_state(client: &GrpcClient, response: &kaspa_rpc_core::Get
         )
         .collect();
     let info = client.get_udp_ingest_info(None).await.context("get_udp_ingest_info")?;
+    let compared_at_ms = SystemTime::now().duration_since(UNIX_EPOCH).context("system clock before UNIX epoch")?.as_millis();
     eprintln!(
-        "udp_digest_local_compare agreement={} compared_fields={} mismatches={:?} divergence_detected={} divergence_epoch={:?}",
+        "udp_digest_local_compare agreement={} compared_fields={} mismatches={:?} divergence_detected={} divergence_epoch={:?} compared_at_ms={} source_id={} signer_id={} recv_ts_ms={}",
         mismatches.is_empty(),
         checks.len(),
         mismatches,
         info.divergence.detected,
-        info.divergence.last_mismatch_epoch
+        info.divergence.last_mismatch_epoch,
+        compared_at_ms,
+        summary.source_id,
+        summary.signer_id,
+        summary.recv_ts_ms
     );
     Ok(())
 }

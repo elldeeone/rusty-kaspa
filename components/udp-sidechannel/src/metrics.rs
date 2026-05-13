@@ -18,6 +18,7 @@ pub struct UdpMetrics {
     signature_failures: AtomicU64,
     skew_seconds: AtomicU64,
     divergence_detected: AtomicBool,
+    divergence_mismatch_total: AtomicU64,
     block_injected_total: AtomicU64,
     block_queue_depth: AtomicU64,
 }
@@ -33,6 +34,7 @@ impl Default for UdpMetrics {
             signature_failures: AtomicU64::new(0),
             skew_seconds: AtomicU64::new(0),
             divergence_detected: AtomicBool::new(false),
+            divergence_mismatch_total: AtomicU64::new(0),
             block_injected_total: AtomicU64::new(0),
             block_queue_depth: AtomicU64::new(0),
         }
@@ -60,6 +62,10 @@ impl UdpMetrics {
 
     pub fn set_divergence_detected(&self, detected: bool) {
         self.divergence_detected.store(detected, Ordering::Relaxed);
+    }
+
+    pub fn record_divergence_mismatch(&self) {
+        self.divergence_mismatch_total.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn record_block_injected(&self) {
@@ -113,6 +119,10 @@ impl UdpMetrics {
         self.divergence_detected.load(Ordering::Relaxed)
     }
 
+    pub fn divergence_mismatch_total(&self) -> u64 {
+        self.divergence_mismatch_total.load(Ordering::Relaxed)
+    }
+
     pub fn frames_snapshot(&self) -> Vec<(&'static str, u64)> {
         FrameKind::ALL.iter().enumerate().map(|(idx, kind)| (kind.as_str(), self.frames_total[idx].load(Ordering::Relaxed))).collect()
     }
@@ -143,5 +153,13 @@ mod tests {
         let metrics = UdpMetrics::new();
         metrics.record_skew_seconds(25);
         assert_eq!(metrics.skew_seconds(), 25);
+    }
+
+    #[test]
+    fn divergence_mismatch_counter_updates() {
+        let metrics = UdpMetrics::new();
+        assert_eq!(metrics.divergence_mismatch_total(), 0);
+        metrics.record_divergence_mismatch();
+        assert_eq!(metrics.divergence_mismatch_total(), 1);
     }
 }

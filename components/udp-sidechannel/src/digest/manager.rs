@@ -28,6 +28,7 @@ pub struct UdpDigestManager {
 #[derive(Default)]
 struct DigestState {
     last: Option<DigestVariant>,
+    latest_verified_snapshot: Option<DigestSnapshot>,
     sources: HashMap<u16, SourceState>,
     divergence: DivergenceState,
 }
@@ -177,6 +178,11 @@ impl UdpDigestManager {
             entry.last_timestamp_ms = variant.recv_timestamp_ms();
             entry.signer_id = variant.signer_id();
             entry.signature_valid = variant.signature_valid();
+            if let DigestVariant::Snapshot(snapshot) = &variant {
+                if snapshot.signature_valid {
+                    state.latest_verified_snapshot = Some(snapshot.clone());
+                }
+            }
             state.last = Some(variant.clone());
         }
         if let Some(store) = &self.store {
@@ -249,18 +255,27 @@ impl UdpDigestManager {
 
     pub fn latest_snapshot(&self) -> Option<DigestSnapshot> {
         let state = self.state.lock().expect("digest state poisoned");
-        match &state.last {
-            Some(DigestVariant::Snapshot(snapshot)) if snapshot.signature_valid => Some(snapshot.clone()),
-            _ => None,
-        }
+        state.latest_verified_snapshot.clone()
     }
 
-    pub fn update_divergence(&self, detected: bool, last_epoch: Option<u64>, reason: &'static str) {
+    pub fn update_divergence(&self, detected: bool, last_epoch: Option<u64>, reason: &'static str, mismatch_fields: &[&'static str]) {
         let mut state = self.state.lock().expect("digest state poisoned");
         if state.divergence.detected != detected {
             let state_str = if detected { "entered" } else { "cleared" };
             let reason_str = if detected { reason } else { "resolved" };
-            info!("udp.event=divergence state={} reason={} epoch={:?}", state_str, reason_str, last_epoch);
+            info!(
+                "udp.event=divergence state={} reason={} epoch={:?} fields={}",
+                state_str,
+                reason_str,
+                last_epoch,
+                mismatch_fields.join(",")
+            );
+        }
+        if detected
+            && !mismatch_fields.is_empty()
+            && (!state.divergence.detected || state.divergence.last_mismatch_epoch != last_epoch)
+        {
+            self.metrics.record_divergence_mismatch();
         }
         state.divergence = DivergenceState { detected, last_mismatch_epoch: last_epoch };
         self.metrics.set_divergence_detected(detected);
@@ -287,13 +302,14 @@ mod tests {
     #[test]
     fn divergence_simulation() {
         let manager = UdpDigestManager::test_instance();
-        manager.update_divergence(true, Some(10), "snapshot_mismatch");
+        manager.update_divergence(true, Some(10), "snapshot_mismatch", &["virtual_blue_score"]);
         let state = manager.divergence_state();
         assert!(state.detected);
         assert_eq!(state.last_mismatch_epoch, Some(10));
         assert!(manager.metrics.divergence_detected());
+        assert_eq!(manager.metrics.divergence_mismatch_total(), 1);
 
-        manager.update_divergence(false, Some(11), "resolved");
+        manager.update_divergence(false, Some(11), "resolved", &[]);
         let state = manager.divergence_state();
         assert!(!state.detected);
         assert_eq!(state.last_mismatch_epoch, Some(11));
@@ -313,6 +329,42 @@ mod tests {
         manager.record_variant(older);
         let state = manager.report();
         assert_eq!(state.sources[0].last_epoch, 1, "older epoch ignored");
+    }
+
+    #[test]
+    fn latest_verified_snapshot_survives_later_delta() {
+        let manager = UdpDigestManager::test_instance();
+        let snapshot = match sample_snapshot(7) {
+            DigestVariant::Snapshot(snapshot) => snapshot,
+            DigestVariant::Delta(_) => unreachable!("sample_snapshot returns a snapshot"),
+        };
+        manager.record_variant(DigestVariant::Snapshot(snapshot.clone()));
+        manager.record_variant(sample_delta(7));
+        let latest = manager.latest_snapshot().expect("latest verified snapshot retained");
+        assert_eq!(latest.epoch, snapshot.epoch);
+        assert_eq!(latest.virtual_blue_score, snapshot.virtual_blue_score);
+    }
+
+    #[test]
+    fn unverified_snapshot_is_not_used_for_divergence() {
+        let manager = UdpDigestManager::test_instance();
+        let mut snapshot = match sample_snapshot(7) {
+            DigestVariant::Snapshot(snapshot) => snapshot,
+            DigestVariant::Delta(_) => unreachable!("sample_snapshot returns a snapshot"),
+        };
+        snapshot.signature_valid = false;
+        manager.record_variant(DigestVariant::Snapshot(snapshot));
+        assert!(manager.latest_snapshot().is_none());
+    }
+
+    #[test]
+    fn repeated_divergence_epoch_does_not_recount_mismatch() {
+        let manager = UdpDigestManager::test_instance();
+        manager.update_divergence(true, Some(10), "snapshot_mismatch", &["virtual_blue_score"]);
+        manager.update_divergence(true, Some(10), "snapshot_mismatch", &["virtual_blue_score"]);
+        assert_eq!(manager.metrics.divergence_mismatch_total(), 1);
+        manager.update_divergence(true, Some(11), "snapshot_mismatch", &["virtual_blue_score"]);
+        assert_eq!(manager.metrics.divergence_mismatch_total(), 2);
     }
 
     #[test]

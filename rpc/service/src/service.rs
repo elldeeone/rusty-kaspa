@@ -1268,6 +1268,10 @@ NOTE: This error usually indicates an RPC conversion error between the node and 
             metrics.insert("udp_digest_skew_seconds".to_string(), CustomMetricValue::Gauge(ingest_snapshot.skew_seconds as f64));
             let divergence_flag = if ingest_snapshot.divergence_detected { 1.0 } else { 0.0 };
             metrics.insert("udp_divergence_detected".to_string(), CustomMetricValue::Gauge(divergence_flag));
+            metrics.insert(
+                "udp_divergence_mismatch_total".to_string(),
+                CustomMetricValue::Counter(ingest_snapshot.divergence_mismatch_total),
+            );
             Some(metrics)
         } else {
             None

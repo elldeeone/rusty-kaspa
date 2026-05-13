@@ -222,6 +222,7 @@ impl UdpIngestService {
             signature_failures: self.metrics.signature_failures(),
             skew_seconds: self.metrics.skew_seconds(),
             divergence_detected: self.metrics.divergence_detected(),
+            divergence_mismatch_total: self.metrics.divergence_mismatch_total(),
             block_injected_total: self.metrics.block_injected_total(),
         }
     }
@@ -560,6 +561,7 @@ pub struct UdpIngestSnapshot {
     pub signature_failures: u64,
     pub skew_seconds: u64,
     pub divergence_detected: bool,
+    pub divergence_mismatch_total: u64,
     pub block_injected_total: u64,
 }
 

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use kaspa_consensus_core::BlueWorkType;
 use kaspa_consensusmanager::ConsensusManager;
 use kaspa_core::{
     task::service::{AsyncService, AsyncServiceFuture},
@@ -33,15 +34,38 @@ impl UdpDivergenceMonitor {
             let sink = session.async_get_sink().await;
             let sink_blue_score = session.async_get_sink_blue_score().await;
             let virtual_daa_score = session.get_virtual_daa_score();
-            let mismatch = snapshot.pruning_point != pruning_point
-                || snapshot.virtual_selected_parent != sink
-                || snapshot.virtual_blue_score != sink_blue_score
-                || snapshot.daa_score != virtual_daa_score;
-            self.digest_manager.update_divergence(mismatch, Some(snapshot.epoch), "snapshot_mismatch");
+            let mut mismatch_fields = Vec::new();
+            if snapshot.pruning_point != pruning_point {
+                mismatch_fields.push("pruning_point");
+            }
+            if snapshot.virtual_selected_parent != sink {
+                mismatch_fields.push("virtual_selected_parent");
+            }
+            if snapshot.virtual_blue_score != sink_blue_score {
+                mismatch_fields.push("virtual_blue_score");
+            }
+            if snapshot.daa_score != virtual_daa_score {
+                mismatch_fields.push("daa_score");
+            }
+            if let Ok(header) = session.async_get_header(sink).await {
+                if snapshot.blue_work != blue_work_to_digest_bytes(header.blue_work) {
+                    mismatch_fields.push("blue_work");
+                }
+            }
+            let mismatch = !mismatch_fields.is_empty();
+            let mismatch_epoch = mismatch.then_some(snapshot.epoch);
+            self.digest_manager.update_divergence(mismatch, mismatch_epoch, "snapshot_mismatch", &mismatch_fields);
         } else {
-            self.digest_manager.update_divergence(false, None, "resolved");
+            self.digest_manager.update_divergence(false, None, "resolved", &[]);
         }
     }
+}
+
+fn blue_work_to_digest_bytes(blue_work: BlueWorkType) -> [u8; 32] {
+    let source = blue_work.to_be_bytes();
+    let mut out = [0u8; 32];
+    out[32 - source.len()..].copy_from_slice(&source);
+    out
 }
 
 impl AsyncService for UdpDivergenceMonitor {

@@ -65,6 +65,7 @@ const MINIMUM_RETENTION_PERIOD_DAYS: f64 = 2.0;
 const ONE_GIGABYTE: f64 = 1_000_000_000.0;
 
 use crate::args::Args;
+use crate::udp::UdpDivergenceMonitor;
 use crate::udp_tx::FlowTxSubmitter;
 
 const DEFAULT_DATA_DIR: &str = "datadir";
@@ -698,6 +699,9 @@ Do you confirm? (y/n)";
     } else {
         None
     };
+    let udp_divergence_monitor = udp_digest
+        .as_ref()
+        .map(|manager| UdpDivergenceMonitor::new(consensus_manager.clone(), manager.clone(), flow_context.flow_shutdown_listener()));
     let udp_admin_token =
         udp_config.admin_token_file.as_ref().and_then(|path| fs::read_to_string(path).ok()).map(|token| token.trim().to_string());
     let udp_admin_policy = UdpAdminPolicy { allow_remote: udp_config.admin_remote_allowed, token: udp_admin_token };
@@ -758,6 +762,9 @@ Do you confirm? (y/n)";
     async_runtime.register(perf_monitor);
     async_runtime.register(mining_rule_engine);
     async_runtime.register(udp_service.clone());
+    if let Some(udp_divergence_monitor) = udp_divergence_monitor {
+        async_runtime.register(udp_divergence_monitor);
+    }
 
     let wrpc_service_tasks: usize = 2; // num_cpus::get() / 2;
                                        // Register wRPC servers based on command line arguments
