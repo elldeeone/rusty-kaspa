@@ -1,0 +1,12 @@
+[package]
+name = "lora-bridge"
+description = "Waveshare SX126X UART bridge for UDP side-channel KUDP datagrams"
+edition = "2021"
+version = "0.1.0"
+authors = ["Kaspa developers"]
+license = "ISC"
+
+[dependencies]
+anyhow = "1.0"
+clap = { version = "4.5", features = ["derive"] }
+serialport = { version = "4.9", default-features = false }

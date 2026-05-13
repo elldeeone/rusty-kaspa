@@ -52,6 +52,7 @@ members = [
     "components/connectionmanager",
     "components/consensusmanager",
     "components/udp-sidechannel",
+    "udp/tools/lora-bridge",
     "database",
     "crypto/txscript",
     "crypto/txscript/errors",
