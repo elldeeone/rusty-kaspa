@@ -83,7 +83,7 @@ impl UdpConfig {
     }
 
     pub fn tx_allowed(&self) -> bool {
-        self.tx_enable
+        self.tx_enable && !matches!(self.network_id.network_type(), NetworkType::Mainnet)
     }
 }
 
@@ -164,5 +164,19 @@ mod tests {
         cfg.mode = UdpMode::Both;
         cfg.danger_accept_blocks = true;
         assert!(cfg.blocks_allowed());
+    }
+
+    #[test]
+    fn tx_submit_disallowed_on_mainnet_unit() {
+        let mut cfg = base_config(NetworkType::Mainnet);
+        cfg.tx_enable = true;
+        assert!(!cfg.tx_allowed());
+    }
+
+    #[test]
+    fn tx_submit_allowed_on_testnet_when_explicitly_enabled_unit() {
+        let mut cfg = base_config(NetworkType::Testnet);
+        cfg.tx_enable = true;
+        assert!(cfg.tx_allowed());
     }
 }

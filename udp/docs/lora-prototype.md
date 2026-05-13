@@ -1,5 +1,9 @@
 # LoRa UDP Side-Channel Prototype
 
+For review readiness, merge staging, and the current branch inventory, start
+with [`review-readiness.md`](review-readiness.md). This file remains the
+operator/prototype runbook and evidence index for the LoRa digest alpha.
+
 This is the Phase 0/Phase 1 package for carrying existing rusty-kaspa UDP
 side-channel `KUDP` digest datagrams over real Waveshare SX126X UART LoRa
 hardware.
