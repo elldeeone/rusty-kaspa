@@ -95,6 +95,7 @@ target/debug/udp-live-digest-producer \
   --output file \
   --out-dir /tmp/live-digests \
   --count 3 \
+  --signer-id 0 \
   --interval-ms 10 \
   --provenance-report
 wc -c /tmp/live-digests/*.bin
@@ -200,6 +201,7 @@ target/debug/udp-live-digest-producer \
   --output udp \
   --udp-target 127.0.0.1:39000 \
   --count 4 \
+  --signer-id 0 \
   --interval-ms 500 \
   --provenance-report
 ```
@@ -289,6 +291,7 @@ five terminals coordinated:
   --ack-timeout-ms 6000 \
   --retry-count 8 \
   --snapshot-every 50 \
+  --signer-id 0 \
   --provenance-report \
   --expected-datagram-ms 6500 \
   --report /tmp/lora-live-soak-report.md

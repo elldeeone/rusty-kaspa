@@ -15,6 +15,7 @@ ACK_TIMEOUT_MS="6000"
 SNAPSHOT_EVERY="50"
 EXPECTED_DATAGRAM_MS="6500"
 SESSION_ID="17"
+SIGNER_ID="0"
 REPORT_PATH="/tmp/lora-live-soak-report.md"
 WORKDIR=""
 NETWORK="devnet"
@@ -46,6 +47,7 @@ Options:
   --snapshot-every N          Emit a snapshot every N datagrams after first; 0 disables (default: 50)
   --expected-datagram-ms N    Count/timeout budget per reliable datagram (default: 6500)
   --session-id N              Reliable fragment session id (default: 17)
+  --signer-id N               Digest signer id, indexes receiver allowed signers (default: 0)
   --report PATH               Markdown report path (default: /tmp/lora-live-soak-report.md)
   --workdir DIR               Scratch directory (default: mktemp)
   --network NAME              Producer network tag (default: devnet)
@@ -69,6 +71,7 @@ while [[ $# -gt 0 ]]; do
     --snapshot-every) SNAPSHOT_EVERY="${2:-}"; shift 2 ;;
     --expected-datagram-ms) EXPECTED_DATAGRAM_MS="${2:-}"; shift 2 ;;
     --session-id) SESSION_ID="${2:-}"; shift 2 ;;
+    --signer-id) SIGNER_ID="${2:-}"; shift 2 ;;
     --report) REPORT_PATH="${2:-}"; shift 2 ;;
     --workdir) WORKDIR="${2:-}"; shift 2 ;;
     --network) NETWORK="${2:-}"; shift 2 ;;
@@ -213,6 +216,7 @@ PRODUCER_ARGS=(
   --udp-target "${BRIDGE_UDP}"
   --count "${COUNT}"
   --interval-ms "${INTERVAL_MS}"
+  --signer-id "${SIGNER_ID}"
   --snapshot-first
   --snapshot-every "${SNAPSHOT_EVERY}"
 )
@@ -242,7 +246,7 @@ wait "${TX_PID}" || TX_STATUS=$?
 wait "${RX_PID}" || RX_STATUS=$?
 
 "${ROOT_DIR}/target/debug/udp-rpc-digests" --rpc-url "grpc://${RECEIVER_RPC}" info >"${INFO_JSON}" 2>&1 || true
-"${ROOT_DIR}/target/debug/udp-rpc-digests" --rpc-url "grpc://${RECEIVER_RPC}" digests --limit 10 --check-monotonic >"${DIGESTS_JSON}" 2>&1 || true
+"${ROOT_DIR}/target/debug/udp-rpc-digests" --rpc-url "grpc://${RECEIVER_RPC}" digests --limit 10 --check-monotonic --producer-log "${PRODUCER_LOG}" >"${DIGESTS_JSON}" 2>&1 || true
 
 {
   echo "# LoRa Live Soak Report"
@@ -264,6 +268,7 @@ wait "${RX_PID}" || RX_STATUS=$?
   echo "- Expected datagram budget: \`${EXPECTED_DATAGRAM_MS}\` ms"
   echo "- RX timeout: \`${RX_TIMEOUT_MS}\` ms"
   echo "- Session id: \`${SESSION_ID}\`"
+  echo "- Signer id: \`${SIGNER_ID}\`"
   echo "- Workdir: \`${WORKDIR}\`"
   echo
   echo "## Bridge Summary"

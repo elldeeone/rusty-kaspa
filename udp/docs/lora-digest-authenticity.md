@@ -31,6 +31,8 @@ monotonic demo output; it changes `epoch`, `daa_score`, and
 
 The real LoRa run for this change is summarized in
 [`lora-digest-authenticity-live-run.md`](lora-digest-authenticity-live-run.md).
+The current schema decision is documented in
+[`lora-digest-schema-decision.md`](lora-digest-schema-decision.md).
 
 ## Field Provenance
 
@@ -46,7 +48,7 @@ The real LoRa run for this change is summarized in
 | `daa_score` | `getBlockDagInfo.virtual_daa_score`, unless `--lab-progress-counter` adds the output index | Real without lab counter; lab-derived with lab counter | Current virtual DAA score | No gap for virtual DAA score. |
 | `blue_work` | `getBlock(sink).header.blue_work`, left-padded to 32 bytes | Real | Accumulated blue work for the selected/sink chain state | No gap for sink-header blue work; production schema should clarify sink vs virtual state. |
 | `kept_headers_mmr_root` | Omitted (`None`) | Omitted | Optional commitment to kept headers | Need a consensus-defined kept-headers MMR and a node/RPC hook. No current public RPC exposes this root. |
-| `signer_id` | Fixture builder encodes signer id `0` | Lab-derived | Identifies which configured signer key signed the digest | Production needs signer registry, rotation, revocation, and policy binding. |
+| `signer_id` | `--signer-id`, default `0` | Lab-derived policy | Identifies which configured signer key signed the digest; receiver maps it to `--udp.allowed_signers` list index | Production needs signer registry, rotation, revocation, and policy binding. |
 | `signature` | Schnorr signature from configured lab signer secret | Lab-derived key, cryptographically valid | Authenticates the digest payload under configured signer id | Production needs operational signer infrastructure; the wire signature format itself verifies today. |
 | `source_id` | `--source-id`, default `7` | Lab-derived | Operator-selected sidecar/source identity | Production needs source identity policy and collision/authorization rules. |
 
@@ -65,14 +67,16 @@ snapshots against `async_get_sink()`.
 ## Receiver Verification
 
 The receiver already exposes accepted digest fields through `getUdpDigests`.
-For a compact receiver-side summary, use:
+For a compact receiver-side summary and produced-vs-received snapshot
+comparison, use:
 
 ```bash
 target/debug/udp-rpc-digests \
   --rpc-url grpc://127.0.0.1:16110 \
   digests \
   --limit 10 \
-  --check-monotonic
+  --check-monotonic \
+  --producer-log /tmp/lora-live-soak.<id>/live-producer.log
 ```
 
 The helper prints the JSON RPC response and a compact check line containing:
@@ -84,6 +88,8 @@ The helper prints the JSON RPC response and a compact check line containing:
 - `virtual_blue_score_monotonic`
 - observed source IDs
 - observed signer IDs
+- `udp_digest_compare snapshot_match=true` when produced provenance fields match
+  the received stored snapshot fields
 
 ## Remaining API/RPC Gaps
 

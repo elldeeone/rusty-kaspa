@@ -76,6 +76,10 @@ struct Args {
     #[arg(long, default_value_t = DEFAULT_SOURCE_ID)]
     source_id: u16,
 
+    /// Signer identifier encoded in the DigestV1 payload. This indexes --udp.allowed_signers on the receiver.
+    #[arg(long, default_value_t = fixtures::DEFAULT_SIGNER_ID)]
+    signer_id: u16,
+
     /// Optional 32-byte signer secret (hex). Defaults to the same lab key used by fixture tooling.
     #[arg(long)]
     signer_secret_hex: Option<String>,
@@ -125,16 +129,16 @@ async fn main() -> Result<()> {
         let datagram = match kind {
             DigestKind::Snapshot => {
                 let fields = state.snapshot_fields();
-                build_snapshot_vector(seq, args.source_id, &fields, &signer).into_datagram(network_tag)
+                build_snapshot_vector(seq, args.source_id, &fields.with_signer_id(args.signer_id), &signer).into_datagram(network_tag)
             }
             DigestKind::Delta => {
                 let fields = state.delta_fields();
-                build_delta_vector(seq, args.source_id, &fields, &signer).into_datagram(network_tag)
+                build_delta_vector(seq, args.source_id, &fields.with_signer_id(args.signer_id), &signer).into_datagram(network_tag)
             }
         };
         output.write(index, kind, &datagram)?;
         if args.provenance_report {
-            print_provenance_report(index, kind, seq, args.source_id, &state, &signer_hex, args.lab_progress_counter)?;
+            print_provenance_report(index, kind, seq, args.source_id, args.signer_id, &state, &signer_hex, args.lab_progress_counter)?;
         }
         eprintln!(
             "produced index={} kind={:?} seq={} epoch={} virtual_blue_score={} daa_score={} bytes={} sink={} pruning_point={}",
@@ -213,6 +217,7 @@ impl LiveState {
             daa_score: self.daa_score,
             blue_work: self.blue_work,
             kept_headers_mmr_root: None,
+            signer_id: fixtures::DEFAULT_SIGNER_ID,
         }
     }
 
@@ -224,7 +229,26 @@ impl LiveState {
             virtual_blue_score: self.virtual_blue_score,
             daa_score: self.daa_score,
             blue_work: self.blue_work,
+            signer_id: fixtures::DEFAULT_SIGNER_ID,
         }
+    }
+}
+
+trait WithSignerId {
+    fn with_signer_id(self, signer_id: u16) -> Self;
+}
+
+impl WithSignerId for SnapshotFields {
+    fn with_signer_id(mut self, signer_id: u16) -> Self {
+        self.signer_id = signer_id;
+        self
+    }
+}
+
+impl WithSignerId for DeltaFields {
+    fn with_signer_id(mut self, signer_id: u16) -> Self {
+        self.signer_id = signer_id;
+        self
     }
 }
 
@@ -327,6 +351,7 @@ fn print_provenance_report(
     kind: DigestKind,
     seq: u64,
     source_id: u16,
+    signer_id: u16,
     state: &LiveState,
     signer_hex: &str,
     lab_progress_counter: bool,
@@ -383,10 +408,10 @@ fn print_provenance_report(
         ),
         provenance_field(
             "signer_id",
-            "0".to_string(),
+            signer_id.to_string(),
             "lab-derived",
-            "fixture signer id",
-            "DigestV1 fixture builder currently encodes signer id 0",
+            "--signer-id",
+            "indexes the receiver --udp.allowed_signers list; this id is lab policy, not consensus state",
         ),
         provenance_field(
             "signature",

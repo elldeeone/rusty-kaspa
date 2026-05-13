@@ -1,4 +1,6 @@
 use kaspa_core::time::unix_now;
+use secp256k1::{Keypair, Secp256k1, SecretKey};
+
 use kaspa_udp_sidechannel::{
     digest::{DigestParser, DigestVariant, SignerRegistry, TimestampSkew},
     fixtures::{
@@ -53,6 +55,27 @@ fn signature_valid_and_invalid_vectors() {
         DigestVariant::Delta(delta) => {
             assert!(delta.signature_valid);
             assert_eq!(delta.epoch, second_delta.epoch);
+        }
+        _ => panic!("expected delta"),
+    }
+}
+
+#[test]
+fn nonzero_signer_id_selects_matching_allowed_signer() {
+    let secp = Secp256k1::new();
+    let unused = Keypair::from_secret_key(&secp, &SecretKey::from_slice(&[0x22; 32]).expect("unused secret"));
+    let keypair = fixtures::default_keypair();
+    let registry = SignerRegistry::from_hex(&[signer_hex(&unused), signer_hex(&keypair)]).expect("registry");
+    let parser = DigestParser::new(true, registry, TimestampSkew::default());
+
+    let mut fields = delta_fields(47, unix_now());
+    fields.signer_id = 1;
+    let vector = build_delta_vector(DEFAULT_SNAPSHOT_SEQ + 5, DEFAULT_SOURCE_ID, &fields, &keypair);
+    let variant = parser.parse(&vector.header, &vector.payload).expect("delta parsed with signer id 1");
+    match variant {
+        DigestVariant::Delta(delta) => {
+            assert_eq!(delta.signer_id, 1);
+            assert!(delta.signature_valid);
         }
         _ => panic!("expected delta"),
     }

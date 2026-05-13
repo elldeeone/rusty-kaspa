@@ -126,6 +126,8 @@ The completed live digest soak is summarized in
 [`lora-live-soak-report.md`](lora-live-soak-report.md).
 DigestV1 field authenticity and remaining production data gaps are tracked in
 [`lora-digest-authenticity.md`](lora-digest-authenticity.md).
+The current keep-`DigestV1` schema decision is documented in
+[`lora-digest-schema-decision.md`](lora-digest-schema-decision.md).
 
 ## Bridge Protocol
 

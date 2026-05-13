@@ -18,8 +18,9 @@ Command:
   --retry-count 8 \
   --snapshot-every 0 \
   --expected-datagram-ms 6500 \
+  --signer-id 0 \
   --provenance-report \
-  --report /tmp/lora-authenticity-live-run-2026-05-13.md
+  --report /tmp/lora-schema-live-run-2026-05-13-r2.md
 ```
 
 Configuration:
@@ -28,7 +29,8 @@ Configuration:
 - Provenance report: `1`
 - TX serial: `/dev/lora-left`
 - RX serial: `/dev/lora-right`
-- Workdir: `/tmp/lora-live-soak.AfUXU4`
+- Signer id: `0`
+- Workdir: `/tmp/lora-live-soak.YiGDMx`
 
 Bridge result:
 
@@ -59,6 +61,7 @@ Receiver digest check:
 
 ```text
 udp_digest_check count=4 all_signature_valid=true epoch_monotonic=true daa_score_monotonic=true virtual_blue_score_monotonic=true sources={7} signers={0}
+udp_digest_compare snapshot_match=true compared_fields=8 mismatches=[]
 ```
 
 Accepted snapshot fields:

@@ -30,6 +30,7 @@ pub struct SnapshotFields {
     pub daa_score: u64,
     pub blue_work: [u8; 32],
     pub kept_headers_mmr_root: Option<Hash>,
+    pub signer_id: u16,
 }
 
 /// Digest delta fields used by delta vectors.
@@ -41,6 +42,7 @@ pub struct DeltaFields {
     pub virtual_blue_score: u64,
     pub daa_score: u64,
     pub blue_work: [u8; 32],
+    pub signer_id: u16,
 }
 
 /// Container holding a synthesized header + payload pair.
@@ -82,6 +84,7 @@ pub fn snapshot_fields(epoch: u64, frame_ts_ms: u64, include_root: bool) -> Snap
         daa_score: 200,
         blue_work: [5; 32],
         kept_headers_mmr_root: include_root.then(|| Hash::from_bytes([6; 32])),
+        signer_id: DEFAULT_SIGNER_ID,
     }
 }
 
@@ -94,6 +97,7 @@ pub fn delta_fields(epoch: u64, frame_ts_ms: u64) -> DeltaFields {
         virtual_blue_score: 300,
         daa_score: 400,
         blue_work: [8; 32],
+        signer_id: DEFAULT_SIGNER_ID,
     }
 }
 
@@ -162,7 +166,7 @@ fn snapshot_payload(fields: &SnapshotFields, signature: &[u8; DIGEST_SIGNATURE_L
     } else {
         buf.push(0);
     }
-    buf.extend_from_slice(&DEFAULT_SIGNER_ID.to_le_bytes());
+    buf.extend_from_slice(&fields.signer_id.to_le_bytes());
     buf.extend_from_slice(signature);
     buf
 }
@@ -175,7 +179,7 @@ fn delta_payload(fields: &DeltaFields, signature: &[u8; DIGEST_SIGNATURE_LEN]) -
     buf.extend_from_slice(&fields.virtual_blue_score.to_le_bytes());
     buf.extend_from_slice(&fields.daa_score.to_le_bytes());
     buf.extend_from_slice(&fields.blue_work);
-    buf.extend_from_slice(&DEFAULT_SIGNER_ID.to_le_bytes());
+    buf.extend_from_slice(&fields.signer_id.to_le_bytes());
     buf.extend_from_slice(signature);
     buf
 }
