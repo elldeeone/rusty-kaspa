@@ -102,6 +102,30 @@ The default `tx` inter-frame delay is 1500 ms. In lab testing, a shorter
 250 ms delay allowed the first snapshot fragment through but the radio dropped
 the second fragment.
 
+For fragmented datagrams, alpha mode can use bridge-local ACKs:
+
+```bash
+cargo run -p lora-bridge -- rx \
+  --serial /dev/lora-right \
+  --output file \
+  --file /tmp/kudp-vectors/snapshot.rx.bin \
+  --session-id 1
+
+cargo run -p lora-bridge -- tx \
+  --serial /dev/lora-left \
+  --input file \
+  --file /tmp/kudp-vectors/snapshot.bin \
+  --reliable-fragments \
+  --retry-count 4 \
+  --ack-timeout-ms 3000 \
+  --session-id 1 \
+  --inter-frame-delay-ms 250
+```
+
+The reliable envelope is bridge-local (`KLR2` fragments plus `KLA1` ACKs). It
+does not alter the recovered `KUDP` datagram bytes and does not change
+consensus or core UDP side-channel semantics.
+
 Receiver:
 
 ```bash
@@ -154,10 +178,20 @@ For repeated byte-equality runs over the hardware pair:
 
 ```bash
 ./udp/tools/lora_reliability_harness.sh \
+  --modes best-effort,reliable \
   --delays 250,500,750,1000,1250,1500 \
   --delta-count 50 \
   --snapshot-count 50 \
   --report /tmp/lora-reliability-report.md
+```
+
+For the unattended live ingest soak harness:
+
+```bash
+./udp/tools/lora_live_soak_lab.sh \
+  --duration-seconds 1800 \
+  --inter-frame-delay-ms 2500 \
+  --report /tmp/lora-live-soak-report.md
 ```
 
 The follow-up devnet lab that forwards recovered LoRa datagrams into kaspad's

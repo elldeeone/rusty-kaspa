@@ -7,7 +7,7 @@ LoRa KUDP bridge over the lab Waveshare SX126X UART pair.
 
 ## Harness
 
-The sweep was run with:
+The original fixed-delay sweep was run with:
 
 ```bash
 ./udp/tools/lora_reliability_harness.sh \
@@ -30,25 +30,50 @@ The harness builds on the standalone byte-equality mode: it generates signed
 DigestV1 fixtures, transmits each fixture over LoRa, compares recovered bytes
 with `cmp`, and writes both Markdown and CSV reports.
 
-The ideal run is 50 delta and 50 snapshot samples per delay. The hardware sweep
-below used 5 delta and 5 snapshot samples per delay because a full 50/50 run
-across six delays would tie up the RF lab for a much longer session. Treat this
-as an initial operating-envelope run, not a production reliability claim.
+After adding bridge-local ACKs for fragmented datagrams, the alpha reliability
+run was:
+
+```bash
+./udp/tools/lora_reliability_harness.sh \
+  --modes reliable \
+  --delays 250 \
+  --delta-count 100 \
+  --snapshot-count 100 \
+  --rx-timeout-ms 30000 \
+  --ack-timeout-ms 3000 \
+  --retry-count 4 \
+  --report /tmp/lora-reliable-100-2026-05-13.md
+```
+
+The harness also supports `--modes best-effort,reliable` to compare the old
+fixed-delay path against the `KLR2` reliable-fragment envelope.
 
 ## Metrics
 
 The harness records these per sample:
 
-- sent fixture kind, delay, sample number, input bytes, and recovered bytes
+- mode, fixture kind, delay, sample number, input bytes, and recovered bytes
 - recovered count and exact byte match
 - RX timeout, inferred fragment loss, corrupt recovery, and duplicate marker
+- retry count inferred from bridge TX logs
 - wall-clock latency from RX start through TX/RX completion
 
 The summarized table reports sent, recovered, exact matches, timeouts,
-fragment loss, corrupt output, duplicates, min/avg/max latency, datagrams per
-minute, and bytes per minute.
+fragment loss, corrupt output, duplicates, retries, min/avg/max latency,
+datagrams per minute, and bytes per minute.
 
-## Results
+## Alpha Reliable Results
+
+| Mode | Kind | Delay ms | Sent | Recovered | Exact | Timeouts | Fragment loss | Corrupt | Duplicate | Retries | Latency min/avg/max ms | Datagrams/min | Bytes/min |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| reliable | delta | 250 | 100 | 100 | 100 | 0 | 0 | 0 | 0 | 0 | 2518/2519/2522 | 23.81 | 4763 |
+| reliable | snapshot | 250 | 100 | 100 | 100 | 0 | 0 | 0 | 0 | 0 | 5961/5962/5965 | 10.06 | 3311 |
+
+The CSV audit for `/tmp/lora-reliable-100-2026-05-13.csv` had 200 rows,
+zero failed rows, zero retries, zero timeouts, zero corrupt outputs, and zero
+duplicate markers.
+
+## Best-Effort Baseline
 
 | Kind | Delay ms | Sent | Recovered | Exact | Timeouts | Fragment loss | Corrupt | Duplicate | Latency min/avg/max ms | Datagrams/min | Bytes/min |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -67,23 +92,38 @@ minute, and bytes per minute.
 
 ## Interpretation
 
-- 200-byte delta datagrams were byte-exact at every tested delay.
-- 329-byte snapshots require two LoRa sends; they failed from 250 ms through
-  1250 ms because the second fragment was not recovered before timeout.
-- 1500 ms is the measured minimum reliable inter-frame delay for the current
-  329-byte snapshot fixture in this lab run.
-- The conservative live-ingest delay remains 2500 ms until a larger sweep
-  proves that 1500 ms has enough margin across longer sessions.
+- 200-byte delta datagrams were byte-exact at every tested delay in the
+  best-effort baseline.
+- Best-effort 329-byte snapshots require two LoRa sends; they failed from
+  250 ms through 1250 ms because the second fragment was not recovered before
+  timeout. Best-effort snapshots were byte-exact at 1500 ms in the small sweep.
+- Reliable `KLR2` snapshots were 100/100 byte-exact at 250 ms. This is a lower
+  operating point than the fixed-delay best-effort bridge.
+- The 100-snapshot reliable run did not need retries, because per-fragment ACKs
+  paced the second fragment and confirmed delivery. Retry behavior is still
+  implemented and covered by unit tests for retry exhaustion/ACK parsing paths,
+  but this hardware run did not encounter an ACK timeout.
 - No corrupt byte outputs or duplicate outputs were observed. Failed snapshots
   were clean fragment-loss timeouts.
 
 ## Kaspad Ingest Mode
 
-This sweep intentionally exercised standalone byte equality, because it
-isolates the RF adapter from kaspad ingest policy. The kaspad-ingest mode uses
-the same recovered bytes and is documented in `udp/docs/lora-prototype.md`.
-Previous hardware evidence in that guide shows the recovered snapshot and delta
-fixtures being accepted by kaspad UDP ingest and exposed through RPC.
+The reliability sweep intentionally exercises standalone byte equality, because
+it isolates the RF adapter from kaspad ingest policy.
+
+The live mixed ingest check used reliable bridge mode with one live snapshot
+and three live deltas:
+
+```text
+lora-bridge tx: datagrams_sent=4 fragments_sent=5 retries=0
+lora-bridge rx: datagrams_recovered=4 fragments_received=2 acks_sent=2
+getUdpIngestInfo: framesReceived=4 bytesTotal=897 signatureFailures=0
+getUdpDigests: epochs 0..3 verified=true
+```
+
+An earlier 10-datagram attempt at 250 ms recovered only the first three live
+datagrams before RX stalled, so live multi-datagram runs still use 2500 ms until
+more streaming TX work is done.
 
 ## Operating Settings
 
@@ -91,9 +131,12 @@ Recommended current lab settings:
 
 - Delta-only fixture transport: `--inter-frame-delay-ms 250` is sufficient for
   this 200-byte fixture, though using the default is simpler.
-- Fragmented snapshots: use at least `--inter-frame-delay-ms 1500`.
-- Live multi-datagram ingest: keep using `--inter-frame-delay-ms 2500` until a
-  longer reliability sweep is completed.
+- Fragmented snapshots with `--reliable-fragments`: 250 ms passed the 100-sample
+  byte-equality run.
+- Fragmented snapshots without `--reliable-fragments`: use at least 1500 ms.
+- Live multi-datagram ingest: keep using `--inter-frame-delay-ms 2500` because
+  the bridge TX currently buffers all requested UDP input before serial send,
+  and the 250 ms live mixed attempt did not complete cleanly.
 - RX timeout for fragmented snapshots should be at least `30000 ms`; the report
   sweep used `12000 ms` to keep failed low-delay samples bounded.
 
@@ -101,5 +144,10 @@ Recommended current lab settings:
 
 - This is not a production RF reliability layer.
 - A single lost fragment drops the whole oversized datagram.
-- There is no FEC, retry, compression, encryption, or RF-level replay policy.
-- More samples are needed before changing the live lab default below 2500 ms.
+- Retry exists for bridge-local reliable fragments, but there is no FEC,
+  compression, encryption, or RF-level replay policy.
+- UDP-input TX is batch-oriented today: it reads `--count` datagrams before
+  serial transmission. A production sidecar should stream UDP input into the RF
+  scheduler instead.
+- More live mixed samples are needed before changing the live lab default below
+  2500 ms.

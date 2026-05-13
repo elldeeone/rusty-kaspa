@@ -15,8 +15,13 @@ const WAVESHARE_RX_PREFIX_LEN: usize = 3;
 const WAVESHARE_RX_STATUS_LEN: usize = 1;
 const KUDP_MAGIC: &[u8; 4] = b"KUDP";
 const FRAG_MAGIC: &[u8; 4] = b"KLR1";
+const RELIABLE_FRAG_MAGIC: &[u8; 4] = b"KLR2";
+const ACK_MAGIC: &[u8; 4] = b"KLA1";
 const FRAG_HEADER_LEN: usize = 14;
+const RELIABLE_FRAG_HEADER_LEN: usize = 18;
+const ACK_FRAME_LEN: usize = 14;
 const FRAG_CHUNK_LEN: usize = LORA_APP_MTU - FRAG_HEADER_LEN;
+const RELIABLE_FRAG_CHUNK_LEN: usize = LORA_APP_MTU - RELIABLE_FRAG_HEADER_LEN;
 
 #[derive(Parser, Debug)]
 #[command(name = "lora-bridge")]
@@ -73,8 +78,24 @@ struct TxArgs {
     fixed_prefix_hex: String,
 
     /// Sleep this many milliseconds between serial writes. 1500 ms is the tested minimum; 2500 ms was used for live runs.
-    #[arg(long, default_value_t = 1500)]
-    inter_frame_delay_ms: u64,
+    #[arg(long)]
+    inter_frame_delay_ms: Option<u64>,
+
+    /// Enable bridge-local ACK/retry for fragmented datagrams. Raw one-packet deltas are still sent once.
+    #[arg(long)]
+    reliable_fragments: bool,
+
+    /// Retry count per fragment when --reliable-fragments is enabled.
+    #[arg(long, default_value_t = 4)]
+    retry_count: usize,
+
+    /// ACK timeout in milliseconds when --reliable-fragments is enabled.
+    #[arg(long, default_value_t = 3_000)]
+    ack_timeout_ms: u64,
+
+    /// Bridge-local session id for reliable fragment ACKs.
+    #[arg(long, default_value_t = 1)]
+    session_id: u32,
 
     /// Only allow single-packet datagrams; fail instead of fragmenting.
     #[arg(long)]
@@ -117,6 +138,18 @@ struct RxArgs {
     /// Treat this many milliseconds without new serial bytes as one LoRa packet boundary.
     #[arg(long, default_value_t = 600)]
     packet_idle_ms: u64,
+
+    /// Waveshare fixed-send 6-byte prefix used for bridge-local ACKs.
+    #[arg(long, default_value = "000041000041")]
+    fixed_prefix_hex: String,
+
+    /// Send ACKs for reliable bridge fragments.
+    #[arg(long, default_value_t = true)]
+    ack_fragments: bool,
+
+    /// Expected bridge-local session id for reliable fragment ACKs.
+    #[arg(long, default_value_t = 1)]
+    session_id: u32,
 }
 
 #[derive(Args, Debug)]
@@ -155,19 +188,26 @@ fn tx(args: TxArgs) -> Result<()> {
     let prefix = parse_fixed_prefix(&args.fixed_prefix_hex)?;
     let datagrams = read_input_datagrams(&args)?;
     let mut port = open_serial(&args.serial)?;
-    let delay = Duration::from_millis(args.inter_frame_delay_ms);
+    let mut stats = BridgeStats::default();
+    let started_at = Instant::now();
 
     for (datagram_idx, datagram) in datagrams.iter().enumerate() {
-        let frames = fragment_datagram(datagram, args.datagram_id.wrapping_add(datagram_idx as u32), args.no_fragment)?;
+        let datagram_id = args.datagram_id.wrapping_add(datagram_idx as u32);
+        let frames =
+            fragment_datagram_with_options(datagram, datagram_id, args.no_fragment, args.reliable_fragments, args.session_id)?;
+        let delay = Duration::from_millis(args.inter_frame_delay_ms.unwrap_or_else(|| adaptive_delay_ms(frames.len())));
         for (idx, frame) in frames.iter().enumerate() {
             if frame.len() > LORA_APP_MTU {
                 bail!("internal frame too large: {} > {}", frame.len(), LORA_APP_MTU);
             }
-            let mut wire = Vec::with_capacity(WAVESHARE_FIXED_PREFIX_LEN + frame.len());
-            wire.extend_from_slice(&prefix);
-            wire.extend_from_slice(frame);
-            port.write_all(&wire).context("write serial")?;
-            port.flush().context("flush serial")?;
+            let frag_ix = fragment_index(frame).unwrap_or(idx as u16);
+            let (attempts, serial_bytes) = if args.reliable_fragments && is_reliable_fragment(frame) {
+                write_reliable_frame(&mut *port, &prefix, frame, args.session_id, datagram_id, frag_ix, &args, &mut stats)?
+            } else {
+                let serial_bytes = write_lora_app_payload(&mut *port, &prefix, frame)?;
+                (1, serial_bytes)
+            };
+            stats.fragments_sent += attempts;
             eprintln!(
                 "sent datagram {}/{} frame {}/{}: app_payload={} serial_bytes={}",
                 datagram_idx + 1,
@@ -175,14 +215,17 @@ fn tx(args: TxArgs) -> Result<()> {
                 idx + 1,
                 frames.len(),
                 frame.len(),
-                wire.len()
+                serial_bytes
             );
             if (datagram_idx + 1 < datagrams.len() || idx + 1 < frames.len()) && !delay.is_zero() {
                 std::thread::sleep(delay);
             }
         }
+        stats.datagrams_sent += 1;
+        stats.bytes_sent += datagram.len();
     }
 
+    stats.print("tx", started_at);
     Ok(())
 }
 
@@ -192,28 +235,72 @@ fn rx(args: RxArgs) -> Result<()> {
     }
 
     let mut port = open_serial(&args.serial)?;
+    let ack_prefix = parse_fixed_prefix(&args.fixed_prefix_hex)?;
     let deadline = Instant::now() + Duration::from_millis(args.timeout_ms);
     let packet_idle = Duration::from_millis(args.packet_idle_ms);
     let mut reassembly = Reassembler::default();
     let mut recovered = 0usize;
+    let mut stats = BridgeStats::default();
+    let started_at = Instant::now();
 
     while recovered < args.count {
         let raw = match read_lora_packet(&mut *port, deadline, packet_idle) {
             Ok(raw) => raw,
             Err(err) if reassembly.has_pending() => {
+                stats.receive_timeouts += 1;
+                stats.print("rx", started_at);
                 bail!("read LoRa packet failed with pending fragments: {}; cause: {err}", reassembly.pending_summary())
             }
-            Err(err) => return Err(err).context("read LoRa packet"),
+            Err(err) => {
+                stats.receive_timeouts += 1;
+                stats.print("rx", started_at);
+                return Err(err).context("read LoRa packet");
+            }
         };
-        let app_payload = strip_waveshare_rx(&raw)?;
-        if let Some(datagram) = reassembly.push(app_payload)? {
-            ensure_kudp(&datagram)?;
-            write_output(&args, &datagram)?;
-            recovered += 1;
-            eprintln!("recovered KUDP datagram {}/{}: {} bytes", recovered, args.count, datagram.len());
+        let app_payload = match strip_waveshare_rx(&raw) {
+            Ok(app_payload) => app_payload,
+            Err(err) => {
+                stats.corrupt_frames += 1;
+                stats.print("rx", started_at);
+                return Err(err);
+            }
+        };
+        if app_payload.starts_with(ACK_MAGIC) {
+            continue;
+        }
+        match ack_for_payload(app_payload, args.session_id) {
+            Ok(Some(ack)) => {
+                if args.ack_fragments {
+                    write_lora_app_payload(&mut *port, &ack_prefix, &ack)?;
+                    stats.acks_sent += 1;
+                }
+            }
+            Ok(None) => {}
+            Err(err) => {
+                stats.corrupt_frames += 1;
+                stats.print("rx", started_at);
+                return Err(err);
+            }
+        }
+        match reassembly.push_with_stats(app_payload, &mut stats) {
+            Ok(Some(datagram)) => {
+                ensure_kudp(&datagram)?;
+                write_output(&args, &datagram)?;
+                recovered += 1;
+                stats.datagrams_recovered += 1;
+                stats.bytes_recovered += datagram.len();
+                eprintln!("recovered KUDP datagram {}/{}: {} bytes", recovered, args.count, datagram.len());
+            }
+            Ok(None) => {}
+            Err(err) => {
+                stats.reassembly_failures += 1;
+                stats.print("rx", started_at);
+                return Err(err);
+            }
         }
     }
 
+    stats.print("rx", started_at);
     Ok(())
 }
 
@@ -295,7 +382,102 @@ fn write_output(args: &RxArgs, datagram: &[u8]) -> Result<()> {
     Ok(())
 }
 
+fn write_lora_app_payload(port: &mut dyn SerialPort, prefix: &[u8; WAVESHARE_FIXED_PREFIX_LEN], app_payload: &[u8]) -> Result<usize> {
+    let mut wire = Vec::with_capacity(WAVESHARE_FIXED_PREFIX_LEN + app_payload.len());
+    wire.extend_from_slice(prefix);
+    wire.extend_from_slice(app_payload);
+    port.write_all(&wire).context("write serial")?;
+    port.flush().context("flush serial")?;
+    Ok(wire.len())
+}
+
+fn write_reliable_frame(
+    port: &mut dyn SerialPort,
+    prefix: &[u8; WAVESHARE_FIXED_PREFIX_LEN],
+    frame: &[u8],
+    session_id: u32,
+    datagram_id: u32,
+    frag_ix: u16,
+    args: &TxArgs,
+    stats: &mut BridgeStats,
+) -> Result<(usize, usize)> {
+    let mut attempts = 0usize;
+    for attempt in 0..=args.retry_count {
+        attempts += 1;
+        let serial_bytes = write_lora_app_payload(port, prefix, frame)?;
+        if wait_for_ack(
+            port,
+            Duration::from_millis(args.ack_timeout_ms),
+            Duration::from_millis(args.serial.read_timeout_ms),
+            session_id,
+            datagram_id,
+            frag_ix,
+        )? {
+            if attempt > 0 {
+                eprintln!("ack received after retry attempt={attempt} datagram_id={datagram_id} frag_ix={frag_ix}");
+            }
+            return Ok((attempts, serial_bytes));
+        }
+        if should_retry(attempt, args.retry_count) {
+            stats.retries += 1;
+            stats.missing_fragments += 1;
+            eprintln!("ack timeout; retrying datagram_id={datagram_id} frag_ix={frag_ix} attempt={}", attempt + 1);
+        }
+    }
+    bail!("retry exhausted for datagram_id={datagram_id} frag_ix={frag_ix}");
+}
+
+fn wait_for_ack(
+    port: &mut dyn SerialPort,
+    timeout: Duration,
+    packet_idle: Duration,
+    session_id: u32,
+    datagram_id: u32,
+    frag_ix: u16,
+) -> Result<bool> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if Instant::now() >= deadline {
+            return Ok(false);
+        }
+        let raw = match read_lora_packet(port, deadline, packet_idle) {
+            Ok(raw) => raw,
+            Err(err) if err.to_string().contains("timed out") => return Ok(false),
+            Err(err) => return Err(err),
+        };
+        let app_payload = strip_waveshare_rx(&raw)?;
+        if let Some(ack) = parse_ack(app_payload)? {
+            if ack.session_id == session_id && ack.datagram_id == datagram_id && ack.frag_ix == frag_ix {
+                return Ok(true);
+            }
+        }
+    }
+}
+
+fn adaptive_delay_ms(frame_count: usize) -> u64 {
+    if frame_count <= 1 {
+        250
+    } else {
+        1_500
+    }
+}
+
+fn should_retry(attempt: usize, retry_count: usize) -> bool {
+    attempt < retry_count
+}
+
+#[cfg(test)]
 fn fragment_datagram(datagram: &[u8], datagram_id: u32, no_fragment: bool) -> Result<Vec<Vec<u8>>> {
+    fragment_datagram_with_options(datagram, datagram_id, no_fragment, false, 0)
+}
+
+fn fragment_datagram_with_options(
+    datagram: &[u8],
+    datagram_id: u32,
+    no_fragment: bool,
+    reliable: bool,
+    session_id: u32,
+) -> Result<Vec<Vec<u8>>> {
     ensure_kudp(datagram)?;
     if datagram.len() <= LORA_APP_MTU {
         return Ok(vec![datagram.to_vec()]);
@@ -307,15 +489,20 @@ fn fragment_datagram(datagram: &[u8], datagram_id: u32, no_fragment: bool) -> Re
         bail!("datagram is too large for MVP bridge envelope: {} bytes", datagram.len());
     }
 
-    let frag_cnt = datagram.len().div_ceil(FRAG_CHUNK_LEN);
+    let header_len = if reliable { RELIABLE_FRAG_HEADER_LEN } else { FRAG_HEADER_LEN };
+    let chunk_len = if reliable { RELIABLE_FRAG_CHUNK_LEN } else { FRAG_CHUNK_LEN };
+    let frag_cnt = datagram.len().div_ceil(chunk_len);
     if frag_cnt > u16::MAX as usize {
         bail!("too many fragments: {frag_cnt}");
     }
 
     let mut frames = Vec::with_capacity(frag_cnt);
-    for (frag_ix, chunk) in datagram.chunks(FRAG_CHUNK_LEN).enumerate() {
-        let mut frame = Vec::with_capacity(FRAG_HEADER_LEN + chunk.len());
-        frame.extend_from_slice(FRAG_MAGIC);
+    for (frag_ix, chunk) in datagram.chunks(chunk_len).enumerate() {
+        let mut frame = Vec::with_capacity(header_len + chunk.len());
+        frame.extend_from_slice(if reliable { RELIABLE_FRAG_MAGIC } else { FRAG_MAGIC });
+        if reliable {
+            frame.extend_from_slice(&session_id.to_le_bytes());
+        }
         frame.extend_from_slice(&datagram_id.to_le_bytes());
         frame.extend_from_slice(&(frag_ix as u16).to_le_bytes());
         frame.extend_from_slice(&(frag_cnt as u16).to_le_bytes());
@@ -326,51 +513,179 @@ fn fragment_datagram(datagram: &[u8], datagram_id: u32, no_fragment: bool) -> Re
     Ok(frames)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct AckFrame {
+    session_id: u32,
+    datagram_id: u32,
+    frag_ix: u16,
+}
+
+fn make_ack(session_id: u32, datagram_id: u32, frag_ix: u16) -> Vec<u8> {
+    let mut frame = Vec::with_capacity(ACK_FRAME_LEN);
+    frame.extend_from_slice(ACK_MAGIC);
+    frame.extend_from_slice(&session_id.to_le_bytes());
+    frame.extend_from_slice(&datagram_id.to_le_bytes());
+    frame.extend_from_slice(&frag_ix.to_le_bytes());
+    frame
+}
+
+fn parse_ack(app_payload: &[u8]) -> Result<Option<AckFrame>> {
+    if !app_payload.starts_with(ACK_MAGIC) {
+        return Ok(None);
+    }
+    if app_payload.len() != ACK_FRAME_LEN {
+        bail!("ACK frame has wrong length: {}", app_payload.len());
+    }
+    Ok(Some(AckFrame {
+        session_id: u32::from_le_bytes(app_payload[4..8].try_into().unwrap()),
+        datagram_id: u32::from_le_bytes(app_payload[8..12].try_into().unwrap()),
+        frag_ix: u16::from_le_bytes(app_payload[12..14].try_into().unwrap()),
+    }))
+}
+
+fn is_reliable_fragment(app_payload: &[u8]) -> bool {
+    app_payload.starts_with(RELIABLE_FRAG_MAGIC)
+}
+
+fn fragment_index(app_payload: &[u8]) -> Option<u16> {
+    if app_payload.starts_with(RELIABLE_FRAG_MAGIC) && app_payload.len() >= RELIABLE_FRAG_HEADER_LEN {
+        return Some(u16::from_le_bytes(app_payload[12..14].try_into().unwrap()));
+    }
+    if app_payload.starts_with(FRAG_MAGIC) && app_payload.len() >= FRAG_HEADER_LEN {
+        return Some(u16::from_le_bytes(app_payload[8..10].try_into().unwrap()));
+    }
+    None
+}
+
+fn ack_for_payload(app_payload: &[u8], expected_session_id: u32) -> Result<Option<Vec<u8>>> {
+    if !app_payload.starts_with(RELIABLE_FRAG_MAGIC) {
+        return Ok(None);
+    }
+    let fragment = parse_fragment(app_payload)?;
+    if fragment.session_id != Some(expected_session_id) {
+        return Ok(None);
+    }
+    Ok(Some(make_ack(expected_session_id, fragment.datagram_id, fragment.frag_ix as u16)))
+}
+
+#[derive(Default)]
+struct BridgeStats {
+    datagrams_sent: usize,
+    datagrams_recovered: usize,
+    fragments_sent: usize,
+    fragments_received: usize,
+    retries: usize,
+    duplicate_fragments: usize,
+    missing_fragments: usize,
+    corrupt_frames: usize,
+    receive_timeouts: usize,
+    reassembly_failures: usize,
+    acks_sent: usize,
+    bytes_sent: usize,
+    bytes_recovered: usize,
+}
+
+impl BridgeStats {
+    fn print(&self, role: &str, started_at: Instant) {
+        let elapsed = started_at.elapsed().as_secs_f64().max(0.001);
+        let datagrams = self.datagrams_sent + self.datagrams_recovered;
+        let bytes = self.bytes_sent + self.bytes_recovered;
+        eprintln!(
+            "bridge_summary role={role} datagrams_sent={} datagrams_recovered={} fragments_sent={} fragments_received={} retries={} duplicate_fragments={} missing_fragments={} corrupt_frames={} receive_timeouts={} reassembly_failures={} acks_sent={} datagrams_per_minute={:.2} bytes_per_minute={:.0}",
+            self.datagrams_sent,
+            self.datagrams_recovered,
+            self.fragments_sent,
+            self.fragments_received,
+            self.retries,
+            self.duplicate_fragments,
+            self.missing_fragments,
+            self.corrupt_frames,
+            self.receive_timeouts,
+            self.reassembly_failures,
+            self.acks_sent,
+            datagrams as f64 * 60.0 / elapsed,
+            bytes as f64 * 60.0 / elapsed
+        );
+    }
+}
+
+#[derive(Debug)]
+struct Fragment<'a> {
+    session_id: Option<u32>,
+    datagram_id: u32,
+    frag_ix: usize,
+    frag_cnt: usize,
+    total_len: usize,
+    chunk: &'a [u8],
+}
+
+fn parse_fragment(app_payload: &[u8]) -> Result<Fragment<'_>> {
+    let (session_id, header_len, offset) = if app_payload.starts_with(RELIABLE_FRAG_MAGIC) {
+        if app_payload.len() < RELIABLE_FRAG_HEADER_LEN {
+            bail!("reliable fragment is too short: {} bytes", app_payload.len());
+        }
+        (Some(u32::from_le_bytes(app_payload[4..8].try_into().unwrap())), RELIABLE_FRAG_HEADER_LEN, 8)
+    } else if app_payload.starts_with(FRAG_MAGIC) {
+        if app_payload.len() < FRAG_HEADER_LEN {
+            bail!("fragment is too short: {} bytes", app_payload.len());
+        }
+        (None, FRAG_HEADER_LEN, 4)
+    } else {
+        bail!("received payload is neither raw KUDP nor lora-bridge fragment");
+    };
+
+    let datagram_id = u32::from_le_bytes(app_payload[offset..offset + 4].try_into().unwrap());
+    let frag_ix = u16::from_le_bytes(app_payload[offset + 4..offset + 6].try_into().unwrap()) as usize;
+    let frag_cnt = u16::from_le_bytes(app_payload[offset + 6..offset + 8].try_into().unwrap()) as usize;
+    let total_len = u16::from_le_bytes(app_payload[offset + 8..offset + 10].try_into().unwrap()) as usize;
+    let chunk = &app_payload[header_len..];
+
+    if frag_cnt == 0 {
+        bail!("fragment count is zero");
+    }
+    if frag_ix >= frag_cnt {
+        bail!("fragment index {frag_ix} out of range {frag_cnt}");
+    }
+    if total_len == 0 {
+        bail!("fragment total length is zero");
+    }
+    if chunk.is_empty() {
+        bail!("fragment payload is empty");
+    }
+
+    Ok(Fragment { session_id, datagram_id, frag_ix, frag_cnt, total_len, chunk })
+}
+
 #[derive(Default)]
 struct Reassembler {
     pending: BTreeMap<u32, PendingDatagram>,
 }
 
 impl Reassembler {
+    #[cfg(test)]
     fn push(&mut self, app_payload: &[u8]) -> Result<Option<Vec<u8>>> {
+        let mut stats = BridgeStats::default();
+        self.push_with_stats(app_payload, &mut stats)
+    }
+
+    fn push_with_stats(&mut self, app_payload: &[u8], stats: &mut BridgeStats) -> Result<Option<Vec<u8>>> {
         if app_payload.starts_with(KUDP_MAGIC) {
             return Ok(Some(app_payload.to_vec()));
         }
-        if !app_payload.starts_with(FRAG_MAGIC) {
-            bail!("received payload is neither raw KUDP nor lora-bridge fragment");
+        let fragment = parse_fragment(app_payload)?;
+        stats.fragments_received += 1;
+        let pending =
+            self.pending.entry(fragment.datagram_id).or_insert_with(|| PendingDatagram::new(fragment.frag_cnt, fragment.total_len));
+        if pending.insert(fragment.frag_ix, fragment.frag_cnt, fragment.total_len, fragment.chunk)? {
+            stats.duplicate_fragments += 1;
         }
-        if app_payload.len() < FRAG_HEADER_LEN {
-            bail!("fragment is too short: {} bytes", app_payload.len());
-        }
-
-        let datagram_id = u32::from_le_bytes(app_payload[4..8].try_into().unwrap());
-        let frag_ix = u16::from_le_bytes(app_payload[8..10].try_into().unwrap()) as usize;
-        let frag_cnt = u16::from_le_bytes(app_payload[10..12].try_into().unwrap()) as usize;
-        let total_len = u16::from_le_bytes(app_payload[12..14].try_into().unwrap()) as usize;
-        let chunk = &app_payload[FRAG_HEADER_LEN..];
-
-        if frag_cnt == 0 {
-            bail!("fragment count is zero");
-        }
-        if frag_ix >= frag_cnt {
-            bail!("fragment index {frag_ix} out of range {frag_cnt}");
-        }
-        if total_len == 0 {
-            bail!("fragment total length is zero");
-        }
-        if chunk.is_empty() {
-            bail!("fragment payload is empty");
-        }
-
-        let pending = self.pending.entry(datagram_id).or_insert_with(|| PendingDatagram::new(frag_cnt, total_len));
-        pending.insert(frag_ix, frag_cnt, total_len, chunk)?;
 
         if pending.is_complete() {
-            let pending = self.pending.remove(&datagram_id).unwrap();
+            let pending = self.pending.remove(&fragment.datagram_id).unwrap();
             return Ok(Some(pending.assemble()?));
         }
 
-        eprintln!("received fragment {}/{} for datagram {}", frag_ix + 1, frag_cnt, datagram_id);
+        eprintln!("received fragment {}/{} for datagram {}", fragment.frag_ix + 1, fragment.frag_cnt, fragment.datagram_id);
         Ok(None)
     }
 
@@ -403,12 +718,13 @@ impl PendingDatagram {
         Self { frag_cnt, total_len, fragments: vec![None; frag_cnt] }
     }
 
-    fn insert(&mut self, frag_ix: usize, frag_cnt: usize, total_len: usize, chunk: &[u8]) -> Result<()> {
+    fn insert(&mut self, frag_ix: usize, frag_cnt: usize, total_len: usize, chunk: &[u8]) -> Result<bool> {
         if self.frag_cnt != frag_cnt || self.total_len != total_len {
             bail!("fragment metadata changed within datagram");
         }
+        let duplicate = self.fragments[frag_ix].is_some();
         self.fragments[frag_ix] = Some(chunk.to_vec());
-        Ok(())
+        Ok(duplicate)
     }
 
     fn is_complete(&self) -> bool {
@@ -545,6 +861,62 @@ mod tests {
         assert!(reassembler.push(&frames[0]).unwrap().is_none());
         let out = reassembler.push(&frames[1]).unwrap().unwrap();
         assert_eq!(out, datagram);
+    }
+
+    #[test]
+    fn reliable_snapshot_uses_session_header_and_reassembles_byte_exact() {
+        let datagram = kudp_datagram(329);
+        let frames = fragment_datagram_with_options(&datagram, 7, false, true, 42).unwrap();
+        assert_eq!(frames.len(), 2);
+        assert!(frames.iter().all(|frame| frame.starts_with(RELIABLE_FRAG_MAGIC)));
+        assert!(frames.iter().all(|frame| frame.len() <= LORA_APP_MTU));
+
+        let first = parse_fragment(&frames[0]).unwrap();
+        assert_eq!(first.session_id, Some(42));
+        assert_eq!(first.datagram_id, 7);
+
+        let mut reassembler = Reassembler::default();
+        assert!(reassembler.push(&frames[1]).unwrap().is_none());
+        let out = reassembler.push(&frames[0]).unwrap().unwrap();
+        assert_eq!(out, datagram);
+    }
+
+    #[test]
+    fn reliable_fragment_builds_matching_ack() {
+        let datagram = kudp_datagram(329);
+        let frames = fragment_datagram_with_options(&datagram, 77, false, true, 9).unwrap();
+        let ack = ack_for_payload(&frames[0], 9).unwrap().unwrap();
+        assert_eq!(parse_ack(&ack).unwrap(), Some(AckFrame { session_id: 9, datagram_id: 77, frag_ix: 0 }));
+        assert!(ack_for_payload(&frames[0], 10).unwrap().is_none());
+    }
+
+    #[test]
+    fn duplicate_reliable_fragment_is_counted_but_kept_safe() {
+        let datagram = kudp_datagram(329);
+        let frames = fragment_datagram_with_options(&datagram, 88, false, true, 4).unwrap();
+        let mut stats = BridgeStats::default();
+        let mut reassembler = Reassembler::default();
+
+        assert!(reassembler.push_with_stats(&frames[0], &mut stats).unwrap().is_none());
+        assert!(reassembler.push_with_stats(&frames[0], &mut stats).unwrap().is_none());
+        assert_eq!(stats.duplicate_fragments, 1);
+        let out = reassembler.push_with_stats(&frames[1], &mut stats).unwrap().unwrap();
+        assert_eq!(out, datagram);
+    }
+
+    #[test]
+    fn ack_parser_rejects_corrupted_ack() {
+        let mut ack = make_ack(1, 2, 3);
+        ack.push(0xff);
+        assert!(parse_ack(&ack).is_err());
+    }
+
+    #[test]
+    fn retry_budget_stops_after_configured_retries() {
+        assert!(should_retry(0, 4));
+        assert!(should_retry(3, 4));
+        assert!(!should_retry(4, 4));
+        assert!(!should_retry(0, 0));
     }
 
     #[test]

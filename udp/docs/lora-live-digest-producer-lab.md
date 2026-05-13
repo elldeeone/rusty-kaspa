@@ -169,7 +169,8 @@ target/debug/lora-bridge rx \
   --udp-target 127.0.0.1:28515 \
   --count 4 \
   --timeout-ms 150000 \
-  --packet-idle-ms 600
+  --packet-idle-ms 600 \
+  --session-id 8
 ```
 
 Start LoRa TX, reading four live datagrams from a local UDP socket:
@@ -180,6 +181,10 @@ target/debug/lora-bridge tx \
   --input udp \
   --udp-bind 127.0.0.1:39000 \
   --count 4 \
+  --reliable-fragments \
+  --retry-count 4 \
+  --ack-timeout-ms 3000 \
+  --session-id 8 \
   --inter-frame-delay-ms 2500
 ```
 
@@ -208,15 +213,16 @@ produced index=3 kind=Delta seq=1003 epoch=3 virtual_blue_score=3 daa_score=3 by
 Observed LoRa TX output:
 
 ```text
-received UDP datagram 1/4 from 127.0.0.1:56562: 297 bytes
-received UDP datagram 2/4 from 127.0.0.1:56562: 200 bytes
-received UDP datagram 3/4 from 127.0.0.1:56562: 200 bytes
-received UDP datagram 4/4 from 127.0.0.1:56562: 200 bytes
+received UDP datagram 1/4 from 127.0.0.1:...: 297 bytes
+received UDP datagram 2/4 from 127.0.0.1:...: 200 bytes
+received UDP datagram 3/4 from 127.0.0.1:...: 200 bytes
+received UDP datagram 4/4 from 127.0.0.1:...: 200 bytes
 sent datagram 1/4 frame 1/2: app_payload=234 serial_bytes=240
-sent datagram 1/4 frame 2/2: app_payload=91 serial_bytes=97
+sent datagram 1/4 frame 2/2: app_payload=99 serial_bytes=105
 sent datagram 2/4 frame 1/1: app_payload=200 serial_bytes=206
 sent datagram 3/4 frame 1/1: app_payload=200 serial_bytes=206
 sent datagram 4/4 frame 1/1: app_payload=200 serial_bytes=206
+bridge_summary role=tx datagrams_sent=4 fragments_sent=5 retries=0
 ```
 
 Observed LoRa RX output:
@@ -227,6 +233,7 @@ recovered KUDP datagram 1/4: 297 bytes
 recovered KUDP datagram 2/4: 200 bytes
 recovered KUDP datagram 3/4: 200 bytes
 recovered KUDP datagram 4/4: 200 bytes
+bridge_summary role=rx datagrams_recovered=4 fragments_received=2 acks_sent=2
 ```
 
 Observed receiver kaspad logs:
@@ -263,3 +270,27 @@ epoch=0 kind=snapshot verified=true
 The observed progression above is the lab progress counter over an idle devnet
 node. Without `--lab-progress-counter`, the produced values reflect the RPC
 state directly and may remain unchanged unless the producer-side node advances.
+
+## Unattended Soak Harness
+
+Use the soak harness when you want the full live path without manually keeping
+five terminals coordinated:
+
+```bash
+./udp/tools/lora_live_soak_lab.sh \
+  --duration-seconds 1800 \
+  --inter-frame-delay-ms 2500 \
+  --interval-ms 500 \
+  --report /tmp/lora-live-soak-report.md
+```
+
+The script starts producer and receiver devnet kaspad instances, runs
+`lora-bridge rx` into receiver UDP ingest, runs reliable `lora-bridge tx`, runs
+the live producer, polls `getUdpIngestInfo`, and writes a markdown report with
+bridge summaries plus final `getUdpIngestInfo` and `getUdpDigests` samples.
+
+Current alpha limitation: `lora-bridge tx --input udp --count N` reads all
+`N` UDP datagrams before starting serial transmission. For long soaks this
+means RF transmission begins after the live producer has already emitted the
+configured batch. A production sidecar should stream UDP input directly into
+the RF scheduler.

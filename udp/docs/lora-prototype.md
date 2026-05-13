@@ -35,7 +35,8 @@ The prototype has three layers:
 - No `BlockV1` relay.
 - No transaction or mempool relay.
 - No LoRaWAN support.
-- No FEC, encryption, or production RF reliability layer.
+- No FEC, encryption, or production RF reliability layer beyond the alpha
+  bridge-local ACK/retry experiment.
 - No production signer/key-management story.
 - No claim that the live producer is a complete consensus-authentic digest
   oracle yet.
@@ -113,9 +114,11 @@ delta.bin    200 bytes
 snapshot.bin 329 bytes
 ```
 
-The default bridge inter-frame delay is `1500 ms`. In real hardware testing,
-`250 ms` let the first snapshot fragment through but dropped the second
-fragment. The live lab used `2500 ms`.
+Without bridge-local ACKs, the default bridge inter-frame delay is `1500 ms`.
+In real hardware testing, `250 ms` let the first snapshot fragment through but
+dropped the second fragment. With `--reliable-fragments`, 100 snapshots passed
+byte-exact at `250 ms`. The live lab still uses `2500 ms` because UDP-input TX
+is currently batch-oriented and long live runs need more margin.
 
 The repeatable reliability harness and current operating-envelope results are
 documented in [`lora-reliability-report.md`](lora-reliability-report.md).
@@ -126,6 +129,8 @@ Raw datagrams up to 234 bytes are sent unchanged as the LoRa application
 payload. Oversized datagrams are wrapped in a bridge-local fragmentation
 envelope:
 
+Best-effort envelope:
+
 ```text
 bytes 0..3   magic = "KLR1"
 bytes 4..7   datagram_id (u32 LE)
@@ -135,8 +140,31 @@ bytes 12..13 original_datagram_len (u16 LE)
 bytes 14..   KUDP byte slice
 ```
 
-This does not alter `KUDP`; it is an RF adapter envelope only. Reassembly
-removes the envelope and recovers the exact original `KUDP` datagram.
+Reliable alpha envelope:
+
+```text
+bytes 0..3   magic = "KLR2"
+bytes 4..7   session_id (u32 LE)
+bytes 8..11  datagram_id (u32 LE)
+bytes 12..13 frag_ix (u16 LE)
+bytes 14..15 frag_cnt (u16 LE)
+bytes 16..17 original_datagram_len (u16 LE)
+bytes 18..   KUDP byte slice
+```
+
+Reliable ACK envelope:
+
+```text
+bytes 0..3   magic = "KLA1"
+bytes 4..7   session_id (u32 LE)
+bytes 8..11  datagram_id (u32 LE)
+bytes 12..13 frag_ix (u16 LE)
+```
+
+These envelopes do not alter `KUDP`; they are RF adapter envelopes only.
+Reassembly removes the envelope and recovers the exact original `KUDP`
+datagram. The reliable path ACKs each fragmented frame, retransmits when ACKs
+time out, and treats duplicate fragments as safe.
 
 ## Build
 
@@ -464,6 +492,9 @@ Successful real-hardware runs on `/dev/lora-left -> /dev/lora-right`:
   through 1500 ms; snapshots failed from 250 ms through 1250 ms and were
   byte-exact at 1500 ms. Use 2500 ms for live multi-datagram runs until a
   larger sweep proves lower pacing has enough margin.
+- Reliable alpha sweep: 100 deltas and 100 snapshots were byte-exact at 250 ms
+  with `--reliable-fragments`; no retries, timeouts, corrupt outputs, or
+  duplicates were observed.
 
 ## Troubleshooting
 
@@ -524,8 +555,13 @@ Compression opportunities:
 Fragmentation design:
 
 - Current fragmentation is bridge-local and intentionally outside `KUDP`.
-- For broader RF adapters, decide whether this remains per-transport or becomes
-  a standard RF adaptation layer with explicit versioning and replay handling.
+- Retry and fragmentation should remain bridge-local for LoRa alpha. Making
+  them core `KUDP` semantics would leak one slow RF transport into the digest
+  wire format.
+- LoRa should remain a sidecar bridge unless multiple RF adapters need the same
+  scheduler, retry, and observability layer. A first-class transport adapter
+  would need streaming input, flow control, replay windows, and a clearer
+  operator lifecycle.
 
 Throughput expectations and risks:
 
@@ -533,5 +569,10 @@ Throughput expectations and risks:
 - 200-byte deltas fit; 297-329 byte snapshots require two fragments.
 - Inter-frame delay dominates throughput.
 - Missing fragments are expected on aggressive pacing.
-- No FEC means a single lost fragment drops the whole oversized datagram.
+- ACK/retry can recover missing fragments when the reverse link works. FEC
+  becomes worth adding only when ACK turnaround or bidirectional RF is the
+  limiting factor.
 - No encryption means RF observers can read the digest payload.
+- The minimum production-relevant digest schema still needs real pruning proof
+  commitment, UTXO MuHash, kept headers commitment or explicit absence rule,
+  signer policy, and replay/window policy.
