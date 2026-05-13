@@ -25,6 +25,8 @@ RECEIVER_UDP="127.0.0.1:28520"
 BRIDGE_UDP="127.0.0.1:39020"
 LAB_PROGRESS_COUNTER="0"
 PROVENANCE_REPORT="0"
+LAB_DIVERGE_VIRTUAL_BLUE_SCORE="0"
+POST_RX_WAIT_SECONDS="6"
 
 usage() {
   cat <<USAGE
@@ -53,6 +55,9 @@ Options:
   --network NAME              Producer network tag (default: devnet)
   --lab-progress-counter      Add lab progression to epoch/score fields
   --provenance-report         Emit producer field provenance JSON to live-producer.log
+  --lab-diverge-virtual-blue-score
+                              Offset virtual_blue_score by one for divergence testing
+  --post-rx-wait-seconds N    Wait before final RPC collection (default: 6)
   -h, --help                  Show this help
 USAGE
 }
@@ -77,6 +82,8 @@ while [[ $# -gt 0 ]]; do
     --network) NETWORK="${2:-}"; shift 2 ;;
     --lab-progress-counter) LAB_PROGRESS_COUNTER="1"; shift ;;
     --provenance-report) PROVENANCE_REPORT="1"; shift ;;
+    --lab-diverge-virtual-blue-score) LAB_DIVERGE_VIRTUAL_BLUE_SCORE="1"; shift ;;
+    --post-rx-wait-seconds) POST_RX_WAIT_SECONDS="${2:-}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 1 ;;
   esac
@@ -226,6 +233,9 @@ fi
 if [[ "${PROVENANCE_REPORT}" == "1" ]]; then
   PRODUCER_ARGS+=(--provenance-report)
 fi
+if [[ "${LAB_DIVERGE_VIRTUAL_BLUE_SCORE}" == "1" ]]; then
+  PRODUCER_ARGS+=(--lab-diverge-virtual-blue-score)
+fi
 "${ROOT_DIR}/target/debug/udp-live-digest-producer" \
   "${PRODUCER_ARGS[@]}" \
   >"${PRODUCER_LOG}" 2>&1 &
@@ -245,8 +255,12 @@ wait "${PRODUCER_PID}" || PRODUCER_STATUS=$?
 wait "${TX_PID}" || TX_STATUS=$?
 wait "${RX_PID}" || RX_STATUS=$?
 
+if [[ "${POST_RX_WAIT_SECONDS}" -gt 0 ]]; then
+  sleep "${POST_RX_WAIT_SECONDS}"
+fi
+
 "${ROOT_DIR}/target/debug/udp-rpc-digests" --rpc-url "grpc://${RECEIVER_RPC}" info >"${INFO_JSON}" 2>&1 || true
-"${ROOT_DIR}/target/debug/udp-rpc-digests" --rpc-url "grpc://${RECEIVER_RPC}" digests --limit 10 --check-monotonic --producer-log "${PRODUCER_LOG}" >"${DIGESTS_JSON}" 2>&1 || true
+"${ROOT_DIR}/target/debug/udp-rpc-digests" --rpc-url "grpc://${RECEIVER_RPC}" digests --limit 10 --check-monotonic --producer-log "${PRODUCER_LOG}" --compare-local >"${DIGESTS_JSON}" 2>&1 || true
 
 {
   echo "# LoRa Live Soak Report"
@@ -265,6 +279,8 @@ wait "${RX_PID}" || RX_STATUS=$?
   echo "- Snapshot every: \`${SNAPSHOT_EVERY}\`"
   echo "- Lab progress counter: \`${LAB_PROGRESS_COUNTER}\`"
   echo "- Provenance report: \`${PROVENANCE_REPORT}\`"
+  echo "- Lab diverge virtual blue score: \`${LAB_DIVERGE_VIRTUAL_BLUE_SCORE}\`"
+  echo "- Post RX wait: \`${POST_RX_WAIT_SECONDS}\` seconds"
   echo "- Expected datagram budget: \`${EXPECTED_DATAGRAM_MS}\` ms"
   echo "- RX timeout: \`${RX_TIMEOUT_MS}\` ms"
   echo "- Session id: \`${SESSION_ID}\`"

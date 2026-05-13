@@ -128,6 +128,8 @@ DigestV1 field authenticity and remaining production data gaps are tracked in
 [`lora-digest-authenticity.md`](lora-digest-authenticity.md).
 The current keep-`DigestV1` schema decision is documented in
 [`lora-digest-schema-decision.md`](lora-digest-schema-decision.md).
+Two-node agreement/divergence behavior is documented in
+[`lora-two-node-divergence-lab.md`](lora-two-node-divergence-lab.md).
 
 ## Bridge Protocol
 

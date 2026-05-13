@@ -208,3 +208,5 @@ The completed live soak result is summarized in
 [`udp/docs/lora-live-soak-report.md`](../../docs/lora-live-soak-report.md).
 Digest field authenticity is tracked in
 [`udp/docs/lora-digest-authenticity.md`](../../docs/lora-digest-authenticity.md).
+Two-node agreement/divergence behavior is documented in
+[`udp/docs/lora-two-node-divergence-lab.md`](../../docs/lora-two-node-divergence-lab.md).

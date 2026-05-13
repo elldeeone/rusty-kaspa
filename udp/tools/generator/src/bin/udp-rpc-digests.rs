@@ -37,6 +37,10 @@ enum Command {
         /// Compare latest produced snapshot provenance from this log against received RPC fields.
         #[arg(long)]
         producer_log: Option<PathBuf>,
+
+        /// Compare latest received snapshot against this receiver node's local consensus RPC state.
+        #[arg(long)]
+        compare_local: bool,
     },
 }
 
@@ -50,7 +54,7 @@ async fn main() -> Result<()> {
             let response = client.get_udp_ingest_info(None).await.context("get_udp_ingest_info")?;
             println!("{}", serde_json::to_string_pretty(&response).context("serialize info response")?);
         }
-        Command::Digests { from_epoch, limit, check_monotonic, producer_log } => {
+        Command::Digests { from_epoch, limit, check_monotonic, producer_log, compare_local } => {
             let response = client.get_udp_digests(from_epoch, limit, None).await.context("get_udp_digests")?;
             println!("{}", serde_json::to_string_pretty(&response).context("serialize digests response")?);
             if check_monotonic {
@@ -58,6 +62,9 @@ async fn main() -> Result<()> {
             }
             if let Some(path) = producer_log {
                 compare_producer_log(&path, &response)?;
+            }
+            if compare_local {
+                compare_local_state(&client, &response).await?;
             }
         }
     }
@@ -134,6 +141,61 @@ fn compare_producer_log(path: &PathBuf, response: &kaspa_rpc_core::GetUdpDigests
         mismatches.is_empty(),
         checks.len(),
         mismatches
+    );
+    Ok(())
+}
+
+async fn compare_local_state(client: &GrpcClient, response: &kaspa_rpc_core::GetUdpDigestsResponse) -> Result<()> {
+    let received = response
+        .digests
+        .iter()
+        .find(|record| record.kind == "snapshot")
+        .context("RPC response did not contain a received snapshot")?;
+    let summary = &received.summary;
+    let dag = client.get_block_dag_info().await.context("get_block_dag_info")?;
+    let sink_blue_score = client.get_sink_blue_score().await.context("get_sink_blue_score")?;
+    let sink_block = client.get_block(dag.sink, false).await.ok();
+    let local_blue_work = sink_block.as_ref().map(|block| {
+        let bytes = block.header.blue_work.to_be_bytes();
+        let mut out = [0u8; 32];
+        out[32 - bytes.len()..].copy_from_slice(&bytes);
+        faster_hex::hex_string(&out)
+    });
+
+    let local_pruning_point = dag.pruning_point_hash.to_string();
+    let local_sink = dag.sink.to_string();
+    let local_blue_score = sink_blue_score.to_string();
+    let local_daa_score = dag.virtual_daa_score.to_string();
+    let received_blue_score = summary.virtual_blue_score.to_string();
+    let received_daa_score = summary.daa_score.to_string();
+    let checks = [
+        ("pruning_point", summary.pruning_point.as_deref(), Some(local_pruning_point.as_str())),
+        ("virtual_selected_parent", Some(summary.virtual_selected_parent.as_str()), Some(local_sink.as_str())),
+        ("virtual_blue_score", Some(received_blue_score.as_str()), Some(local_blue_score.as_str())),
+        ("daa_score", Some(received_daa_score.as_str()), Some(local_daa_score.as_str())),
+        ("blue_work", Some(summary.blue_work_hex.as_str()), local_blue_work.as_deref()),
+    ];
+
+    let mismatches: Vec<_> = checks
+        .iter()
+        .filter_map(
+            |(field, received, local)| {
+                if received == local {
+                    None
+                } else {
+                    Some(format!("{field}: received={received:?} local={local:?}"))
+                }
+            },
+        )
+        .collect();
+    let info = client.get_udp_ingest_info(None).await.context("get_udp_ingest_info")?;
+    eprintln!(
+        "udp_digest_local_compare agreement={} compared_fields={} mismatches={:?} divergence_detected={} divergence_epoch={:?}",
+        mismatches.is_empty(),
+        checks.len(),
+        mismatches,
+        info.divergence.detected,
+        info.divergence.last_mismatch_epoch
     );
     Ok(())
 }

@@ -64,6 +64,10 @@ struct Args {
     #[arg(long)]
     lab_progress_counter: bool,
 
+    /// Intentionally offset virtual_blue_score by one for divergence lab testing.
+    #[arg(long)]
+    lab_diverge_virtual_blue_score: bool,
+
     /// Emit a JSON provenance report for each produced digest to stderr.
     #[arg(long)]
     provenance_report: bool,
@@ -124,7 +128,7 @@ async fn main() -> Result<()> {
 
     for index in 0..args.count {
         let kind = choose_kind(index, args.snapshot_first, args.snapshot_every);
-        let state = LiveState::query(&client, index, args.lab_progress_counter).await?;
+        let state = LiveState::query(&client, index, args.lab_progress_counter, args.lab_diverge_virtual_blue_score).await?;
         let seq = args.initial_seq.wrapping_add(index as u64);
         let datagram = match kind {
             DigestKind::Snapshot => {
@@ -138,7 +142,17 @@ async fn main() -> Result<()> {
         };
         output.write(index, kind, &datagram)?;
         if args.provenance_report {
-            print_provenance_report(index, kind, seq, args.source_id, args.signer_id, &state, &signer_hex, args.lab_progress_counter)?;
+            print_provenance_report(
+                index,
+                kind,
+                seq,
+                args.source_id,
+                args.signer_id,
+                &state,
+                &signer_hex,
+                args.lab_progress_counter,
+                args.lab_diverge_virtual_blue_score,
+            )?;
         }
         eprintln!(
             "produced index={} kind={:?} seq={} epoch={} virtual_blue_score={} daa_score={} bytes={} sink={} pruning_point={}",
@@ -176,10 +190,11 @@ struct LiveState {
 }
 
 impl LiveState {
-    async fn query(client: &GrpcClient, index: u32, lab_progress_counter: bool) -> Result<Self> {
+    async fn query(client: &GrpcClient, index: u32, lab_progress_counter: bool, lab_diverge_virtual_blue_score: bool) -> Result<Self> {
         let dag = client.get_block_dag_info().await.context("get_block_dag_info")?;
         let sink_blue_score = client.get_sink_blue_score().await.context("get_sink_blue_score")?;
         let progress = if lab_progress_counter { index as u64 } else { 0 };
+        let blue_score_offset = if lab_diverge_virtual_blue_score { 1 } else { 0 };
 
         let sink = dag.sink;
         let sink_block = client.get_block(sink, false).await.ok();
@@ -198,7 +213,7 @@ impl LiveState {
             pruning_proof_commitment: placeholder_hash("pruning_proof_commitment", dag.pruning_point_hash, dag.virtual_daa_score),
             utxo_muhash,
             virtual_selected_parent: sink,
-            virtual_blue_score: sink_blue_score.saturating_add(progress),
+            virtual_blue_score: sink_blue_score.saturating_add(progress).saturating_add(blue_score_offset),
             daa_score: dag.virtual_daa_score.saturating_add(progress),
             blue_work,
             sink,
@@ -355,6 +370,7 @@ fn print_provenance_report(
     state: &LiveState,
     signer_hex: &str,
     lab_progress_counter: bool,
+    lab_diverge_virtual_blue_score: bool,
 ) -> Result<()> {
     let mut fields = vec![
         provenance_field(
@@ -388,9 +404,9 @@ fn print_provenance_report(
         provenance_field(
             "virtual_blue_score",
             state.virtual_blue_score.to_string(),
-            progress_auth(lab_progress_counter),
-            progress_source("getSinkBlueScore.blue_score", lab_progress_counter),
-            progress_note(lab_progress_counter),
+            blue_score_auth(lab_progress_counter, lab_diverge_virtual_blue_score),
+            blue_score_source(lab_progress_counter, lab_diverge_virtual_blue_score),
+            blue_score_note(lab_progress_counter, lab_diverge_virtual_blue_score),
         ),
         provenance_field(
             "daa_score",
@@ -499,6 +515,33 @@ fn progress_note(lab_progress_counter: bool) -> &'static str {
     }
 }
 
+fn blue_score_auth(lab_progress_counter: bool, lab_diverge_virtual_blue_score: bool) -> &'static str {
+    if lab_progress_counter || lab_diverge_virtual_blue_score {
+        "lab-derived"
+    } else {
+        "real"
+    }
+}
+
+fn blue_score_source(lab_progress_counter: bool, lab_diverge_virtual_blue_score: bool) -> String {
+    let mut source = "getSinkBlueScore.blue_score".to_string();
+    if lab_progress_counter {
+        source.push_str(" + --lab-progress-counter index");
+    }
+    if lab_diverge_virtual_blue_score {
+        source.push_str(" + --lab-diverge-virtual-blue-score");
+    }
+    source
+}
+
+fn blue_score_note(lab_progress_counter: bool, lab_diverge_virtual_blue_score: bool) -> &'static str {
+    if lab_diverge_virtual_blue_score {
+        "intentional one-point virtual_blue_score mismatch for divergence lab testing"
+    } else {
+        progress_note(lab_progress_counter)
+    }
+}
+
 fn placeholder_hash(label: &'static str, seed: Hash, epoch: u64) -> Hash {
     Hash::from_bytes(placeholder_bytes(label, seed, epoch))
 }
@@ -530,6 +573,13 @@ mod tests {
         assert_eq!(progress_auth(true), "lab-derived");
         assert_eq!(progress_source("rpc.field", false), "rpc.field");
         assert_eq!(progress_source("rpc.field", true), "rpc.field + --lab-progress-counter index");
+    }
+
+    #[test]
+    fn blue_score_divergence_classification_is_explicit() {
+        assert_eq!(blue_score_auth(false, true), "lab-derived");
+        assert_eq!(blue_score_source(false, true), "getSinkBlueScore.blue_score + --lab-diverge-virtual-blue-score");
+        assert!(blue_score_note(false, true).contains("mismatch"));
     }
 
     #[test]
