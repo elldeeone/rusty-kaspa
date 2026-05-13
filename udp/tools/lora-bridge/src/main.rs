@@ -83,6 +83,10 @@ struct TxArgs {
     /// Bridge datagram id used in fragmented LoRa envelopes.
     #[arg(long, default_value_t = 1)]
     datagram_id: u32,
+
+    /// Number of datagrams to read from the input source and send.
+    #[arg(long, default_value_t = 1)]
+    count: usize,
 }
 
 #[derive(Args, Debug)]
@@ -148,29 +152,34 @@ fn main() -> Result<()> {
 }
 
 fn tx(args: TxArgs) -> Result<()> {
-    let datagram = match args.input {
-        InputKind::File => read_input_file(args.file.as_ref().context("--file is required")?)?,
-        InputKind::Udp => read_udp_datagram(args.udp_bind.context("--udp-bind is required")?)?,
-    };
-    ensure_kudp(&datagram)?;
-
     let prefix = parse_fixed_prefix(&args.fixed_prefix_hex)?;
-    let frames = fragment_datagram(&datagram, args.datagram_id, args.no_fragment)?;
+    let datagrams = read_input_datagrams(&args)?;
     let mut port = open_serial(&args.serial)?;
     let delay = Duration::from_millis(args.inter_frame_delay_ms);
 
-    for (idx, frame) in frames.iter().enumerate() {
-        if frame.len() > LORA_APP_MTU {
-            bail!("internal frame too large: {} > {}", frame.len(), LORA_APP_MTU);
-        }
-        let mut wire = Vec::with_capacity(WAVESHARE_FIXED_PREFIX_LEN + frame.len());
-        wire.extend_from_slice(&prefix);
-        wire.extend_from_slice(frame);
-        port.write_all(&wire).context("write serial")?;
-        port.flush().context("flush serial")?;
-        eprintln!("sent frame {}/{}: app_payload={} serial_bytes={}", idx + 1, frames.len(), frame.len(), wire.len());
-        if idx + 1 < frames.len() && !delay.is_zero() {
-            std::thread::sleep(delay);
+    for (datagram_idx, datagram) in datagrams.iter().enumerate() {
+        let frames = fragment_datagram(datagram, args.datagram_id.wrapping_add(datagram_idx as u32), args.no_fragment)?;
+        for (idx, frame) in frames.iter().enumerate() {
+            if frame.len() > LORA_APP_MTU {
+                bail!("internal frame too large: {} > {}", frame.len(), LORA_APP_MTU);
+            }
+            let mut wire = Vec::with_capacity(WAVESHARE_FIXED_PREFIX_LEN + frame.len());
+            wire.extend_from_slice(&prefix);
+            wire.extend_from_slice(frame);
+            port.write_all(&wire).context("write serial")?;
+            port.flush().context("flush serial")?;
+            eprintln!(
+                "sent datagram {}/{} frame {}/{}: app_payload={} serial_bytes={}",
+                datagram_idx + 1,
+                datagrams.len(),
+                idx + 1,
+                frames.len(),
+                frame.len(),
+                wire.len()
+            );
+            if (datagram_idx + 1 < datagrams.len() || idx + 1 < frames.len()) && !delay.is_zero() {
+                std::thread::sleep(delay);
+            }
         }
     }
 
@@ -230,13 +239,32 @@ fn read_input_file(path: &PathBuf) -> Result<Vec<u8>> {
     }
 }
 
-fn read_udp_datagram(bind: SocketAddr) -> Result<Vec<u8>> {
+fn read_input_datagrams(args: &TxArgs) -> Result<Vec<Vec<u8>>> {
+    if args.count == 0 {
+        bail!("--count must be greater than zero");
+    }
+    match args.input {
+        InputKind::File => {
+            let datagram = read_input_file(args.file.as_ref().context("--file is required")?)?;
+            ensure_kudp(&datagram)?;
+            Ok(vec![datagram])
+        }
+        InputKind::Udp => read_udp_datagrams(args.udp_bind.context("--udp-bind is required")?, args.count),
+    }
+}
+
+fn read_udp_datagrams(bind: SocketAddr, count: usize) -> Result<Vec<Vec<u8>>> {
     let socket = UdpSocket::bind(bind).with_context(|| format!("bind UDP {bind}"))?;
-    let mut buf = vec![0u8; 65_535];
-    let (len, peer) = socket.recv_from(&mut buf).context("receive UDP datagram")?;
-    buf.truncate(len);
-    eprintln!("received UDP datagram from {peer}: {len} bytes");
-    Ok(buf)
+    let mut datagrams = Vec::with_capacity(count);
+    for idx in 0..count {
+        let mut buf = vec![0u8; 65_535];
+        let (len, peer) = socket.recv_from(&mut buf).context("receive UDP datagram")?;
+        buf.truncate(len);
+        ensure_kudp(&buf)?;
+        eprintln!("received UDP datagram {}/{} from {peer}: {len} bytes", idx + 1, count);
+        datagrams.push(buf);
+    }
+    Ok(datagrams)
 }
 
 fn write_output(args: &RxArgs, datagram: &[u8]) -> Result<()> {

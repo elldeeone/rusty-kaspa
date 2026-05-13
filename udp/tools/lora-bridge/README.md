@@ -146,3 +146,7 @@ files.
 The follow-up devnet lab that forwards recovered LoRa datagrams into kaspad's
 existing UDP ingest path is documented in
 [`udp/docs/lora-end-to-end-lab.md`](../../docs/lora-end-to-end-lab.md).
+
+The live producer lab that feeds current devnet/simnet RPC state into the same
+LoRa bridge path is documented in
+[`udp/docs/lora-live-digest-producer-lab.md`](../../docs/lora-live-digest-producer-lab.md).

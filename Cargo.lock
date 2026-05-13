@@ -6356,11 +6356,13 @@ dependencies = [
  "kaspa-consensus-core",
  "kaspa-core",
  "kaspa-grpc-client",
+ "kaspa-hashes",
  "kaspa-rpc-core",
  "kaspa-txscript",
  "kaspa-udp-sidechannel",
  "secp256k1",
  "serde_json",
+ "sha2",
  "tokio",
 ]
 

@@ -12,6 +12,7 @@ anyhow = "1.0"
 faster-hex.workspace = true
 kaspa-core = { path = "../../../core" }
 kaspa-consensus-core = { path = "../../../consensus/core" }
+kaspa-hashes = { path = "../../../crypto/hashes" }
 kaspa-udp-sidechannel = { path = "../../../components/udp-sidechannel" }
 kaspa-addresses = { path = "../../../crypto/addresses" }
 kaspa-txscript = { path = "../../../crypto/txscript" }
@@ -22,3 +23,4 @@ secp256k1.workspace = true
 crc32fast.workspace = true
 borsh.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
