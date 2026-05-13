@@ -10,8 +10,9 @@ DURATION_SECONDS="1800"
 COUNT=""
 INTERVAL_MS="500"
 INTER_FRAME_DELAY_MS="2500"
-RETRY_COUNT="4"
-ACK_TIMEOUT_MS="3000"
+RETRY_COUNT="8"
+ACK_TIMEOUT_MS="6000"
+SNAPSHOT_EVERY="50"
 SESSION_ID="17"
 REPORT_PATH="/tmp/lora-live-soak-report.md"
 WORKDIR=""
@@ -37,8 +38,9 @@ Options:
   --count N                   Produced datagram count (default: derived from duration)
   --interval-ms N             Producer interval (default: 500)
   --inter-frame-delay-ms N    LoRa TX delay (default: 2500)
-  --retry-count N             Reliable fragment retry count (default: 4)
-  --ack-timeout-ms N          Reliable fragment ACK timeout (default: 3000)
+  --retry-count N             Reliable fragment retry count (default: 8)
+  --ack-timeout-ms N          Reliable fragment ACK timeout (default: 6000)
+  --snapshot-every N          Emit a snapshot every N datagrams after first; 0 disables (default: 50)
   --session-id N              Reliable fragment session id (default: 17)
   --report PATH               Markdown report path (default: /tmp/lora-live-soak-report.md)
   --workdir DIR               Scratch directory (default: mktemp)
@@ -58,6 +60,7 @@ while [[ $# -gt 0 ]]; do
     --inter-frame-delay-ms) INTER_FRAME_DELAY_MS="${2:-}"; shift 2 ;;
     --retry-count) RETRY_COUNT="${2:-}"; shift 2 ;;
     --ack-timeout-ms) ACK_TIMEOUT_MS="${2:-}"; shift 2 ;;
+    --snapshot-every) SNAPSHOT_EVERY="${2:-}"; shift 2 ;;
     --session-id) SESSION_ID="${2:-}"; shift 2 ;;
     --report) REPORT_PATH="${2:-}"; shift 2 ;;
     --workdir) WORKDIR="${2:-}"; shift 2 ;;
@@ -195,7 +198,7 @@ echo "starting live producer count=${COUNT}"
   --count "${COUNT}" \
   --interval-ms "${INTERVAL_MS}" \
   --snapshot-first \
-  --snapshot-every 25 \
+  --snapshot-every "${SNAPSHOT_EVERY}" \
   --lab-progress-counter \
   >"${PRODUCER_LOG}" 2>&1 &
 PRODUCER_PID=$!
@@ -228,6 +231,7 @@ wait "${RX_PID}"
   echo "- Inter-frame delay: \`${INTER_FRAME_DELAY_MS}\` ms"
   echo "- Retry count: \`${RETRY_COUNT}\`"
   echo "- ACK timeout: \`${ACK_TIMEOUT_MS}\` ms"
+  echo "- Snapshot every: \`${SNAPSHOT_EVERY}\`"
   echo "- Session id: \`${SESSION_ID}\`"
   echo "- Workdir: \`${WORKDIR}\`"
   echo
