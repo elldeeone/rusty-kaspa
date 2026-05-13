@@ -124,7 +124,9 @@ cargo run -p lora-bridge -- tx \
 
 The reliable envelope is bridge-local (`KLR2` fragments plus `KLA1` ACKs). It
 does not alter the recovered `KUDP` datagram bytes and does not change
-consensus or core UDP side-channel semantics.
+consensus or core UDP side-channel semantics. `--group-id` is accepted as an
+alias-style override for `--session-id` when several bridge groups share the
+same RF channel.
 
 Receiver:
 

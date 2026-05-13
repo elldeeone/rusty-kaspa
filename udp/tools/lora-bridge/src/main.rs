@@ -97,6 +97,10 @@ struct TxArgs {
     #[arg(long, default_value_t = 1)]
     session_id: u32,
 
+    /// Alias for --session-id when multiple bridge groups share the same RF channel.
+    #[arg(long)]
+    group_id: Option<u32>,
+
     /// Only allow single-packet datagrams; fail instead of fragmenting.
     #[arg(long)]
     no_fragment: bool,
@@ -150,6 +154,10 @@ struct RxArgs {
     /// Expected bridge-local session id for reliable fragment ACKs.
     #[arg(long, default_value_t = 1)]
     session_id: u32,
+
+    /// Alias for --session-id when multiple bridge groups share the same RF channel.
+    #[arg(long)]
+    group_id: Option<u32>,
 }
 
 #[derive(Args, Debug)]
@@ -160,6 +168,18 @@ struct ConfigReadArgs {
     /// Configuration read command. Default is c10009 for Waveshare/SX126X register read.
     #[arg(long, default_value = "c10009")]
     command_hex: String,
+}
+
+impl TxArgs {
+    fn effective_session_id(&self) -> u32 {
+        self.group_id.unwrap_or(self.session_id)
+    }
+}
+
+impl RxArgs {
+    fn effective_session_id(&self) -> u32 {
+        self.group_id.unwrap_or(self.session_id)
+    }
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -190,11 +210,11 @@ fn tx(args: TxArgs) -> Result<()> {
     let mut port = open_serial(&args.serial)?;
     let mut stats = BridgeStats::default();
     let started_at = Instant::now();
+    let session_id = args.effective_session_id();
 
     for (datagram_idx, datagram) in datagrams.iter().enumerate() {
         let datagram_id = args.datagram_id.wrapping_add(datagram_idx as u32);
-        let frames =
-            fragment_datagram_with_options(datagram, datagram_id, args.no_fragment, args.reliable_fragments, args.session_id)?;
+        let frames = fragment_datagram_with_options(datagram, datagram_id, args.no_fragment, args.reliable_fragments, session_id)?;
         let delay = Duration::from_millis(args.inter_frame_delay_ms.unwrap_or_else(|| adaptive_delay_ms(frames.len())));
         for (idx, frame) in frames.iter().enumerate() {
             if frame.len() > LORA_APP_MTU {
@@ -202,7 +222,7 @@ fn tx(args: TxArgs) -> Result<()> {
             }
             let frag_ix = fragment_index(frame).unwrap_or(idx as u16);
             let (attempts, serial_bytes) = if args.reliable_fragments && is_reliable_fragment(frame) {
-                write_reliable_frame(&mut *port, &prefix, frame, args.session_id, datagram_id, frag_ix, &args, &mut stats)?
+                write_reliable_frame(&mut *port, &prefix, frame, session_id, datagram_id, frag_ix, &args, &mut stats)?
             } else {
                 let serial_bytes = write_lora_app_payload(&mut *port, &prefix, frame)?;
                 (1, serial_bytes)
@@ -242,6 +262,7 @@ fn rx(args: RxArgs) -> Result<()> {
     let mut recovered = 0usize;
     let mut stats = BridgeStats::default();
     let started_at = Instant::now();
+    let session_id = args.effective_session_id();
 
     while recovered < args.count {
         let raw = match read_lora_packet(&mut *port, deadline, packet_idle) {
@@ -268,7 +289,7 @@ fn rx(args: RxArgs) -> Result<()> {
         if app_payload.starts_with(ACK_MAGIC) {
             continue;
         }
-        match ack_for_payload(app_payload, args.session_id) {
+        match ack_for_payload(app_payload, session_id) {
             Ok(Some(ack)) => {
                 if args.ack_fragments {
                     write_lora_app_payload(&mut *port, &ack_prefix, &ack)?;
@@ -917,6 +938,42 @@ mod tests {
         assert!(should_retry(3, 4));
         assert!(!should_retry(4, 4));
         assert!(!should_retry(0, 0));
+    }
+
+    #[test]
+    fn group_id_overrides_session_id_for_reliable_domain() {
+        let tx = TxArgs {
+            serial: SerialArgs { serial: "/dev/null".into(), baud: DEFAULT_BAUD, read_timeout_ms: 250 },
+            input: InputKind::File,
+            file: None,
+            udp_bind: None,
+            fixed_prefix_hex: "000041000041".to_string(),
+            inter_frame_delay_ms: None,
+            reliable_fragments: true,
+            retry_count: 4,
+            ack_timeout_ms: 3_000,
+            session_id: 1,
+            group_id: Some(99),
+            no_fragment: false,
+            datagram_id: 1,
+            count: 1,
+        };
+        let rx = RxArgs {
+            serial: SerialArgs { serial: "/dev/null".into(), baud: DEFAULT_BAUD, read_timeout_ms: 250 },
+            output: OutputKind::File,
+            file: None,
+            udp_target: None,
+            count: 1,
+            timeout_ms: 30_000,
+            packet_idle_ms: 600,
+            fixed_prefix_hex: "000041000041".to_string(),
+            ack_fragments: true,
+            session_id: 2,
+            group_id: Some(100),
+        };
+
+        assert_eq!(tx.effective_session_id(), 99);
+        assert_eq!(rx.effective_session_id(), 100);
     }
 
     #[test]

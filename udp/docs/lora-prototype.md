@@ -144,7 +144,7 @@ Reliable alpha envelope:
 
 ```text
 bytes 0..3   magic = "KLR2"
-bytes 4..7   session_id (u32 LE)
+bytes 4..7   session_id/group_id (u32 LE)
 bytes 8..11  datagram_id (u32 LE)
 bytes 12..13 frag_ix (u16 LE)
 bytes 14..15 frag_cnt (u16 LE)
@@ -156,7 +156,7 @@ Reliable ACK envelope:
 
 ```text
 bytes 0..3   magic = "KLA1"
-bytes 4..7   session_id (u32 LE)
+bytes 4..7   session_id/group_id (u32 LE)
 bytes 8..11  datagram_id (u32 LE)
 bytes 12..13 frag_ix (u16 LE)
 ```
@@ -164,7 +164,9 @@ bytes 12..13 frag_ix (u16 LE)
 These envelopes do not alter `KUDP`; they are RF adapter envelopes only.
 Reassembly removes the envelope and recovers the exact original `KUDP`
 datagram. The reliable path ACKs each fragmented frame, retransmits when ACKs
-time out, and treats duplicate fragments as safe.
+time out, and treats duplicate fragments as safe. `--group-id` overrides
+`--session-id` for operators who prefer to describe the reliability domain as a
+bridge group on a shared RF channel.
 
 ## Build
 
