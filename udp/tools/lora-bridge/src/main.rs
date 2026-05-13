@@ -81,9 +81,13 @@ struct TxArgs {
     #[arg(long)]
     inter_frame_delay_ms: Option<u64>,
 
-    /// Enable bridge-local ACK/retry for fragmented datagrams. Raw one-packet deltas are still sent once.
+    /// Enable bridge-local ACK/retry for fragmented datagrams. Raw one-packet deltas are still sent once unless --reliable-all is set.
     #[arg(long)]
     reliable_fragments: bool,
+
+    /// Wrap all KUDP datagrams in the reliable envelope, including single-packet deltas.
+    #[arg(long)]
+    reliable_all: bool,
 
     /// Retry count per fragment when --reliable-fragments is enabled.
     #[arg(long, default_value_t = 4)]
@@ -214,14 +218,21 @@ fn tx(args: TxArgs) -> Result<()> {
 
     for (datagram_idx, datagram) in datagrams.iter().enumerate() {
         let datagram_id = args.datagram_id.wrapping_add(datagram_idx as u32);
-        let frames = fragment_datagram_with_options(datagram, datagram_id, args.no_fragment, args.reliable_fragments, session_id)?;
+        let frames = fragment_datagram_with_options(
+            datagram,
+            datagram_id,
+            args.no_fragment,
+            args.reliable_fragments || args.reliable_all,
+            args.reliable_all,
+            session_id,
+        )?;
         let delay = Duration::from_millis(args.inter_frame_delay_ms.unwrap_or_else(|| adaptive_delay_ms(frames.len())));
         for (idx, frame) in frames.iter().enumerate() {
             if frame.len() > LORA_APP_MTU {
                 bail!("internal frame too large: {} > {}", frame.len(), LORA_APP_MTU);
             }
             let frag_ix = fragment_index(frame).unwrap_or(idx as u16);
-            let (attempts, serial_bytes) = if args.reliable_fragments && is_reliable_fragment(frame) {
+            let (attempts, serial_bytes) = if (args.reliable_fragments || args.reliable_all) && is_reliable_fragment(frame) {
                 write_reliable_frame(&mut *port, &prefix, frame, session_id, datagram_id, frag_ix, &args, &mut stats)?
             } else {
                 let serial_bytes = write_lora_app_payload(&mut *port, &prefix, frame)?;
@@ -489,7 +500,7 @@ fn should_retry(attempt: usize, retry_count: usize) -> bool {
 
 #[cfg(test)]
 fn fragment_datagram(datagram: &[u8], datagram_id: u32, no_fragment: bool) -> Result<Vec<Vec<u8>>> {
-    fragment_datagram_with_options(datagram, datagram_id, no_fragment, false, 0)
+    fragment_datagram_with_options(datagram, datagram_id, no_fragment, false, false, 0)
 }
 
 fn fragment_datagram_with_options(
@@ -497,10 +508,11 @@ fn fragment_datagram_with_options(
     datagram_id: u32,
     no_fragment: bool,
     reliable: bool,
+    reliable_all: bool,
     session_id: u32,
 ) -> Result<Vec<Vec<u8>>> {
     ensure_kudp(datagram)?;
-    if datagram.len() <= LORA_APP_MTU {
+    if datagram.len() <= LORA_APP_MTU && !reliable_all {
         return Ok(vec![datagram.to_vec()]);
     }
     if no_fragment {
@@ -887,7 +899,7 @@ mod tests {
     #[test]
     fn reliable_snapshot_uses_session_header_and_reassembles_byte_exact() {
         let datagram = kudp_datagram(329);
-        let frames = fragment_datagram_with_options(&datagram, 7, false, true, 42).unwrap();
+        let frames = fragment_datagram_with_options(&datagram, 7, false, true, false, 42).unwrap();
         assert_eq!(frames.len(), 2);
         assert!(frames.iter().all(|frame| frame.starts_with(RELIABLE_FRAG_MAGIC)));
         assert!(frames.iter().all(|frame| frame.len() <= LORA_APP_MTU));
@@ -905,7 +917,7 @@ mod tests {
     #[test]
     fn reliable_fragment_builds_matching_ack() {
         let datagram = kudp_datagram(329);
-        let frames = fragment_datagram_with_options(&datagram, 77, false, true, 9).unwrap();
+        let frames = fragment_datagram_with_options(&datagram, 77, false, true, false, 9).unwrap();
         let ack = ack_for_payload(&frames[0], 9).unwrap().unwrap();
         assert_eq!(parse_ack(&ack).unwrap(), Some(AckFrame { session_id: 9, datagram_id: 77, frag_ix: 0 }));
         assert!(ack_for_payload(&frames[0], 10).unwrap().is_none());
@@ -914,7 +926,7 @@ mod tests {
     #[test]
     fn duplicate_reliable_fragment_is_counted_but_kept_safe() {
         let datagram = kudp_datagram(329);
-        let frames = fragment_datagram_with_options(&datagram, 88, false, true, 4).unwrap();
+        let frames = fragment_datagram_with_options(&datagram, 88, false, true, false, 4).unwrap();
         let mut stats = BridgeStats::default();
         let mut reassembler = Reassembler::default();
 
@@ -922,6 +934,20 @@ mod tests {
         assert!(reassembler.push_with_stats(&frames[0], &mut stats).unwrap().is_none());
         assert_eq!(stats.duplicate_fragments, 1);
         let out = reassembler.push_with_stats(&frames[1], &mut stats).unwrap().unwrap();
+        assert_eq!(out, datagram);
+    }
+
+    #[test]
+    fn reliable_all_wraps_single_packet_delta_for_ack_recovery() {
+        let datagram = kudp_datagram(200);
+        let frames = fragment_datagram_with_options(&datagram, 91, false, true, true, 5).unwrap();
+        assert_eq!(frames.len(), 1);
+        assert!(frames[0].starts_with(RELIABLE_FRAG_MAGIC));
+        let ack = ack_for_payload(&frames[0], 5).unwrap().unwrap();
+        assert_eq!(parse_ack(&ack).unwrap(), Some(AckFrame { session_id: 5, datagram_id: 91, frag_ix: 0 }));
+
+        let mut reassembler = Reassembler::default();
+        let out = reassembler.push(&frames[0]).unwrap().unwrap();
         assert_eq!(out, datagram);
     }
 
@@ -950,6 +976,7 @@ mod tests {
             fixed_prefix_hex: "000041000041".to_string(),
             inter_frame_delay_ms: None,
             reliable_fragments: true,
+            reliable_all: false,
             retry_count: 4,
             ack_timeout_ms: 3_000,
             session_id: 1,

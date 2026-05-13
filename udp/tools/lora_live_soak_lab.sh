@@ -180,6 +180,7 @@ echo "starting LoRa TX"
   --udp-bind "${BRIDGE_UDP}" \
   --count "${COUNT}" \
   --reliable-fragments \
+  --reliable-all \
   --retry-count "${RETRY_COUNT}" \
   --ack-timeout-ms "${ACK_TIMEOUT_MS}" \
   --session-id "${SESSION_ID}" \
@@ -210,12 +211,15 @@ while kill -0 "${RX_PID}" 2>/dev/null; do
   sleep 30
 done
 
-wait "${PRODUCER_PID}"
-wait "${TX_PID}"
-wait "${RX_PID}"
+PRODUCER_STATUS=0
+TX_STATUS=0
+RX_STATUS=0
+wait "${PRODUCER_PID}" || PRODUCER_STATUS=$?
+wait "${TX_PID}" || TX_STATUS=$?
+wait "${RX_PID}" || RX_STATUS=$?
 
-"${ROOT_DIR}/target/debug/udp-rpc-digests" --rpc-url "grpc://${RECEIVER_RPC}" info >"${INFO_JSON}"
-"${ROOT_DIR}/target/debug/udp-rpc-digests" --rpc-url "grpc://${RECEIVER_RPC}" digests --limit 10 >"${DIGESTS_JSON}"
+"${ROOT_DIR}/target/debug/udp-rpc-digests" --rpc-url "grpc://${RECEIVER_RPC}" info >"${INFO_JSON}" 2>&1 || true
+"${ROOT_DIR}/target/debug/udp-rpc-digests" --rpc-url "grpc://${RECEIVER_RPC}" digests --limit 10 >"${DIGESTS_JSON}" 2>&1 || true
 
 {
   echo "# LoRa Live Soak Report"
@@ -239,6 +243,17 @@ wait "${RX_PID}"
   echo
   rg 'bridge_summary' "${TX_LOG}" "${RX_LOG}" || true
   echo
+  echo "## Process Status"
+  echo
+  echo "- live producer exit: \`${PRODUCER_STATUS}\`"
+  echo "- lora tx exit: \`${TX_STATUS}\`"
+  echo "- lora rx exit: \`${RX_STATUS}\`"
+  if [[ "${PRODUCER_STATUS}" -eq 0 && "${TX_STATUS}" -eq 0 && "${RX_STATUS}" -eq 0 ]]; then
+    echo "- result: \`complete\`"
+  else
+    echo "- result: \`failed\`"
+  fi
+  echo
   echo "## Kaspad Ingest Summary"
   echo
   rg '\"framesReceived\"|\"bytesTotal\"|\"lastDigest\"|\"signatureFailures\"|\"sourceCount\"' "${INFO_JSON}" || true
@@ -258,3 +273,7 @@ wait "${RX_PID}"
 } >"${REPORT_PATH}"
 
 echo "wrote report: ${REPORT_PATH}"
+
+if [[ "${PRODUCER_STATUS}" -ne 0 || "${TX_STATUS}" -ne 0 || "${RX_STATUS}" -ne 0 ]]; then
+  exit 1
+fi
