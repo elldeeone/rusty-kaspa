@@ -142,3 +142,7 @@ cargo run -p lora-bridge -- rx \
 Forwarding to `kaspad` is a later integration milestone. The MVP acceptance
 test is byte equality between the generated input files and recovered output
 files.
+
+The follow-up devnet lab that forwards recovered LoRa datagrams into kaspad's
+existing UDP ingest path is documented in
+[`udp/docs/lora-end-to-end-lab.md`](../../docs/lora-end-to-end-lab.md).

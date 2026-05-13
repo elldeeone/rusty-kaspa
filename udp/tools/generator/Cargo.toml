@@ -21,3 +21,4 @@ tokio = { version = "1.37", features = ["macros", "rt-multi-thread", "net", "tim
 secp256k1.workspace = true
 crc32fast.workspace = true
 borsh.workspace = true
+serde_json.workspace = true

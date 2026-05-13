@@ -6360,6 +6360,7 @@ dependencies = [
  "kaspa-txscript",
  "kaspa-udp-sidechannel",
  "secp256k1",
+ "serde_json",
  "tokio",
 ]
 
