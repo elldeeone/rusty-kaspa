@@ -64,6 +64,10 @@ struct Args {
     #[arg(long)]
     lab_progress_counter: bool,
 
+    /// Emit a JSON provenance report for each produced digest to stderr.
+    #[arg(long)]
+    provenance_report: bool,
+
     /// Initial KUDP sequence number.
     #[arg(long, default_value_t = 1000)]
     initial_seq: u64,
@@ -111,7 +115,7 @@ async fn main() -> Result<()> {
         args.rpc_url, network_id, signer_hex, args.lab_progress_counter
     );
     eprintln!(
-        "field provenance: real_rpc=pruning_point_hash,virtual_parent_hashes/sink,sink_blue_score,virtual_daa_score,sink_header.blue_work; placeholder_lab=pruning_proof_commitment,utxo_muhash,kept_headers_mmr_root_absent; optional_lab_progress_counter=epoch/daa_score/virtual_blue_score increments"
+        "field provenance: real_rpc=pruning_point_hash,sink,sink_blue_score,virtual_daa_score,sink_header.blue_work,sink_header.utxo_commitment; placeholder_lab=pruning_proof_commitment; omitted=kept_headers_mmr_root; optional_lab_progress_counter=epoch/daa_score/virtual_blue_score increments"
     );
 
     for index in 0..args.count {
@@ -129,6 +133,9 @@ async fn main() -> Result<()> {
             }
         };
         output.write(index, kind, &datagram)?;
+        if args.provenance_report {
+            print_provenance_report(index, kind, seq, args.source_id, &state, &signer_hex, args.lab_progress_counter)?;
+        }
         eprintln!(
             "produced index={} kind={:?} seq={} epoch={} virtual_blue_score={} daa_score={} bytes={} sink={} pruning_point={}",
             index,
@@ -171,20 +178,22 @@ impl LiveState {
         let progress = if lab_progress_counter { index as u64 } else { 0 };
 
         let sink = dag.sink;
-        let virtual_selected_parent = dag.virtual_parent_hashes.first().copied().unwrap_or(sink);
         let sink_block = client.get_block(sink, false).await.ok();
-        let blue_work = sink_block
-            .as_ref()
-            .map(|block| blue_work_to_digest_bytes(block.header.blue_work))
+        let sink_header = sink_block.as_ref().map(|block| &block.header);
+        let blue_work = sink_header
+            .map(|header| blue_work_to_digest_bytes(header.blue_work))
             .unwrap_or_else(|| placeholder_bytes("blue_work", sink, dag.virtual_daa_score));
+        let utxo_muhash = sink_header
+            .map(|header| header.utxo_commitment)
+            .unwrap_or_else(|| placeholder_hash("utxo_muhash", sink, dag.virtual_daa_score));
 
         Ok(Self {
             epoch: dag.virtual_daa_score.saturating_add(progress),
             frame_ts_ms: unix_now(),
             pruning_point: dag.pruning_point_hash,
             pruning_proof_commitment: placeholder_hash("pruning_proof_commitment", dag.pruning_point_hash, dag.virtual_daa_score),
-            utxo_muhash: placeholder_hash("utxo_muhash", sink, dag.virtual_daa_score),
-            virtual_selected_parent,
+            utxo_muhash,
+            virtual_selected_parent: sink,
             virtual_blue_score: sink_blue_score.saturating_add(progress),
             daa_score: dag.virtual_daa_score.saturating_add(progress),
             blue_work,
@@ -313,6 +322,158 @@ fn blue_work_to_digest_bytes(work: BlueWorkType) -> [u8; 32] {
     out
 }
 
+fn print_provenance_report(
+    index: u32,
+    kind: DigestKind,
+    seq: u64,
+    source_id: u16,
+    state: &LiveState,
+    signer_hex: &str,
+    lab_progress_counter: bool,
+) -> Result<()> {
+    let mut fields = vec![
+        provenance_field(
+            "epoch",
+            state.epoch.to_string(),
+            progress_auth(lab_progress_counter),
+            progress_source("getBlockDagInfo.virtual_daa_score", lab_progress_counter),
+            progress_note(lab_progress_counter),
+        ),
+        provenance_field(
+            "frame_timestamp_ms",
+            state.frame_ts_ms.to_string(),
+            "lab-derived",
+            "producer clock unix_now()",
+            "wall-clock observation time, not consensus state",
+        ),
+        provenance_field(
+            "pruning_point",
+            state.pruning_point.to_string(),
+            "real",
+            "getBlockDagInfo.pruning_point_hash",
+            "current node pruning point",
+        ),
+        provenance_field(
+            "virtual_selected_parent",
+            state.virtual_selected_parent.to_string(),
+            "real",
+            "getBlockDagInfo.sink",
+            "matches receiver divergence monitor comparison against async_get_sink()",
+        ),
+        provenance_field(
+            "virtual_blue_score",
+            state.virtual_blue_score.to_string(),
+            progress_auth(lab_progress_counter),
+            progress_source("getSinkBlueScore.blue_score", lab_progress_counter),
+            progress_note(lab_progress_counter),
+        ),
+        provenance_field(
+            "daa_score",
+            state.daa_score.to_string(),
+            progress_auth(lab_progress_counter),
+            progress_source("getBlockDagInfo.virtual_daa_score", lab_progress_counter),
+            progress_note(lab_progress_counter),
+        ),
+        provenance_field(
+            "blue_work",
+            faster_hex::hex_string(&state.blue_work),
+            "real",
+            "getBlock(sink).header.blue_work",
+            "sink header blue work, left-padded to DigestV1 32-byte field",
+        ),
+        provenance_field(
+            "signer_id",
+            "0".to_string(),
+            "lab-derived",
+            "fixture signer id",
+            "DigestV1 fixture builder currently encodes signer id 0",
+        ),
+        provenance_field(
+            "signature",
+            signer_hex.to_string(),
+            "lab-derived",
+            "configured Schnorr signer",
+            "signature is cryptographically valid for the configured lab signer",
+        ),
+        provenance_field("source_id", source_id.to_string(), "lab-derived", "--source-id", "operator-selected source identity"),
+    ];
+
+    if matches!(kind, DigestKind::Snapshot) {
+        fields.push(provenance_field(
+            "pruning_proof_commitment",
+            state.pruning_proof_commitment.to_string(),
+            "placeholder",
+            "deterministic lab SHA-256 placeholder",
+            "needs a node/RPC commitment over the actual pruning-point proof",
+        ));
+        fields.push(provenance_field(
+            "utxo_muhash",
+            state.utxo_muhash.to_string(),
+            "real",
+            "getBlock(sink).header.utxo_commitment",
+            "real header UTXO commitment for sink; a virtual-state commitment still needs a dedicated node/RPC hook",
+        ));
+        fields.push(provenance_field(
+            "kept_headers_mmr_root",
+            serde_json::Value::Null,
+            "omitted",
+            "not encoded",
+            "DigestV1 supports an optional field, but rusty-kaspa does not expose this MMR root today",
+        ));
+    }
+
+    let report = serde_json::json!({
+        "event": "udp_live_digest_provenance",
+        "index": index,
+        "kind": kind_name(kind),
+        "seq": seq,
+        "sink": state.sink.to_string(),
+        "fields": fields,
+    });
+    eprintln!("{}", serde_json::to_string(&report).context("serialize provenance report")?);
+    Ok(())
+}
+
+fn provenance_field(
+    name: &'static str,
+    value: impl Into<serde_json::Value>,
+    authenticity: &'static str,
+    source: impl Into<String>,
+    notes: &'static str,
+) -> serde_json::Value {
+    serde_json::json!({
+        "field": name,
+        "value": value.into(),
+        "source": source.into(),
+        "authenticity": authenticity,
+        "notes": notes,
+    })
+}
+
+fn progress_auth(lab_progress_counter: bool) -> &'static str {
+    if lab_progress_counter {
+        "lab-derived"
+    } else {
+        "real"
+    }
+}
+
+fn progress_source(base: &'static str, lab_progress_counter: bool) -> String {
+    if lab_progress_counter {
+        format!("{base} + --lab-progress-counter index")
+    } else {
+        base.to_string()
+    }
+}
+
+fn progress_note(lab_progress_counter: bool) -> &'static str {
+    if lab_progress_counter {
+        "lab progression counter applied so idle devnet/simnet output remains monotonic"
+    } else {
+        "direct node/RPC state; may not advance on an idle devnet/simnet node"
+    }
+}
+
 fn placeholder_hash(label: &'static str, seed: Hash, epoch: u64) -> Hash {
     Hash::from_bytes(placeholder_bytes(label, seed, epoch))
 }
@@ -324,4 +485,35 @@ fn placeholder_bytes(label: &'static str, seed: Hash, epoch: u64) -> [u8; 32] {
     hasher.update(seed.as_bytes());
     hasher.update(epoch.to_le_bytes());
     hasher.finalize().into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn choose_kind_honors_snapshot_first_and_periodic_snapshots() {
+        assert!(matches!(choose_kind(0, true, 0), DigestKind::Snapshot));
+        assert!(matches!(choose_kind(1, true, 0), DigestKind::Delta));
+        assert!(matches!(choose_kind(3, false, 3), DigestKind::Snapshot));
+        assert!(matches!(choose_kind(4, false, 3), DigestKind::Delta));
+    }
+
+    #[test]
+    fn lab_progress_classification_is_explicit() {
+        assert_eq!(progress_auth(false), "real");
+        assert_eq!(progress_auth(true), "lab-derived");
+        assert_eq!(progress_source("rpc.field", false), "rpc.field");
+        assert_eq!(progress_source("rpc.field", true), "rpc.field + --lab-progress-counter index");
+    }
+
+    #[test]
+    fn provenance_field_contains_required_classification_keys() {
+        let field = provenance_field("daa_score", "42", "real", "getBlockDagInfo.virtual_daa_score", "direct node/RPC state");
+        assert_eq!(field["field"], "daa_score");
+        assert_eq!(field["value"], "42");
+        assert_eq!(field["authenticity"], "real");
+        assert_eq!(field["source"], "getBlockDagInfo.virtual_daa_score");
+        assert_eq!(field["notes"], "direct node/RPC state");
+    }
 }

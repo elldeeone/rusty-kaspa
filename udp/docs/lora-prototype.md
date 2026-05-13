@@ -124,6 +124,8 @@ The repeatable reliability harness and current operating-envelope results are
 documented in [`lora-reliability-report.md`](lora-reliability-report.md).
 The completed live digest soak is summarized in
 [`lora-live-soak-report.md`](lora-live-soak-report.md).
+DigestV1 field authenticity and remaining production data gaps are tracked in
+[`lora-digest-authenticity.md`](lora-digest-authenticity.md).
 
 ## Bridge Protocol
 
@@ -427,16 +429,16 @@ target/debug/udp-live-digest-producer \
   --udp-target 127.0.0.1:39000 \
   --count 4 \
   --interval-ms 500 \
-  --lab-progress-counter
+  --provenance-report
 ```
 
 Expected receiver logs:
 
 ```text
 udp.event=digest_ingested epoch=0 signer=0 source=7 kind=snapshot
-udp.event=digest_ingested epoch=1 signer=0 source=7 kind=delta
-udp.event=digest_ingested epoch=2 signer=0 source=7 kind=delta
-udp.event=digest_ingested epoch=3 signer=0 source=7 kind=delta
+udp.event=digest_ingested epoch=0 signer=0 source=7 kind=delta
+udp.event=digest_ingested epoch=0 signer=0 source=7 kind=delta
+udp.event=digest_ingested epoch=0 signer=0 source=7 kind=delta
 ```
 
 Expected RPC:
@@ -444,9 +446,9 @@ Expected RPC:
 ```text
 frames.digest=4
 framesReceived=4
-lastDigest.epoch=3
+lastDigest.epoch=0
 lastDigest.signatureValid=true
-getUdpDigests: epochs 0..3 verified=true
+getUdpDigests --check-monotonic: all_signature_valid=true epoch_monotonic=true
 ```
 
 ## Live Producer Semantic Limits
@@ -454,18 +456,18 @@ getUdpDigests: epochs 0..3 verified=true
 The live producer signs valid DigestV1 records that are useful as a lab
 heartbeat. It does not yet prove complete production digest semantics.
 
-Consensus-derived from RPC:
+Real node/RPC-derived fields:
 
 - pruning point hash
-- virtual parent/sink hash
+- sink hash as the selected-parent comparison point
 - sink blue score
 - virtual DAA score
 - sink header blue work
+- sink header UTXO commitment
 
 Explicit placeholders/lab-derived values:
 
 - pruning proof commitment
-- UTXO MuHash
 - kept headers MMR root is omitted
 - optional `--lab-progress-counter` increments epoch, DAA score, and blue score
   so idle devnet/simnet nodes show ordered ingest
@@ -474,7 +476,8 @@ Needed before production relevance:
 
 - RPC or node-side access to the real pruning proof commitment used by the
   digest format.
-- RPC or node-side access to the real UTXO MuHash at the advertised point.
+- RPC or node-side access to a virtual-state UTXO commitment if production
+  semantics require virtual state rather than sink-header state.
 - RPC or node-side access to a real kept headers MMR root, or a format decision
   that marks it intentionally absent.
 - A signer policy that binds keys to network, epoch range, and operator role.

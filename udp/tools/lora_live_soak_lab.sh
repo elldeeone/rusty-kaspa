@@ -22,6 +22,8 @@ PRODUCER_RPC="127.0.0.1:16121"
 RECEIVER_RPC="127.0.0.1:16120"
 RECEIVER_UDP="127.0.0.1:28520"
 BRIDGE_UDP="127.0.0.1:39020"
+LAB_PROGRESS_COUNTER="0"
+PROVENANCE_REPORT="0"
 
 usage() {
   cat <<USAGE
@@ -47,6 +49,8 @@ Options:
   --report PATH               Markdown report path (default: /tmp/lora-live-soak-report.md)
   --workdir DIR               Scratch directory (default: mktemp)
   --network NAME              Producer network tag (default: devnet)
+  --lab-progress-counter      Add lab progression to epoch/score fields
+  --provenance-report         Emit producer field provenance JSON to live-producer.log
   -h, --help                  Show this help
 USAGE
 }
@@ -68,6 +72,8 @@ while [[ $# -gt 0 ]]; do
     --report) REPORT_PATH="${2:-}"; shift 2 ;;
     --workdir) WORKDIR="${2:-}"; shift 2 ;;
     --network) NETWORK="${2:-}"; shift 2 ;;
+    --lab-progress-counter) LAB_PROGRESS_COUNTER="1"; shift ;;
+    --provenance-report) PROVENANCE_REPORT="1"; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 1 ;;
   esac
@@ -200,16 +206,24 @@ PIDS+=("${TX_PID}")
 
 sleep 1
 echo "starting live producer count=${COUNT}"
+PRODUCER_ARGS=(
+  --rpc-url "grpc://${PRODUCER_RPC}"
+  --network "${NETWORK}"
+  --output udp
+  --udp-target "${BRIDGE_UDP}"
+  --count "${COUNT}"
+  --interval-ms "${INTERVAL_MS}"
+  --snapshot-first
+  --snapshot-every "${SNAPSHOT_EVERY}"
+)
+if [[ "${LAB_PROGRESS_COUNTER}" == "1" ]]; then
+  PRODUCER_ARGS+=(--lab-progress-counter)
+fi
+if [[ "${PROVENANCE_REPORT}" == "1" ]]; then
+  PRODUCER_ARGS+=(--provenance-report)
+fi
 "${ROOT_DIR}/target/debug/udp-live-digest-producer" \
-  --rpc-url "grpc://${PRODUCER_RPC}" \
-  --network "${NETWORK}" \
-  --output udp \
-  --udp-target "${BRIDGE_UDP}" \
-  --count "${COUNT}" \
-  --interval-ms "${INTERVAL_MS}" \
-  --snapshot-first \
-  --snapshot-every "${SNAPSHOT_EVERY}" \
-  --lab-progress-counter \
+  "${PRODUCER_ARGS[@]}" \
   >"${PRODUCER_LOG}" 2>&1 &
 PRODUCER_PID=$!
 PIDS+=("${PRODUCER_PID}")
@@ -228,7 +242,7 @@ wait "${TX_PID}" || TX_STATUS=$?
 wait "${RX_PID}" || RX_STATUS=$?
 
 "${ROOT_DIR}/target/debug/udp-rpc-digests" --rpc-url "grpc://${RECEIVER_RPC}" info >"${INFO_JSON}" 2>&1 || true
-"${ROOT_DIR}/target/debug/udp-rpc-digests" --rpc-url "grpc://${RECEIVER_RPC}" digests --limit 10 >"${DIGESTS_JSON}" 2>&1 || true
+"${ROOT_DIR}/target/debug/udp-rpc-digests" --rpc-url "grpc://${RECEIVER_RPC}" digests --limit 10 --check-monotonic >"${DIGESTS_JSON}" 2>&1 || true
 
 {
   echo "# LoRa Live Soak Report"
@@ -245,6 +259,8 @@ wait "${RX_PID}" || RX_STATUS=$?
   echo "- Retry count: \`${RETRY_COUNT}\`"
   echo "- ACK timeout: \`${ACK_TIMEOUT_MS}\` ms"
   echo "- Snapshot every: \`${SNAPSHOT_EVERY}\`"
+  echo "- Lab progress counter: \`${LAB_PROGRESS_COUNTER}\`"
+  echo "- Provenance report: \`${PROVENANCE_REPORT}\`"
   echo "- Expected datagram budget: \`${EXPECTED_DATAGRAM_MS}\` ms"
   echo "- RX timeout: \`${RX_TIMEOUT_MS}\` ms"
   echo "- Session id: \`${SESSION_ID}\`"

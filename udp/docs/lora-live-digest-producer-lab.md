@@ -9,6 +9,9 @@ This is lab tooling only. It does not use mainnet, does not require synced
 nodes, does not change consensus behavior, and is not a production digest
 oracle.
 
+For the field-by-field authenticity audit and remaining production gaps, see
+[`lora-digest-authenticity.md`](lora-digest-authenticity.md).
+
 ## Trust And Field Semantics
 
 The current RPC surface is enough to build a signed `DigestV1` datagram that
@@ -18,21 +21,20 @@ to claim a fully consensus-authentic digest for every snapshot field.
 Fields populated from producer-side kaspad RPC:
 
 - `pruning_point`: `getBlockDagInfo.pruning_point_hash`
-- `virtual_selected_parent`: first `getBlockDagInfo.virtual_parent_hashes`, or
-  `getBlockDagInfo.sink` if the virtual parent list is empty
+- `virtual_selected_parent`: `getBlockDagInfo.sink`, matching the receiver
+  divergence monitor comparison against `async_get_sink()`
 - `virtual_blue_score`: `getSinkBlueScore.blue_score`, optionally plus the lab
   progress counter
 - `daa_score`: `getBlockDagInfo.virtual_daa_score`, optionally plus the lab
   progress counter
 - `blue_work`: `getBlock(sink).header.blue_work`, padded to the 32-byte
   DigestV1 field
+- `utxo_muhash`: `getBlock(sink).header.utxo_commitment`
 
 Lab-placeholder fields:
 
 - `pruning_proof_commitment`: deterministic SHA-256 placeholder derived from
   the pruning point and DAA score
-- `utxo_muhash`: deterministic SHA-256 placeholder derived from the sink and
-  DAA score
 - `kept_headers_mmr_root`: omitted (`None`)
 
 Lab-derived progression:
@@ -94,17 +96,18 @@ target/debug/udp-live-digest-producer \
   --out-dir /tmp/live-digests \
   --count 3 \
   --interval-ms 10 \
-  --lab-progress-counter
+  --provenance-report
 wc -c /tmp/live-digests/*.bin
 ```
 
 Observed result:
 
 ```text
-field provenance: real_rpc=pruning_point_hash,virtual_parent_hashes/sink,sink_blue_score,virtual_daa_score,sink_header.blue_work; placeholder_lab=pruning_proof_commitment,utxo_muhash,kept_headers_mmr_root_absent; optional_lab_progress_counter=epoch/daa_score/virtual_blue_score increments
+field provenance: real_rpc=pruning_point_hash,sink,sink_blue_score,virtual_daa_score,sink_header.blue_work,sink_header.utxo_commitment; placeholder_lab=pruning_proof_commitment; omitted=kept_headers_mmr_root; optional_lab_progress_counter=epoch/daa_score/virtual_blue_score increments
+{"event":"udp_live_digest_provenance","index":0,"kind":"snapshot","seq":1000,"sink":"...","fields":[...]}
 produced index=0 kind=Snapshot seq=1000 epoch=0 virtual_blue_score=0 daa_score=0 bytes=297
-produced index=1 kind=Delta seq=1001 epoch=1 virtual_blue_score=1 daa_score=1 bytes=200
-produced index=2 kind=Delta seq=1002 epoch=2 virtual_blue_score=2 daa_score=2 bytes=200
+produced index=1 kind=Delta seq=1001 epoch=0 virtual_blue_score=0 daa_score=0 bytes=200
+produced index=2 kind=Delta seq=1002 epoch=0 virtual_blue_score=0 daa_score=0 bytes=200
 297 /tmp/live-digests/0000-snapshot.bin
 200 /tmp/live-digests/0001-delta.bin
 200 /tmp/live-digests/0002-delta.bin
@@ -198,16 +201,16 @@ target/debug/udp-live-digest-producer \
   --udp-target 127.0.0.1:39000 \
   --count 4 \
   --interval-ms 500 \
-  --lab-progress-counter
+  --provenance-report
 ```
 
 Observed producer output:
 
 ```text
 produced index=0 kind=Snapshot seq=1000 epoch=0 virtual_blue_score=0 daa_score=0 bytes=297
-produced index=1 kind=Delta seq=1001 epoch=1 virtual_blue_score=1 daa_score=1 bytes=200
-produced index=2 kind=Delta seq=1002 epoch=2 virtual_blue_score=2 daa_score=2 bytes=200
-produced index=3 kind=Delta seq=1003 epoch=3 virtual_blue_score=3 daa_score=3 bytes=200
+produced index=1 kind=Delta seq=1001 epoch=0 virtual_blue_score=0 daa_score=0 bytes=200
+produced index=2 kind=Delta seq=1002 epoch=0 virtual_blue_score=0 daa_score=0 bytes=200
+produced index=3 kind=Delta seq=1003 epoch=0 virtual_blue_score=0 daa_score=0 bytes=200
 ```
 
 Observed LoRa TX output:
@@ -240,9 +243,9 @@ Observed receiver kaspad logs:
 
 ```text
 udp.event=digest_ingested epoch=0 signer=0 source=7 kind=snapshot
-udp.event=digest_ingested epoch=1 signer=0 source=7 kind=delta
-udp.event=digest_ingested epoch=2 signer=0 source=7 kind=delta
-udp.event=digest_ingested epoch=3 signer=0 source=7 kind=delta
+udp.event=digest_ingested epoch=0 signer=0 source=7 kind=delta
+udp.event=digest_ingested epoch=0 signer=0 source=7 kind=delta
+udp.event=digest_ingested epoch=0 signer=0 source=7 kind=delta
 ```
 
 Observed `getUdpIngestInfo`:
@@ -251,25 +254,27 @@ Observed `getUdpIngestInfo`:
 frames.digest=4
 framesReceived=4
 bytesTotal=897
-lastDigest.epoch=3
-lastDigest.virtualBlueScore=3
-lastDigest.daaScore=3
+lastDigest.epoch=0
+lastDigest.virtualBlueScore=0
+lastDigest.daaScore=0
 lastDigest.signatureValid=true
 signatureFailures=0
 ```
 
-Observed `getUdpDigests --limit 10`:
+Observed `getUdpDigests --limit 10 --check-monotonic`:
 
 ```text
-epoch=3 kind=delta verified=true
-epoch=2 kind=delta verified=true
-epoch=1 kind=delta verified=true
+epoch=0 kind=delta verified=true
+epoch=0 kind=delta verified=true
+epoch=0 kind=delta verified=true
 epoch=0 kind=snapshot verified=true
+udp_digest_check count=4 all_signature_valid=true epoch_monotonic=true daa_score_monotonic=true virtual_blue_score_monotonic=true sources={7} signers={0}
 ```
 
-The observed progression above is the lab progress counter over an idle devnet
-node. Without `--lab-progress-counter`, the produced values reflect the RPC
-state directly and may remain unchanged unless the producer-side node advances.
+The observed repeated zero values above are direct RPC state from an idle
+devnet node. Add `--lab-progress-counter` only when you explicitly need
+monotonic demo output without mining blocks; those values are lab-derived, not
+consensus-authentic.
 
 ## Unattended Soak Harness
 
@@ -284,6 +289,7 @@ five terminals coordinated:
   --ack-timeout-ms 6000 \
   --retry-count 8 \
   --snapshot-every 50 \
+  --provenance-report \
   --expected-datagram-ms 6500 \
   --report /tmp/lora-live-soak-report.md
 ```

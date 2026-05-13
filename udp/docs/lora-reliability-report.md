@@ -138,6 +138,7 @@ with reliable LoRa transport and receiver kaspad UDP ingest:
   --ack-timeout-ms 6000 \
   --retry-count 8 \
   --snapshot-every 50 \
+  --lab-progress-counter \
   --expected-datagram-ms 6500 \
   --report /tmp/lora-live-soak-2026-05-13-r4.md
 ```

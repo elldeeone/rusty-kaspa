@@ -193,6 +193,7 @@ For the unattended live ingest soak harness:
 ./udp/tools/lora_live_soak_lab.sh \
   --duration-seconds 1800 \
   --inter-frame-delay-ms 2500 \
+  --provenance-report \
   --report /tmp/lora-live-soak-report.md
 ```
 
@@ -205,3 +206,5 @@ LoRa bridge path is documented in
 [`udp/docs/lora-live-digest-producer-lab.md`](../../docs/lora-live-digest-producer-lab.md).
 The completed live soak result is summarized in
 [`udp/docs/lora-live-soak-report.md`](../../docs/lora-live-soak-report.md).
+Digest field authenticity is tracked in
+[`udp/docs/lora-digest-authenticity.md`](../../docs/lora-digest-authenticity.md).
