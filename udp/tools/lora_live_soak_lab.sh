@@ -13,6 +13,7 @@ INTER_FRAME_DELAY_MS="2500"
 RETRY_COUNT="8"
 ACK_TIMEOUT_MS="6000"
 SNAPSHOT_EVERY="50"
+EXPECTED_DATAGRAM_MS="6500"
 SESSION_ID="17"
 REPORT_PATH="/tmp/lora-live-soak-report.md"
 WORKDIR=""
@@ -41,6 +42,7 @@ Options:
   --retry-count N             Reliable fragment retry count (default: 8)
   --ack-timeout-ms N          Reliable fragment ACK timeout (default: 6000)
   --snapshot-every N          Emit a snapshot every N datagrams after first; 0 disables (default: 50)
+  --expected-datagram-ms N    Count/timeout budget per reliable datagram (default: 6500)
   --session-id N              Reliable fragment session id (default: 17)
   --report PATH               Markdown report path (default: /tmp/lora-live-soak-report.md)
   --workdir DIR               Scratch directory (default: mktemp)
@@ -61,6 +63,7 @@ while [[ $# -gt 0 ]]; do
     --retry-count) RETRY_COUNT="${2:-}"; shift 2 ;;
     --ack-timeout-ms) ACK_TIMEOUT_MS="${2:-}"; shift 2 ;;
     --snapshot-every) SNAPSHOT_EVERY="${2:-}"; shift 2 ;;
+    --expected-datagram-ms) EXPECTED_DATAGRAM_MS="${2:-}"; shift 2 ;;
     --session-id) SESSION_ID="${2:-}"; shift 2 ;;
     --report) REPORT_PATH="${2:-}"; shift 2 ;;
     --workdir) WORKDIR="${2:-}"; shift 2 ;;
@@ -76,11 +79,17 @@ fi
 mkdir -p "${WORKDIR}" "$(dirname "${REPORT_PATH}")"
 
 if [[ -z "${COUNT}" ]]; then
-  # Keep LoRa airtime dominant but derive a count that keeps the run near target duration.
-  COUNT=$((DURATION_SECONDS * 1000 / (INTER_FRAME_DELAY_MS + INTERVAL_MS)))
+  # Reliable-all waits for an ACK per datagram; derive count from observed RF time, not producer interval.
+  COUNT=$((DURATION_SECONDS * 1000 / EXPECTED_DATAGRAM_MS))
   if [[ "${COUNT}" -lt 1 ]]; then
     COUNT=1
   fi
+fi
+
+RX_TIMEOUT_MS=$((COUNT * EXPECTED_DATAGRAM_MS + 180000))
+MIN_RX_TIMEOUT_MS=$((DURATION_SECONDS * 1000 + 180000))
+if [[ "${RX_TIMEOUT_MS}" -lt "${MIN_RX_TIMEOUT_MS}" ]]; then
+  RX_TIMEOUT_MS="${MIN_RX_TIMEOUT_MS}"
 fi
 
 PRODUCER_APP="${WORKDIR}/producer-app"
@@ -164,7 +173,7 @@ echo "starting LoRa RX"
   --output udp \
   --udp-target "${RECEIVER_UDP}" \
   --count "${COUNT}" \
-  --timeout-ms $((DURATION_SECONDS * 1000 + 120000)) \
+  --timeout-ms "${RX_TIMEOUT_MS}" \
   --packet-idle-ms 600 \
   --session-id "${SESSION_ID}" \
   >"${RX_LOG}" 2>&1 &
@@ -236,6 +245,8 @@ wait "${RX_PID}" || RX_STATUS=$?
   echo "- Retry count: \`${RETRY_COUNT}\`"
   echo "- ACK timeout: \`${ACK_TIMEOUT_MS}\` ms"
   echo "- Snapshot every: \`${SNAPSHOT_EVERY}\`"
+  echo "- Expected datagram budget: \`${EXPECTED_DATAGRAM_MS}\` ms"
+  echo "- RX timeout: \`${RX_TIMEOUT_MS}\` ms"
   echo "- Session id: \`${SESSION_ID}\`"
   echo "- Workdir: \`${WORKDIR}\`"
   echo
