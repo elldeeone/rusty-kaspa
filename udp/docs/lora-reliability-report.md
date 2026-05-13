@@ -125,6 +125,36 @@ An earlier 10-datagram attempt at 250 ms recovered only the first three live
 datagrams before RX stalled, so live multi-datagram runs still use 2500 ms until
 more streaming TX work is done.
 
+## Live Soak Result
+
+The unattended live soak harness completed the current 30-minute target run
+with reliable LoRa transport and receiver kaspad UDP ingest:
+
+```bash
+./udp/tools/lora_live_soak_lab.sh \
+  --duration-seconds 1800 \
+  --inter-frame-delay-ms 2500 \
+  --interval-ms 500 \
+  --ack-timeout-ms 6000 \
+  --retry-count 8 \
+  --snapshot-every 50 \
+  --expected-datagram-ms 6500 \
+  --report /tmp/lora-live-soak-2026-05-13-r4.md
+```
+
+Observed result:
+
+```text
+produced datagrams: 276
+rx datagrams_recovered=276 fragments_received=282 retries=0 duplicate_fragments=0 missing_fragments=0 corrupt_frames=0 receive_timeouts=0 reassembly_failures=0 acks_sent=282
+tx datagrams_sent=276 fragments_sent=282 retries=0 receive_timeouts=0
+getUdpIngestInfo framesReceived=276 bytesTotal=55782 signatureFailures=0
+result=complete
+```
+
+The raw committed report is
+[`lora-live-soak-report.md`](lora-live-soak-report.md).
+
 ## Operating Settings
 
 Recommended current lab settings:

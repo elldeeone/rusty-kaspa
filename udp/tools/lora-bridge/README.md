@@ -203,3 +203,5 @@ existing UDP ingest path is documented in
 The live producer lab that feeds current devnet/simnet RPC state into the same
 LoRa bridge path is documented in
 [`udp/docs/lora-live-digest-producer-lab.md`](../../docs/lora-live-digest-producer-lab.md).
+The completed live soak result is summarized in
+[`udp/docs/lora-live-soak-report.md`](../../docs/lora-live-soak-report.md).

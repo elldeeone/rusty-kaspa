@@ -281,6 +281,10 @@ five terminals coordinated:
   --duration-seconds 1800 \
   --inter-frame-delay-ms 2500 \
   --interval-ms 500 \
+  --ack-timeout-ms 6000 \
+  --retry-count 8 \
+  --snapshot-every 50 \
+  --expected-datagram-ms 6500 \
   --report /tmp/lora-live-soak-report.md
 ```
 
@@ -294,3 +298,8 @@ Current alpha limitation: `lora-bridge tx --input udp --count N` reads all
 means RF transmission begins after the live producer has already emitted the
 configured batch. A production sidecar should stream UDP input directly into
 the RF scheduler.
+
+The completed target soak is summarized in
+[`lora-live-soak-report.md`](lora-live-soak-report.md): 276 produced datagrams,
+276 recovered datagrams, 276 receiver kaspad frames, zero signature failures,
+zero retries, and zero receive timeouts.

@@ -122,6 +122,8 @@ is currently batch-oriented and long live runs need more margin.
 
 The repeatable reliability harness and current operating-envelope results are
 documented in [`lora-reliability-report.md`](lora-reliability-report.md).
+The completed live digest soak is summarized in
+[`lora-live-soak-report.md`](lora-live-soak-report.md).
 
 ## Bridge Protocol
 
