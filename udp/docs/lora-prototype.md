@@ -117,6 +117,9 @@ The default bridge inter-frame delay is `1500 ms`. In real hardware testing,
 `250 ms` let the first snapshot fragment through but dropped the second
 fragment. The live lab used `2500 ms`.
 
+The repeatable reliability harness and current operating-envelope results are
+documented in [`lora-reliability-report.md`](lora-reliability-report.md).
+
 ## Bridge Protocol
 
 Raw datagrams up to 234 bytes are sent unchanged as the LoRa application
@@ -457,9 +460,10 @@ Successful real-hardware runs on `/dev/lora-left -> /dev/lora-right`:
 - Live run delivered 1 snapshot plus 3 deltas with epochs `0..3`.
 - Live `getUdpIngestInfo`: `framesReceived=4`, `signatureValid=true`.
 - Live `getUdpDigests`: epochs `0..3`, all `verified=true`.
-- `250 ms` inter-frame delay dropped the second snapshot fragment in testing;
-  `1500 ms` worked for standalone snapshot, and `2500 ms` was used for live
-  multi-datagram runs.
+- Reliability sweep: deltas were byte-exact at every tested delay from 250 ms
+  through 1500 ms; snapshots failed from 250 ms through 1250 ms and were
+  byte-exact at 1500 ms. Use 2500 ms for live multi-datagram runs until a
+  larger sweep proves lower pacing has enough margin.
 
 ## Troubleshooting
 

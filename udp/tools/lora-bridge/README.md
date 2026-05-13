@@ -6,7 +6,10 @@ does not change the `KUDP` wire format.
 
 Start with the consolidated prototype guide at
 [`udp/docs/lora-prototype.md`](../../docs/lora-prototype.md) for the complete
-Phase 0/Phase 1 lab checklist and current limits.
+Phase 0/Phase 1 lab checklist and current limits. The repeatable reliability
+sweep is in
+[`udp/docs/lora-reliability-report.md`](../../docs/lora-reliability-report.md),
+and the harness lives at [`udp/tools/lora_reliability_harness.sh`](../lora_reliability_harness.sh).
 
 ## Hardware Setup
 
@@ -146,6 +149,16 @@ cargo run -p lora-bridge -- rx \
 The standalone bridge acceptance test is byte equality between the generated
 input files and recovered output files. The follow-up labs then forward
 recovered datagrams into kaspad UDP ingest.
+
+For repeated byte-equality runs over the hardware pair:
+
+```bash
+./udp/tools/lora_reliability_harness.sh \
+  --delays 250,500,750,1000,1250,1500 \
+  --delta-count 50 \
+  --snapshot-count 50 \
+  --report /tmp/lora-reliability-report.md
+```
 
 The follow-up devnet lab that forwards recovered LoRa datagrams into kaspad's
 existing UDP ingest path is documented in
