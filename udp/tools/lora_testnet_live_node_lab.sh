@@ -160,6 +160,31 @@ node_network_matches() {
   rg -q "\"networkId\": \"${NETWORK}\"" "${info_path}" && rg -q "\"dagNetwork\": \"${NETWORK}\"" "${info_path}"
 }
 
+result_label() {
+  local producer_status=$1
+  local tx_status=$2
+  local rx_status=$3
+  local ingest_status=$4
+  local digests_status=$5
+  local producer_sync_ok=$6
+  if [[ "${producer_status}" -eq 0 && "${tx_status}" -eq 0 && "${rx_status}" -eq 0 && "${ingest_status}" -eq 0 && "${digests_status}" -eq 0 ]]; then
+    if [[ "${producer_sync_ok}" == "1" ]]; then
+      echo "complete"
+    else
+      echo "complete-unsynced"
+    fi
+  else
+    echo "failed"
+  fi
+}
+
+if [[ "${LORA_TESTNET_LAB_SELFTEST:-0}" == "1" ]]; then
+  [[ "$(result_label 0 0 0 0 0 1)" == "complete" ]]
+  [[ "$(result_label 0 0 0 0 0 0)" == "complete-unsynced" ]]
+  [[ "$(result_label 0 1 0 0 0 1)" == "failed" ]]
+  exit 0
+fi
+
 wait_for_synced() {
   local rpc_url=$1
   local out=$2
@@ -322,12 +347,14 @@ DIGESTS_STATUS=0
 "${ROOT_DIR}/target/debug/udp-rpc-digests" --rpc-url "${RECEIVER_RPC_URL}" info >"${INGEST_INFO_JSON}" 2>&1 || INGEST_STATUS=$?
 "${ROOT_DIR}/target/debug/udp-rpc-digests" --rpc-url "${RECEIVER_RPC_URL}" digests --limit 10 --check-monotonic --producer-log "${PRODUCER_LOG}" --compare-local >"${DIGESTS_JSON}" 2>&1 || DIGESTS_STATUS=$?
 
+RESULT_LABEL="$(result_label "${PRODUCER_STATUS}" "${TX_STATUS}" "${RX_STATUS}" "${INGEST_STATUS}" "${DIGESTS_STATUS}" "${PRODUCER_SYNC_OK}")"
+
 {
   echo "# LoRa Testnet Live Node Lab"
   echo
   echo "Generated: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
   echo
-  echo "Result: $([[ "${PRODUCER_STATUS}" -eq 0 && "${TX_STATUS}" -eq 0 && "${RX_STATUS}" -eq 0 && "${INGEST_STATUS}" -eq 0 && "${DIGESTS_STATUS}" -eq 0 ]] && echo complete || echo failed)"
+  echo "Result: ${RESULT_LABEL}"
   echo
   echo "## Configuration"
   echo
@@ -403,6 +430,6 @@ DIGESTS_STATUS=0
 
 echo "wrote report: ${REPORT_PATH}"
 
-if [[ "${PRODUCER_STATUS}" -ne 0 || "${TX_STATUS}" -ne 0 || "${RX_STATUS}" -ne 0 || "${INGEST_STATUS}" -ne 0 || "${DIGESTS_STATUS}" -ne 0 ]]; then
+if [[ "${RESULT_LABEL}" != "complete" ]]; then
   exit 1
 fi

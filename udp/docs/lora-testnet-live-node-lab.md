@@ -75,6 +75,9 @@ that producer and receiver RPCs report `testnet-10`, so an accidental mainnet or
 wrong-testnet endpoint cannot satisfy the lab. That protects the lab from
 accidentally turning a fresh genesis node or wrong network into false "real
 network" evidence.
+Runs completed with `--no-require-synced` can be useful for debugging, but they
+are labeled `complete-unsynced` and exit nonzero so they cannot satisfy this
+real-testnet acceptance check.
 After transmission, the script also treats failed `getUdpIngestInfo` or
 producer-log-vs-receiver-snapshot comparison as a failed lab run.
 
