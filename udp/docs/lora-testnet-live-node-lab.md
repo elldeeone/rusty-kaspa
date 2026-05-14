@@ -37,6 +37,24 @@ is therefore:
   --report /tmp/lora-testnet-live-node-lab-2026-05-14.md
 ```
 
+If no synced external producer is available, use a persistent work directory
+and a long sync wait so a local producer can sync once and then continue into
+the LoRa run:
+
+```bash
+./udp/tools/lora_testnet_live_node_lab.sh \
+  --workdir /tmp/lora-testnet-live-node-lab-state \
+  --sync-wait-seconds 21600 \
+  --duration-seconds 600 \
+  --interval-ms 5000 \
+  --snapshot-every 10 \
+  --report /tmp/lora-testnet-live-node-lab-2026-05-14.md
+```
+
+If the command is interrupted before sync completes, rerun with the same
+`--workdir` so the producer appdir is reused instead of starting from an empty
+temporary appdir.
+
 The script refuses to continue unless the producer reports synced, unless
 `--no-require-synced` is explicitly supplied. That protects the lab from
 accidentally turning a fresh genesis node into false "real network" evidence.

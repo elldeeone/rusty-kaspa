@@ -42,7 +42,8 @@ lora-bridge rx -> receiver kaspad UDP ingest -> RPC/reporting.
 
 Fresh testnet nodes can take hours to sync. For the intended real-network
 validation, prefer --external-producer-rpc pointing at an already-synced
-testnet-10 kaspad gRPC endpoint.
+testnet-10 kaspad gRPC endpoint. If you need to sync locally, pass a persistent
+--workdir and a long --sync-wait-seconds so the appdir can be reused.
 
 Options:
   --producer-rpc HOST:PORT       Producer kaspad gRPC host:port (default: 127.0.0.1:16221)
@@ -55,7 +56,7 @@ Options:
   --interval-ms N                Producer interval (default: 5000)
   --snapshot-every N             Emit snapshot every N datagrams after first; 0 disables (default: 10)
   --report PATH                  Markdown report path
-  --workdir DIR                  Scratch/appdir directory
+  --workdir DIR                  Scratch/appdir directory; use a persistent path for long local sync
   --sync-wait-seconds N          Wait for producer sync before failing (default: 900)
   --no-require-synced            Continue even if producer is not synced; report will mark this
   --no-start-receiver            Use existing receiver RPC/UDP instead of starting kaspad
