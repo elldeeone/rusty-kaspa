@@ -143,27 +143,55 @@ producer provenance report should classify:
 
 ## Acceptance Status
 
-Not yet complete.
+Complete for a bounded real-hardware alpha run.
 
-- A real synced testnet producer was not available during this run.
-- No real testnet DigestV1 traffic was transmitted over LoRa in this attempt.
-- No receiver ingest/soak result is claimed here.
+- Synced producer: local `testnet-10` kaspad at
+  `grpc://127.0.0.1:16221`, with `serverInfoSynced=true` and
+  `syncStatusSynced=true`.
+- Transport: two SX126X HATs through `/dev/lora-left` TX and
+  `/dev/lora-right` RX.
+- Successful run: 50 mixed live DigestV1 datagrams, snapshots every 10
+  datagrams, no lab progress counter.
+- Receiver ingest: 50 frames, 10,485 bytes, one source, zero signature
+  failures.
+- Bridge result: TX and RX both exited zero; RX recovered 50/50 datagrams and
+  55/55 fragments with zero retries, duplicate fragments, corrupt frames,
+  receive timeouts, or reassembly failures.
+- Digest comparison: `udp-rpc-digests --check-monotonic --producer-log
+  --compare-local` exited zero.
 
-The branch now has the tooling and guarded script needed to run the real testnet
-lab once a synced `testnet-10` producer RPC endpoint is available. The producer
-can be a gRPC endpoint, a direct wRPC endpoint, or PNN if the resolver currently
-has an online synced `testnet-10` node:
+The committed result artifact is
+[`lora-testnet-live-node-lab-result-2026-05-14.md`](lora-testnet-live-node-lab-result-2026-05-14.md).
+
+## Measured Operating Envelope
+
+The first synced run attempted 92 datagrams over a 600 second producer window.
+It proved real ingest but exceeded the current RF envelope: receiver kaspad
+ingested 54 verified digests, then TX exhausted retries on datagram 55 and RX
+timed out. The successful bounded run used 50 datagrams over the same target
+duration.
+
+Current measured safe command:
 
 ```bash
 ./udp/tools/lora_testnet_live_node_lab.sh \
-  --external-producer-rpc pnn \
+  --external-producer-rpc grpc://127.0.0.1:16221 \
+  --workdir /home/luke/lora-testnet-live-node-lab-state/run-count50 \
   --duration-seconds 600 \
+  --count 50 \
   --interval-ms 5000 \
   --snapshot-every 10 \
-  --report /tmp/lora-testnet-live-node-lab-2026-05-14.md
+  --report /home/luke/lora-testnet-live-node-lab-2026-05-14-count50.md
 ```
 
-## Remaining Blocker
+For longer unattended runs, keep the datagram target aligned with the measured
+RX throughput, or increase RX timeout/headroom. At the observed bridge summary
+rates, 90+ mixed datagrams need substantially more than the 600 second target
+window once ACK/retry and snapshot fragmentation are included.
 
-Provide or wait for a synced `testnet-10` kaspad RPC endpoint, then rerun the
-script with `--external-producer-rpc` or a pre-synced local appdir.
+## Remaining Gap
+
+The receiver kaspad in this lab is intentionally fresh and unsynced, so it can
+prove UDP ingest/storage/signature validation but still reports divergence
+against live producer digest state. A production relevance test should run the
+receiver against a synced node if the goal is agreement, not only relay/ingest.
