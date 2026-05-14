@@ -102,11 +102,7 @@ fn print_monotonic_summary(response: &kaspa_rpc_core::GetUdpDigestsResponse) {
 fn compare_producer_log(path: &PathBuf, response: &kaspa_rpc_core::GetUdpDigestsResponse) -> Result<()> {
     let log = std::fs::read_to_string(path).with_context(|| format!("read producer log {}", path.display()))?;
     let produced = latest_snapshot_provenance(&log).context("producer log did not contain snapshot provenance")?;
-    let received = response
-        .digests
-        .iter()
-        .find(|record| record.kind == "snapshot")
-        .context("RPC response did not contain a received snapshot")?;
+    let received = latest_received_snapshot(response).context("RPC response did not contain a received snapshot")?;
     let summary = &received.summary;
 
     let virtual_blue_score = summary.virtual_blue_score.to_string();
@@ -150,11 +146,7 @@ fn compare_producer_log(path: &PathBuf, response: &kaspa_rpc_core::GetUdpDigests
 }
 
 async fn compare_local_state(client: &GrpcClient, response: &kaspa_rpc_core::GetUdpDigestsResponse) -> Result<()> {
-    let received = response
-        .digests
-        .iter()
-        .find(|record| record.kind == "snapshot")
-        .context("RPC response did not contain a received snapshot")?;
+    let received = latest_received_snapshot(response).context("RPC response did not contain a received snapshot")?;
     let summary = &received.summary;
     let dag = client.get_block_dag_info().await.context("get_block_dag_info")?;
     let sink_blue_score = client.get_sink_blue_score().await.context("get_sink_blue_score")?;
@@ -237,6 +229,10 @@ fn latest_snapshot_provenance(log: &str) -> Option<std::collections::BTreeMap<St
     latest
 }
 
+fn latest_received_snapshot(response: &kaspa_rpc_core::GetUdpDigestsResponse) -> Option<&kaspa_rpc_core::RpcUdpDigestRecord> {
+    response.digests.iter().filter(|record| record.kind == "snapshot").max_by_key(|record| record.summary.epoch)
+}
+
 #[cfg(test)]
 mod tests {
     use kaspa_rpc_core::{RpcUdpDigestRecord, RpcUdpDigestSummary};
@@ -314,6 +310,19 @@ mod tests {
         let result = super::compare_producer_log(&log_path, &response);
         let _ = std::fs::remove_file(&log_path);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn latest_received_snapshot_selects_highest_epoch_snapshot() {
+        let mut older = record(10, 10, 10, true);
+        older.kind = "snapshot".to_string();
+        let mut newer = record(20, 20, 20, true);
+        newer.kind = "snapshot".to_string();
+        let delta = record(30, 30, 30, true);
+        let response = kaspa_rpc_core::GetUdpDigestsResponse { digests: vec![delta, older, newer] };
+
+        let latest = super::latest_received_snapshot(&response).expect("latest snapshot");
+        assert_eq!(latest.summary.epoch, 20);
     }
 
     fn unique_temp_path(name: &str) -> PathBuf {
