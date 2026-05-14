@@ -29,6 +29,7 @@ START_PRODUCER="1"
 PRODUCER_EXTRA_ARGS=()
 RECEIVER_EXTRA_ARGS=()
 POST_RX_WAIT_SECONDS="8"
+RPC_WAIT_SECONDS="90"
 SYNC_WAIT_SECONDS="900"
 REQUIRE_SYNCED="1"
 
@@ -57,6 +58,7 @@ Options:
   --snapshot-every N             Emit snapshot every N datagrams after first; 0 disables (default: 10)
   --report PATH                  Markdown report path
   --workdir DIR                  Scratch/appdir directory; use a persistent path for long local sync
+  --rpc-wait-seconds N           Wait for producer/receiver RPC startup (default: 90)
   --sync-wait-seconds N          Wait for producer sync before failing (default: 900)
   --no-require-synced            Continue even if producer is not synced; report will mark this
   --no-start-receiver            Use existing receiver RPC/UDP instead of starting kaspad
@@ -82,6 +84,7 @@ while [[ $# -gt 0 ]]; do
     --snapshot-every) SNAPSHOT_EVERY="${2:-}"; shift 2 ;;
     --report) REPORT_PATH="${2:-}"; shift 2 ;;
     --workdir) WORKDIR="${2:-}"; shift 2 ;;
+    --rpc-wait-seconds) RPC_WAIT_SECONDS="${2:-}"; shift 2 ;;
     --sync-wait-seconds) SYNC_WAIT_SECONDS="${2:-}"; shift 2 ;;
     --no-require-synced) REQUIRE_SYNCED="0"; shift ;;
     --no-start-receiver) START_RECEIVER="0"; shift ;;
@@ -142,7 +145,7 @@ trap cleanup EXIT
 wait_for_rpc() {
   local rpc_url=$1
   local label=$2
-  for _ in $(seq 1 90); do
+  for _ in $(seq 1 "${RPC_WAIT_SECONDS}"); do
     if "${ROOT_DIR}/target/debug/udp-rpc-node-info" --rpc-url "${rpc_url}" >/dev/null 2>&1; then
       return 0
     fi
@@ -185,6 +188,17 @@ if [[ "${START_PRODUCER}" == "1" ]]; then
   PIDS+=("$!")
 fi
 
+wait_for_rpc "${PRODUCER_RPC_URL}" "producer"
+
+echo "waiting for producer sync evidence"
+PRODUCER_SYNC_OK="0"
+if wait_for_synced "${PRODUCER_RPC_URL}" "${PRODUCER_INFO_BEFORE}"; then
+  PRODUCER_SYNC_OK="1"
+elif [[ "${REQUIRE_SYNCED}" == "1" ]]; then
+  echo "producer did not report synced within ${SYNC_WAIT_SECONDS}s" >&2
+  exit 1
+fi
+
 if [[ "${START_RECEIVER}" == "1" ]]; then
   echo "starting receiver testnet kaspad"
   (
@@ -208,17 +222,7 @@ if [[ "${START_RECEIVER}" == "1" ]]; then
   PIDS+=("$!")
 fi
 
-wait_for_rpc "${PRODUCER_RPC_URL}" "producer"
 wait_for_rpc "${RECEIVER_RPC_URL}" "receiver"
-
-echo "waiting for producer sync evidence"
-PRODUCER_SYNC_OK="0"
-if wait_for_synced "${PRODUCER_RPC_URL}" "${PRODUCER_INFO_BEFORE}"; then
-  PRODUCER_SYNC_OK="1"
-elif [[ "${REQUIRE_SYNCED}" == "1" ]]; then
-  echo "producer did not report synced within ${SYNC_WAIT_SECONDS}s" >&2
-  exit 1
-fi
 
 "${ROOT_DIR}/target/debug/udp-rpc-node-info" --rpc-url "${RECEIVER_RPC_URL}" >"${RECEIVER_INFO_FINAL}" 2>&1 || true
 

@@ -53,7 +53,20 @@ the LoRa run:
 
 If the command is interrupted before sync completes, rerun with the same
 `--workdir` so the producer appdir is reused instead of starting from an empty
-temporary appdir.
+temporary appdir. The script waits for producer sync before starting the
+receiver or LoRa stages, so a long local sync does not hold the receiver UDP/RPC
+ports or serial devices.
+
+For quick endpoint checks, reduce the RPC startup wait:
+
+```bash
+./udp/tools/lora_testnet_live_node_lab.sh \
+  --external-producer-rpc grpc://<candidate-testnet-10-node>:<grpc-port> \
+  --rpc-wait-seconds 5 \
+  --sync-wait-seconds 10 \
+  --duration-seconds 1 \
+  --report /tmp/lora-testnet-probe.md
+```
 
 The script refuses to continue unless the producer reports synced, unless
 `--no-require-synced` is explicitly supplied. That protects the lab from
