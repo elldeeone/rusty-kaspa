@@ -12,6 +12,10 @@ use kaspa_rpc_core::api::rpc::RpcApi;
 use kaspa_udp_sidechannel::fixtures::{
     self, build_delta_vector, build_snapshot_vector, DeltaFields, SnapshotFields, DEFAULT_SIGNER_SECRET, DEFAULT_SOURCE_ID,
 };
+use kaspa_wrpc_client::{
+    client::{ConnectOptions, ConnectStrategy},
+    KaspaRpcClient, Resolver, WrpcEncoding,
+};
 use secp256k1::{Keypair, Secp256k1, SecretKey};
 use sha2::{Digest as ShaDigest, Sha256};
 use std::{
@@ -24,7 +28,7 @@ use std::{
 #[command(name = "udp-live-digest-producer")]
 #[command(about = "Produce signed lab DigestV1 KUDP datagrams from a local devnet/simnet kaspad RPC endpoint.")]
 struct Args {
-    /// Producer-side kaspad gRPC URL.
+    /// Producer-side kaspad RPC URL. Use grpc://..., ws://..., wss://..., or pnn.
     #[arg(long, default_value = "grpc://127.0.0.1:16111")]
     rpc_url: String,
 
@@ -115,7 +119,6 @@ async fn main() -> Result<()> {
     let network_tag = encode_network_tag(&network_id);
     let signer = signer_from_args(args.signer_secret_hex.as_deref())?;
     let signer_hex = fixtures::signer_hex(&signer);
-    let client = GrpcClient::connect(args.rpc_url.clone()).await.context("connect grpc")?;
     let mut output = OutputSink::new(&args)?;
 
     eprintln!(
@@ -126,9 +129,54 @@ async fn main() -> Result<()> {
         "field provenance: real_rpc=pruning_point_hash,sink,sink_blue_score,virtual_daa_score,sink_header.blue_work,sink_header.utxo_commitment; placeholder_lab=pruning_proof_commitment; omitted=kept_headers_mmr_root; optional_lab_progress_counter=epoch/daa_score/virtual_blue_score increments"
     );
 
+    if is_wrpc_url(&args.rpc_url) {
+        let client = connect_wrpc(&args.rpc_url, network_id).await?;
+        run_producer(&args, network_tag, &signer, &signer_hex, &client, &mut output).await?;
+        client.disconnect().await.context("disconnect wrpc")?;
+        return Ok(());
+    }
+
+    let client = GrpcClient::connect(args.rpc_url.clone()).await.context("connect grpc")?;
+    run_producer(&args, network_tag, &signer, &signer_hex, &client, &mut output).await?;
+    client.disconnect().await.context("disconnect grpc")?;
+    Ok(())
+}
+
+async fn connect_wrpc(rpc_url: &str, network_id: NetworkId) -> Result<KaspaRpcClient> {
+    let use_resolver = matches!(rpc_url, "pnn" | "wrpc://pnn");
+    let url = if use_resolver { None } else { Some(rpc_url) };
+    let resolver = if use_resolver { Some(Resolver::default()) } else { None };
+    let client = KaspaRpcClient::new(WrpcEncoding::Borsh, url, resolver, Some(network_id), None).context("create wrpc client")?;
+    tokio::time::timeout(
+        Duration::from_millis(10_000),
+        client.connect(Some(ConnectOptions {
+            block_async_connect: true,
+            connect_timeout: Some(Duration::from_millis(5_000)),
+            strategy: ConnectStrategy::Fallback,
+            ..Default::default()
+        })),
+    )
+    .await
+    .context("wrpc connect timed out")?
+    .context("connect wrpc")?;
+    Ok(client)
+}
+
+fn is_wrpc_url(rpc_url: &str) -> bool {
+    matches!(rpc_url, "pnn" | "wrpc://pnn") || rpc_url.starts_with("ws://") || rpc_url.starts_with("wss://")
+}
+
+async fn run_producer(
+    args: &Args,
+    network_tag: u8,
+    signer: &Keypair,
+    signer_hex: &str,
+    client: &impl RpcApi,
+    output: &mut OutputSink,
+) -> Result<()> {
     for index in 0..args.count {
         let kind = choose_kind(index, args.snapshot_first, args.snapshot_every);
-        let state = LiveState::query(&client, index, args.lab_progress_counter, args.lab_diverge_virtual_blue_score).await?;
+        let state = LiveState::query(client, index, args.lab_progress_counter, args.lab_diverge_virtual_blue_score).await?;
         let seq = args.initial_seq.wrapping_add(index as u64);
         let datagram = match kind {
             DigestKind::Snapshot => {
@@ -171,8 +219,6 @@ async fn main() -> Result<()> {
             tokio::time::sleep(Duration::from_millis(args.interval_ms)).await;
         }
     }
-
-    client.disconnect().await.context("disconnect grpc")?;
     Ok(())
 }
 
@@ -190,7 +236,12 @@ struct LiveState {
 }
 
 impl LiveState {
-    async fn query(client: &GrpcClient, index: u32, lab_progress_counter: bool, lab_diverge_virtual_blue_score: bool) -> Result<Self> {
+    async fn query(
+        client: &impl RpcApi,
+        index: u32,
+        lab_progress_counter: bool,
+        lab_diverge_virtual_blue_score: bool,
+    ) -> Result<Self> {
         let dag = client.get_block_dag_info().await.context("get_block_dag_info")?;
         let sink_blue_score = client.get_sink_blue_score().await.context("get_sink_blue_score")?;
         let progress = if lab_progress_counter { index as u64 } else { 0 };

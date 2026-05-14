@@ -43,12 +43,13 @@ lora-bridge rx -> receiver kaspad UDP ingest -> RPC/reporting.
 
 Fresh testnet nodes can take hours to sync. For the intended real-network
 validation, prefer --external-producer-rpc pointing at an already-synced
-testnet-10 kaspad gRPC endpoint. If you need to sync locally, pass a persistent
---workdir and a long --sync-wait-seconds so the appdir can be reused.
+testnet-10 kaspad gRPC endpoint, wRPC endpoint, or pnn. If you need to sync
+locally, pass a persistent --workdir and a long --sync-wait-seconds so the
+appdir can be reused.
 
 Options:
   --producer-rpc HOST:PORT       Producer kaspad gRPC host:port (default: 127.0.0.1:16221)
-  --external-producer-rpc URL    Use existing producer gRPC URL and do not start producer kaspad
+  --external-producer-rpc URL    Use existing producer RPC URL (grpc://, ws://, wss://, or pnn)
   --receiver-rpc HOST:PORT       Receiver gRPC host:port (default: 127.0.0.1:16220)
   --receiver-udp HOST:PORT       Receiver UDP ingest bind (default: 127.0.0.1:28620)
   --bridge-udp HOST:PORT         Local UDP socket used by lora-bridge tx (default: 127.0.0.1:39120)
@@ -145,11 +146,22 @@ trap cleanup EXIT
 wait_for_rpc() {
   local rpc_url=$1
   local label=$2
-  for _ in $(seq 1 "${RPC_WAIT_SECONDS}"); do
-    if "${ROOT_DIR}/target/debug/udp-rpc-node-info" --rpc-url "${rpc_url}" >/dev/null 2>&1; then
+  local deadline=$((SECONDS + RPC_WAIT_SECONDS))
+  while [[ "${SECONDS}" -le "${deadline}" ]]; do
+    local remaining=$((deadline - SECONDS))
+    if [[ "${remaining}" -le 0 ]]; then
+      break
+    fi
+    local probe_timeout="${remaining}"
+    if [[ "${probe_timeout}" -gt 10 ]]; then
+      probe_timeout=10
+    fi
+    if timeout "${probe_timeout}s" "${ROOT_DIR}/target/debug/udp-rpc-node-info" --rpc-url "${rpc_url}" --network "${NETWORK}" >/dev/null 2>&1; then
       return 0
     fi
-    sleep 1
+    if [[ $((deadline - SECONDS)) -gt 0 ]]; then
+      sleep 1
+    fi
   done
   echo "timed out waiting for ${label} RPC at ${rpc_url}" >&2
   return 1
@@ -190,13 +202,21 @@ wait_for_synced() {
   local out=$2
   local deadline=$((SECONDS + SYNC_WAIT_SECONDS))
   while [[ "${SECONDS}" -le "${deadline}" ]]; do
-    if "${ROOT_DIR}/target/debug/udp-rpc-node-info" --rpc-url "${rpc_url}" >"${out}.tmp" 2>"${out}.err"; then
+    local remaining=$((deadline - SECONDS))
+    if [[ "${remaining}" -le 0 ]]; then
+      break
+    fi
+    local probe_timeout="${remaining}"
+    if [[ "${probe_timeout}" -gt 10 ]]; then
+      probe_timeout=10
+    fi
+    if timeout "${probe_timeout}s" "${ROOT_DIR}/target/debug/udp-rpc-node-info" --rpc-url "${rpc_url}" --network "${NETWORK}" >"${out}.tmp" 2>"${out}.err"; then
       mv "${out}.tmp" "${out}"
       if node_network_matches "${out}" && rg -q '"serverInfoSynced": true|"syncStatusSynced": true' "${out}"; then
         return 0
       fi
     fi
-    local remaining=$((deadline - SECONDS))
+    remaining=$((deadline - SECONDS))
     if [[ "${remaining}" -le 0 ]]; then
       break
     fi
@@ -268,7 +288,7 @@ fi
 
 wait_for_rpc "${RECEIVER_RPC_URL}" "receiver"
 
-"${ROOT_DIR}/target/debug/udp-rpc-node-info" --rpc-url "${RECEIVER_RPC_URL}" >"${RECEIVER_INFO_FINAL}" 2>&1 || true
+"${ROOT_DIR}/target/debug/udp-rpc-node-info" --rpc-url "${RECEIVER_RPC_URL}" --network "${NETWORK}" >"${RECEIVER_INFO_FINAL}" 2>&1 || true
 if ! node_network_matches "${RECEIVER_INFO_FINAL}"; then
   echo "receiver RPC is not on ${NETWORK}" >&2
   exit 1
@@ -340,8 +360,8 @@ if [[ "${POST_RX_WAIT_SECONDS}" -gt 0 ]]; then
   sleep "${POST_RX_WAIT_SECONDS}"
 fi
 
-"${ROOT_DIR}/target/debug/udp-rpc-node-info" --rpc-url "${PRODUCER_RPC_URL}" >"${PRODUCER_INFO_AFTER}" 2>&1 || true
-"${ROOT_DIR}/target/debug/udp-rpc-node-info" --rpc-url "${RECEIVER_RPC_URL}" >"${RECEIVER_INFO_FINAL}" 2>&1 || true
+"${ROOT_DIR}/target/debug/udp-rpc-node-info" --rpc-url "${PRODUCER_RPC_URL}" --network "${NETWORK}" >"${PRODUCER_INFO_AFTER}" 2>&1 || true
+"${ROOT_DIR}/target/debug/udp-rpc-node-info" --rpc-url "${RECEIVER_RPC_URL}" --network "${NETWORK}" >"${RECEIVER_INFO_FINAL}" 2>&1 || true
 INGEST_STATUS=0
 DIGESTS_STATUS=0
 "${ROOT_DIR}/target/debug/udp-rpc-digests" --rpc-url "${RECEIVER_RPC_URL}" info >"${INGEST_INFO_JSON}" 2>&1 || INGEST_STATUS=$?

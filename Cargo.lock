@@ -6360,6 +6360,7 @@ dependencies = [
  "kaspa-rpc-core",
  "kaspa-txscript",
  "kaspa-udp-sidechannel",
+ "kaspa-wrpc-client",
  "secp256k1",
  "serde_json",
  "sha2",

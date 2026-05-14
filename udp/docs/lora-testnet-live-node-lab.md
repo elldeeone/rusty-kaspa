@@ -20,7 +20,8 @@ Two reusable pieces were added for this lab:
 - `udp-rpc-node-info`: compact JSON helper for producer/receiver node evidence.
   It captures network id, sync flags, sink, pruning point, virtual DAA score,
   sink blue score, sink blue work, and sink UTXO commitment if the sink block is
-  available.
+  available. It supports gRPC URLs, direct wRPC URLs, and `--rpc-url pnn` for
+  the wRPC public-node resolver.
 - `udp/tools/lora_testnet_live_node_lab.sh`: real-network LoRa lab script. It
   can start local testnet producer/receiver nodes or attach to an already synced
   producer with `--external-producer-rpc`. Started local nodes use
@@ -149,9 +150,20 @@ Not yet complete.
 - No receiver ingest/soak result is claimed here.
 
 The branch now has the tooling and guarded script needed to run the real testnet
-lab once a synced `testnet-10` producer RPC endpoint is available.
+lab once a synced `testnet-10` producer RPC endpoint is available. The producer
+can be a gRPC endpoint, a direct wRPC endpoint, or PNN if the resolver currently
+has an online synced `testnet-10` node:
+
+```bash
+./udp/tools/lora_testnet_live_node_lab.sh \
+  --external-producer-rpc pnn \
+  --duration-seconds 600 \
+  --interval-ms 5000 \
+  --snapshot-every 10 \
+  --report /tmp/lora-testnet-live-node-lab-2026-05-14.md
+```
 
 ## Remaining Blocker
 
-Provide or wait for a synced `testnet-10` kaspad gRPC endpoint, then rerun the
+Provide or wait for a synced `testnet-10` kaspad RPC endpoint, then rerun the
 script with `--external-producer-rpc` or a pre-synced local appdir.
