@@ -294,15 +294,17 @@ fi
 
 "${ROOT_DIR}/target/debug/udp-rpc-node-info" --rpc-url "${PRODUCER_RPC_URL}" >"${PRODUCER_INFO_AFTER}" 2>&1 || true
 "${ROOT_DIR}/target/debug/udp-rpc-node-info" --rpc-url "${RECEIVER_RPC_URL}" >"${RECEIVER_INFO_FINAL}" 2>&1 || true
-"${ROOT_DIR}/target/debug/udp-rpc-digests" --rpc-url "${RECEIVER_RPC_URL}" info >"${INGEST_INFO_JSON}" 2>&1 || true
-"${ROOT_DIR}/target/debug/udp-rpc-digests" --rpc-url "${RECEIVER_RPC_URL}" digests --limit 10 --check-monotonic --producer-log "${PRODUCER_LOG}" --compare-local >"${DIGESTS_JSON}" 2>&1 || true
+INGEST_STATUS=0
+DIGESTS_STATUS=0
+"${ROOT_DIR}/target/debug/udp-rpc-digests" --rpc-url "${RECEIVER_RPC_URL}" info >"${INGEST_INFO_JSON}" 2>&1 || INGEST_STATUS=$?
+"${ROOT_DIR}/target/debug/udp-rpc-digests" --rpc-url "${RECEIVER_RPC_URL}" digests --limit 10 --check-monotonic --producer-log "${PRODUCER_LOG}" --compare-local >"${DIGESTS_JSON}" 2>&1 || DIGESTS_STATUS=$?
 
 {
   echo "# LoRa Testnet Live Node Lab"
   echo
   echo "Generated: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
   echo
-  echo "Result: $([[ "${PRODUCER_STATUS}" -eq 0 && "${TX_STATUS}" -eq 0 && "${RX_STATUS}" -eq 0 ]] && echo complete || echo failed)"
+  echo "Result: $([[ "${PRODUCER_STATUS}" -eq 0 && "${TX_STATUS}" -eq 0 && "${RX_STATUS}" -eq 0 && "${INGEST_STATUS}" -eq 0 && "${DIGESTS_STATUS}" -eq 0 ]] && echo complete || echo failed)"
   echo
   echo "## Configuration"
   echo
@@ -343,6 +345,8 @@ fi
   echo "- live producer exit: \`${PRODUCER_STATUS}\`"
   echo "- lora tx exit: \`${TX_STATUS}\`"
   echo "- lora rx exit: \`${RX_STATUS}\`"
+  echo "- ingest RPC check exit: \`${INGEST_STATUS}\`"
+  echo "- digest comparison exit: \`${DIGESTS_STATUS}\`"
   echo
   echo "## Receiver Ingest Summary"
   echo
@@ -376,6 +380,6 @@ fi
 
 echo "wrote report: ${REPORT_PATH}"
 
-if [[ "${PRODUCER_STATUS}" -ne 0 || "${TX_STATUS}" -ne 0 || "${RX_STATUS}" -ne 0 ]]; then
+if [[ "${PRODUCER_STATUS}" -ne 0 || "${TX_STATUS}" -ne 0 || "${RX_STATUS}" -ne 0 || "${INGEST_STATUS}" -ne 0 || "${DIGESTS_STATUS}" -ne 0 ]]; then
   exit 1
 fi

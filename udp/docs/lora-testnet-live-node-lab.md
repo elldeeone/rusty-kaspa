@@ -71,6 +71,8 @@ For quick endpoint checks, reduce the RPC startup wait:
 The script refuses to continue unless the producer reports synced, unless
 `--no-require-synced` is explicitly supplied. That protects the lab from
 accidentally turning a fresh genesis node into false "real network" evidence.
+After transmission, the script also treats failed `getUdpIngestInfo` or
+producer-log-vs-receiver-snapshot comparison as a failed lab run.
 
 ## Local Fresh-Node Attempt
 

@@ -145,6 +145,7 @@ fn compare_producer_log(path: &PathBuf, response: &kaspa_rpc_core::GetUdpDigests
         checks.len(),
         mismatches
     );
+    anyhow::ensure!(mismatches.is_empty(), "producer provenance did not match received snapshot fields");
     Ok(())
 }
 
@@ -239,6 +240,7 @@ fn latest_snapshot_provenance(log: &str) -> Option<std::collections::BTreeMap<St
 #[cfg(test)]
 mod tests {
     use kaspa_rpc_core::{RpcUdpDigestRecord, RpcUdpDigestSummary};
+    use std::path::PathBuf;
 
     fn record(epoch: u64, daa_score: u64, virtual_blue_score: u64, signature_valid: bool) -> RpcUdpDigestRecord {
         RpcUdpDigestRecord {
@@ -276,5 +278,45 @@ mod tests {
         assert_eq!(fields.get("pruning_point").map(String::as_str), Some("aa"));
         assert_eq!(fields.get("daa_score").map(String::as_str), Some("42"));
         assert_eq!(fields.get("source_id").map(String::as_str), Some("7"));
+    }
+
+    #[test]
+    fn producer_log_compare_fails_on_snapshot_mismatch() {
+        let log_path = unique_temp_path("udp-rpc-digests-mismatch.log");
+        std::fs::write(
+            &log_path,
+            r#"{"event":"udp_live_digest_provenance","kind":"snapshot","fields":[{"field":"pruning_point","value":"aa"},{"field":"utxo_muhash","value":"bb"},{"field":"virtual_selected_parent","value":"cc"},{"field":"virtual_blue_score","value":1},{"field":"daa_score","value":2},{"field":"blue_work","value":"dd"},{"field":"signer_id","value":0},{"field":"source_id","value":7}]}"#,
+        )
+        .expect("write producer log");
+        let response = kaspa_rpc_core::GetUdpDigestsResponse {
+            digests: vec![RpcUdpDigestRecord {
+                epoch: 2,
+                kind: "snapshot".to_string(),
+                summary: RpcUdpDigestSummary {
+                    epoch: 2,
+                    pruning_point: Some("different".to_string()),
+                    pruning_proof_commitment: None,
+                    utxo_muhash: Some("bb".to_string()),
+                    virtual_selected_parent: "cc".to_string(),
+                    virtual_blue_score: 1,
+                    daa_score: 2,
+                    blue_work_hex: "dd".to_string(),
+                    kept_headers_mmr_root: None,
+                    signer_id: 0,
+                    signature_valid: true,
+                    recv_ts_ms: 0,
+                    source_id: 7,
+                },
+                verified: true,
+            }],
+        };
+
+        let result = super::compare_producer_log(&log_path, &response);
+        let _ = std::fs::remove_file(&log_path);
+        assert!(result.is_err());
+    }
+
+    fn unique_temp_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("{}-{}", std::process::id(), name))
     }
 }
