@@ -68,9 +68,12 @@ For quick endpoint checks, reduce the RPC startup wait:
   --report /tmp/lora-testnet-probe.md
 ```
 
-The script refuses to continue unless the producer reports synced, unless
-`--no-require-synced` is explicitly supplied. That protects the lab from
-accidentally turning a fresh genesis node into false "real network" evidence.
+The script refuses to continue unless the producer reports synced `testnet-10`
+state, unless `--no-require-synced` is explicitly supplied. It always verifies
+that producer and receiver RPCs report `testnet-10`, so an accidental mainnet or
+wrong-testnet endpoint cannot satisfy the lab. That protects the lab from
+accidentally turning a fresh genesis node or wrong network into false "real
+network" evidence.
 After transmission, the script also treats failed `getUdpIngestInfo` or
 producer-log-vs-receiver-snapshot comparison as a failed lab run.
 

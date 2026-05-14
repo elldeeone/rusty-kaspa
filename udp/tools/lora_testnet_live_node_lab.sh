@@ -155,6 +155,11 @@ wait_for_rpc() {
   return 1
 }
 
+node_network_matches() {
+  local info_path=$1
+  rg -q "\"networkId\": \"${NETWORK}\"" "${info_path}" && rg -q "\"dagNetwork\": \"${NETWORK}\"" "${info_path}"
+}
+
 wait_for_synced() {
   local rpc_url=$1
   local out=$2
@@ -162,11 +167,19 @@ wait_for_synced() {
   while [[ "${SECONDS}" -le "${deadline}" ]]; do
     if "${ROOT_DIR}/target/debug/udp-rpc-node-info" --rpc-url "${rpc_url}" >"${out}.tmp" 2>"${out}.err"; then
       mv "${out}.tmp" "${out}"
-      if rg -q '"serverInfoSynced": true|"syncStatusSynced": true' "${out}"; then
+      if node_network_matches "${out}" && rg -q '"serverInfoSynced": true|"syncStatusSynced": true' "${out}"; then
         return 0
       fi
     fi
-    sleep 10
+    local remaining=$((deadline - SECONDS))
+    if [[ "${remaining}" -le 0 ]]; then
+      break
+    fi
+    if [[ "${remaining}" -lt 10 ]]; then
+      sleep "${remaining}"
+    else
+      sleep 10
+    fi
   done
   [[ -f "${out}.tmp" ]] && mv "${out}.tmp" "${out}" || true
   return 1
@@ -195,7 +208,11 @@ PRODUCER_SYNC_OK="0"
 if wait_for_synced "${PRODUCER_RPC_URL}" "${PRODUCER_INFO_BEFORE}"; then
   PRODUCER_SYNC_OK="1"
 elif [[ "${REQUIRE_SYNCED}" == "1" ]]; then
-  echo "producer did not report synced within ${SYNC_WAIT_SECONDS}s" >&2
+  echo "producer did not report synced ${NETWORK} state within ${SYNC_WAIT_SECONDS}s" >&2
+  exit 1
+fi
+if [[ -f "${PRODUCER_INFO_BEFORE}" ]] && ! node_network_matches "${PRODUCER_INFO_BEFORE}"; then
+  echo "producer RPC is not on ${NETWORK}" >&2
   exit 1
 fi
 
@@ -225,6 +242,10 @@ fi
 wait_for_rpc "${RECEIVER_RPC_URL}" "receiver"
 
 "${ROOT_DIR}/target/debug/udp-rpc-node-info" --rpc-url "${RECEIVER_RPC_URL}" >"${RECEIVER_INFO_FINAL}" 2>&1 || true
+if ! node_network_matches "${RECEIVER_INFO_FINAL}"; then
+  echo "receiver RPC is not on ${NETWORK}" >&2
+  exit 1
+fi
 
 echo "starting LoRa RX"
 "${ROOT_DIR}/target/debug/lora-bridge" rx \
