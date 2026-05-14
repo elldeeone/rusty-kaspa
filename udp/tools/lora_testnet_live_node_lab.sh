@@ -191,6 +191,7 @@ if [[ "${START_PRODUCER}" == "1" ]]; then
     cd "${ROOT_DIR}"
     cargo run -p kaspad -- \
       --testnet \
+      --netsuffix=10 \
       --rpclisten="${PRODUCER_RPC}" \
       --listen=127.0.0.1:0 \
       --appdir="${PRODUCER_APP}" \
@@ -222,6 +223,7 @@ if [[ "${START_RECEIVER}" == "1" ]]; then
     cd "${ROOT_DIR}"
     RUST_LOG='info,kaspa_udp_sidechannel=debug' cargo run -p kaspad -- \
       --testnet \
+      --netsuffix=10 \
       --udp.enable \
       --udp.listen="${RECEIVER_UDP}" \
       --udp.require_signature=true \

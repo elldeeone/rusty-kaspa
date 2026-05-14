@@ -23,7 +23,8 @@ Two reusable pieces were added for this lab:
   available.
 - `udp/tools/lora_testnet_live_node_lab.sh`: real-network LoRa lab script. It
   can start local testnet producer/receiver nodes or attach to an already synced
-  producer with `--external-producer-rpc`.
+  producer with `--external-producer-rpc`. Started local nodes use
+  `--testnet --netsuffix=10` explicitly.
 
 Fresh local testnet nodes can take hours to sync. The preferred validation path
 is therefore:
