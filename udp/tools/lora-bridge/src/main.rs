@@ -1,7 +1,7 @@
 use anyhow::{bail, Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use serialport::SerialPort;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs;
 use std::io::{self, Read, Write};
 use std::net::{SocketAddr, UdpSocket};
@@ -22,6 +22,7 @@ const RELIABLE_FRAG_HEADER_LEN: usize = 18;
 const ACK_FRAME_LEN: usize = 14;
 const FRAG_CHUNK_LEN: usize = LORA_APP_MTU - FRAG_HEADER_LEN;
 const RELIABLE_FRAG_CHUNK_LEN: usize = LORA_APP_MTU - RELIABLE_FRAG_HEADER_LEN;
+const DELIVERED_CACHE_LEN: usize = 512;
 
 #[derive(Parser, Debug)]
 #[command(name = "lora-bridge")]
@@ -88,6 +89,14 @@ struct TxArgs {
     /// Wrap all KUDP datagrams in the reliable envelope, including single-packet deltas.
     #[arg(long)]
     reliable_all: bool,
+
+    /// Bridge-local reliability strategy. ack waits for every ACK; redundant sends bounded duplicate copies and does not wait for ACK.
+    #[arg(long, value_enum, default_value_t = ReliabilityMode::Ack)]
+    reliability_mode: ReliabilityMode,
+
+    /// Number of copies to send per reliable frame when --reliability-mode=redundant.
+    #[arg(long, default_value_t = 3)]
+    redundant_copies: usize,
 
     /// Retry count per fragment when --reliable-fragments is enabled.
     #[arg(long, default_value_t = 4)]
@@ -199,6 +208,12 @@ enum OutputKind {
     Udp,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+enum ReliabilityMode {
+    Ack,
+    Redundant,
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
@@ -233,7 +248,7 @@ fn tx(args: TxArgs) -> Result<()> {
             }
             let frag_ix = fragment_index(frame).unwrap_or(idx as u16);
             let (attempts, serial_bytes) = if (args.reliable_fragments || args.reliable_all) && is_reliable_fragment(frame) {
-                write_reliable_frame(&mut *port, &prefix, frame, session_id, datagram_id, frag_ix, &args, &mut stats)?
+                write_reliable_frame(&mut *port, &prefix, frame, session_id, datagram_id, frag_ix, delay, &args, &mut stats)?
             } else {
                 let serial_bytes = write_lora_app_payload(&mut *port, &prefix, frame)?;
                 (1, serial_bytes)
@@ -441,9 +456,22 @@ fn write_reliable_frame(
     session_id: u32,
     datagram_id: u32,
     frag_ix: u16,
+    inter_copy_delay: Duration,
     args: &TxArgs,
     stats: &mut BridgeStats,
 ) -> Result<(usize, usize)> {
+    if args.reliability_mode == ReliabilityMode::Redundant {
+        let copies = args.redundant_copies.max(1);
+        let mut serial_bytes = 0usize;
+        for copy in 0..copies {
+            serial_bytes = write_lora_app_payload(port, prefix, frame)?;
+            if copy + 1 < copies && !inter_copy_delay.is_zero() {
+                std::thread::sleep(inter_copy_delay);
+            }
+        }
+        return Ok((copies, serial_bytes));
+    }
+
     let mut attempts = 0usize;
     for attempt in 0..=args.retry_count {
         attempts += 1;
@@ -705,9 +733,20 @@ fn parse_fragment(app_payload: &[u8]) -> Result<Fragment<'_>> {
     Ok(Fragment { session_id, datagram_id, frag_ix, frag_cnt, total_len, chunk })
 }
 
-#[derive(Default)]
 struct Reassembler {
     pending: BTreeMap<u32, PendingDatagram>,
+    delivered_order: VecDeque<u32>,
+    delivered_ids: BTreeSet<u32>,
+}
+
+impl Default for Reassembler {
+    fn default() -> Self {
+        Self {
+            pending: BTreeMap::new(),
+            delivered_order: VecDeque::with_capacity(DELIVERED_CACHE_LEN),
+            delivered_ids: BTreeSet::new(),
+        }
+    }
 }
 
 impl Reassembler {
@@ -723,6 +762,10 @@ impl Reassembler {
         }
         let fragment = parse_fragment(app_payload)?;
         stats.fragments_received += 1;
+        if self.delivered_ids.contains(&fragment.datagram_id) {
+            stats.duplicate_fragments += 1;
+            return Ok(None);
+        }
         let pending =
             self.pending.entry(fragment.datagram_id).or_insert_with(|| PendingDatagram::new(fragment.frag_cnt, fragment.total_len));
         if pending.insert(fragment.frag_ix, fragment.frag_cnt, fragment.total_len, fragment.chunk)? {
@@ -731,7 +774,9 @@ impl Reassembler {
 
         if pending.is_complete() {
             let pending = self.pending.remove(&fragment.datagram_id).unwrap();
-            return Ok(Some(pending.assemble()?));
+            let datagram = pending.assemble()?;
+            self.mark_delivered(fragment.datagram_id);
+            return Ok(Some(datagram));
         }
 
         eprintln!("received fragment {}/{} for datagram {}", fragment.frag_ix + 1, fragment.frag_cnt, fragment.datagram_id);
@@ -753,6 +798,17 @@ impl Reassembler {
             })
             .collect::<Vec<_>>()
             .join("; ")
+    }
+
+    fn mark_delivered(&mut self, datagram_id: u32) {
+        if self.delivered_ids.insert(datagram_id) {
+            self.delivered_order.push_back(datagram_id);
+        }
+        while self.delivered_order.len() > DELIVERED_CACHE_LEN {
+            if let Some(oldest) = self.delivered_order.pop_front() {
+                self.delivered_ids.remove(&oldest);
+            }
+        }
     }
 }
 
@@ -954,6 +1010,34 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_delivered_datagram_is_not_emitted_again() {
+        let datagram = kudp_datagram(200);
+        let frames = fragment_datagram_with_options(&datagram, 64, false, true, true, 7).unwrap();
+        let mut stats = BridgeStats::default();
+        let mut reassembler = Reassembler::default();
+
+        let out = reassembler.push_with_stats(&frames[0], &mut stats).unwrap().unwrap();
+        assert_eq!(out, datagram);
+        assert!(reassembler.push_with_stats(&frames[0], &mut stats).unwrap().is_none());
+        assert_eq!(stats.duplicate_fragments, 1);
+    }
+
+    #[test]
+    fn mixed_reliable_single_and_multi_fragment_datagrams_reassemble_once() {
+        let delta = kudp_datagram(200);
+        let snapshot = kudp_datagram(329);
+        let delta_frames = fragment_datagram_with_options(&delta, 1, false, true, true, 12).unwrap();
+        let snapshot_frames = fragment_datagram_with_options(&snapshot, 2, false, true, true, 12).unwrap();
+        let mut reassembler = Reassembler::default();
+
+        assert_eq!(reassembler.push(&delta_frames[0]).unwrap().unwrap(), delta);
+        assert!(reassembler.push(&snapshot_frames[1]).unwrap().is_none());
+        assert_eq!(reassembler.push(&snapshot_frames[0]).unwrap().unwrap(), snapshot);
+        assert!(reassembler.push(&delta_frames[0]).unwrap().is_none());
+        assert!(reassembler.push(&snapshot_frames[0]).unwrap().is_none());
+    }
+
+    #[test]
     fn reliable_all_wraps_single_packet_delta_for_ack_recovery() {
         let datagram = kudp_datagram(200);
         let frames = fragment_datagram_with_options(&datagram, 91, false, true, true, 5).unwrap();
@@ -993,6 +1077,8 @@ mod tests {
             inter_frame_delay_ms: None,
             reliable_fragments: true,
             reliable_all: false,
+            reliability_mode: ReliabilityMode::Ack,
+            redundant_copies: 3,
             retry_count: 4,
             ack_timeout_ms: 3_000,
             session_id: 1,

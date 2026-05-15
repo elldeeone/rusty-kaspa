@@ -128,6 +128,27 @@ consensus or core UDP side-channel semantics. `--group-id` is accepted as an
 alias-style override for `--session-id` when several bridge groups share the
 same RF channel.
 
+For live testnet runs where ACK loss appears to limit sustained capacity, the
+same reliable envelope can be run in redundant mode:
+
+```bash
+cargo run -p lora-bridge -- tx \
+  --serial /dev/lora-left \
+  --input udp \
+  --udp-bind 127.0.0.1:39000 \
+  --reliable-fragments \
+  --reliability-mode redundant \
+  --redundant-copies 2 \
+  --inter-frame-delay-ms 2500
+```
+
+Redundant mode sends each `KLR2` frame a bounded number of times and does not
+wait for ACKs. RX still suppresses duplicate fragments and late duplicate
+datagrams before forwarding. This trades airtime for avoiding ACK-dependent
+retry exhaustion; it is bridge-local alpha behavior, not a consensus or `KUDP`
+wire-format change. The protocol details are documented in
+[`udp/docs/lora-bridge-reliability-protocol.md`](../../docs/lora-bridge-reliability-protocol.md).
+
 Receiver:
 
 ```bash

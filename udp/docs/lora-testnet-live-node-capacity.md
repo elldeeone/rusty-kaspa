@@ -112,16 +112,64 @@ kaspad ingest or producer pacing defect.
 
 ## Recommendation
 
-Keep 50 mixed live datagrams as the reproducible passing operating point for
-this hardware/configuration. A 60-datagram run passed once, but the 75- and
-90-datagram runs fail inconsistently between datagrams 57 and 70, and a more
-conservative pacing/retry run did not improve the boundary.
+For ACK mode, keep 50 mixed live datagrams as the reproducible passing operating
+point for this hardware/configuration. A 60-datagram run passed once, but the
+75- and 90-datagram runs fail inconsistently between datagrams 57 and 70, and a
+more conservative pacing/retry run did not improve the boundary.
 
-Do not claim a 90+ datagram live LoRa operating point yet. The next useful
-hardware-focused step is radio-level diagnosis: RSSI/SNR if available from the
-module, antenna placement/power/channel checks, and a loop that can distinguish
-data-frame loss from ACK loss. FEC or deeper protocol work should wait until the
-RF/ACK direction is isolated.
+Do not claim a 90+ datagram ACK-mode live LoRa operating point. The next useful
+hardware-focused step for ACK mode is radio-level diagnosis: RSSI/SNR if
+available from the module, antenna placement/power/channel checks, and a loop
+that can distinguish data-frame loss from ACK loss. FEC or deeper protocol work
+should wait until the RF/ACK direction is isolated.
+
+## Robust Reliability Follow-Up
+
+A bridge-local redundant reliability mode was added after the ACK-mode boundary
+above. It keeps the same `KLR2` reliable frame envelope and byte-exact receiver
+reassembly, but TX sends each frame a bounded number of times and does not wait
+for per-frame ACKs. RX suppresses duplicate fragments and late duplicate
+datagrams before UDP forwarding.
+
+The protocol rationale is documented in
+[`lora-bridge-reliability-protocol.md`](lora-bridge-reliability-protocol.md).
+
+Follow-up runs used the same synced `testnet-10` producer node, snapshot first
+and every 10 datagrams, `2500 ms` inter-frame delay, `redundant-copies=2`, and
+`13000 ms` expected datagram drain.
+
+| Run | Mode | Result | RX recovered | RX fragments | Duplicate fragments | Receiver frames | Failure point |
+| --- | --- | --- | ---: | ---: | ---: | ---: | --- |
+| 75 redundant x2 | redundant | pass | 75/75 | 165 | 82 | 75 | none |
+| 90 redundant x2 | redundant | pass | 90/90 | 197 | 98 | 90 | none |
+| 100 redundant x2 | redundant | pass | 100/100 | 219 | 109 | 100 | none |
+
+The 100-run bridge summaries:
+
+```text
+bridge_summary role=rx datagrams_recovered=100 fragments_received=219 retries=0 duplicate_fragments=109 missing_fragments=0 corrupt_frames=0 receive_timeouts=0 reassembly_failures=0 acks_sent=219
+bridge_summary role=tx datagrams_sent=100 fragments_sent=220 retries=0 duplicate_fragments=0 missing_fragments=0 corrupt_frames=0 receive_timeouts=0 reassembly_failures=0
+```
+
+This shifts the current measured live mixed-digest operating point beyond the
+old ACK-mode 50/60 safe range. The evidence supports ACK-dependent or
+single-copy RF loss as the limiting class for ACK mode: one redundant copy was
+lost in the 100 run (`220` TX frame copies, `219` RX frames received), but all
+100 datagrams recovered and all 100 were visible through receiver UDP ingest
+with zero signature failures.
+
+Recommended current setting for longer live testnet lab runs:
+
+```bash
+--reliability-mode redundant \
+--redundant-copies 2 \
+--inter-frame-delay-ms 2500 \
+--expected-datagram-ms 13000
+```
+
+This remains lab-grade. It costs duplicate airtime, does not prove production
+RF reliability, and still needs longer soak runs plus RF diagnostics before
+claiming a stable production envelope.
 
 ## Reproduction Commands
 
@@ -160,4 +208,3 @@ Default 90:
   --session-id 901 \
   --report /home/luke/lora-capacity-boundary/default-count90.md
 ```
-

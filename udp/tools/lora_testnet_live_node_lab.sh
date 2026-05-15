@@ -12,6 +12,8 @@ INTERVAL_MS="5000"
 INTER_FRAME_DELAY_MS="2500"
 RETRY_COUNT="8"
 ACK_TIMEOUT_MS="6000"
+RELIABILITY_MODE="ack"
+REDUNDANT_COPIES="3"
 SNAPSHOT_EVERY="10"
 EXPECTED_DATAGRAM_MS="6500"
 SESSION_ID="17"
@@ -60,6 +62,8 @@ Options:
   --inter-frame-delay-ms N       LoRa TX delay between frames/datagrams (default: 2500)
   --ack-timeout-ms N             Reliable fragment ACK timeout (default: 6000)
   --retry-count N                Reliable fragment retry count (default: 8)
+  --reliability-mode MODE        lora-bridge reliability mode: ack or redundant (default: ack)
+  --redundant-copies N           Copies per reliable frame in redundant mode (default: 3)
   --expected-datagram-ms N       Expected RX drain time per datagram for timeout sizing (default: 6500)
   --session-id N                 Bridge-local reliable session/group id (default: 17)
   --report PATH                  Markdown report path
@@ -91,6 +95,8 @@ while [[ $# -gt 0 ]]; do
     --inter-frame-delay-ms) INTER_FRAME_DELAY_MS="${2:-}"; shift 2 ;;
     --ack-timeout-ms) ACK_TIMEOUT_MS="${2:-}"; shift 2 ;;
     --retry-count) RETRY_COUNT="${2:-}"; shift 2 ;;
+    --reliability-mode) RELIABILITY_MODE="${2:-}"; shift 2 ;;
+    --redundant-copies) REDUNDANT_COPIES="${2:-}"; shift 2 ;;
     --expected-datagram-ms) EXPECTED_DATAGRAM_MS="${2:-}"; shift 2 ;;
     --session-id) SESSION_ID="${2:-}"; shift 2 ;;
     --report) REPORT_PATH="${2:-}"; shift 2 ;;
@@ -330,6 +336,8 @@ echo "starting LoRa TX"
   --reliable-all \
   --retry-count "${RETRY_COUNT}" \
   --ack-timeout-ms "${ACK_TIMEOUT_MS}" \
+  --reliability-mode "${RELIABILITY_MODE}" \
+  --redundant-copies "${REDUNDANT_COPIES}" \
   --session-id "${SESSION_ID}" \
   --inter-frame-delay-ms "${INTER_FRAME_DELAY_MS}" \
   >"${TX_LOG}" 2>&1 &
@@ -402,6 +410,8 @@ RESULT_LABEL="$(result_label "${PRODUCER_STATUS}" "${TX_STATUS}" "${RX_STATUS}" 
   echo "- Inter-frame delay: \`${INTER_FRAME_DELAY_MS}\` ms"
   echo "- Retry count: \`${RETRY_COUNT}\`"
   echo "- ACK timeout: \`${ACK_TIMEOUT_MS}\` ms"
+  echo "- Reliability mode: \`${RELIABILITY_MODE}\`"
+  echo "- Redundant copies: \`${REDUNDANT_COPIES}\`"
   echo "- Expected datagram drain: \`${EXPECTED_DATAGRAM_MS}\` ms"
   echo "- Session/group id: \`${SESSION_ID}\`"
   echo "- Workdir: \`${WORKDIR}\`"

@@ -40,7 +40,7 @@ The prototype has three layers:
 - No transaction or mempool relay.
 - No LoRaWAN support.
 - No FEC, encryption, or production RF reliability layer beyond the alpha
-  bridge-local ACK/retry experiment.
+  bridge-local ACK/retry and redundant-frame experiments.
 - No production signer/key-management story.
 - No claim that the live producer is a complete consensus-authentic digest
   oracle yet.
@@ -124,6 +124,9 @@ dropped the second fragment. With `--reliable-fragments`, 100 snapshots passed
 byte-exact at `250 ms`. The live lab still uses `2500 ms` because UDP-input TX
 is currently batch-oriented and long live runs need more margin.
 
+The bridge-local reliability protocol and current ACK-vs-redundant tradeoffs are
+documented in
+[`lora-bridge-reliability-protocol.md`](lora-bridge-reliability-protocol.md).
 The repeatable reliability harness and current operating-envelope results are
 documented in [`lora-reliability-report.md`](lora-reliability-report.md).
 The completed live digest soak is summarized in
@@ -175,10 +178,13 @@ bytes 12..13 frag_ix (u16 LE)
 
 These envelopes do not alter `KUDP`; they are RF adapter envelopes only.
 Reassembly removes the envelope and recovers the exact original `KUDP`
-datagram. The reliable path ACKs each fragmented frame, retransmits when ACKs
-time out, and treats duplicate fragments as safe. `--group-id` overrides
-`--session-id` for operators who prefer to describe the reliability domain as a
-bridge group on a shared RF channel.
+datagram. In `--reliability-mode ack`, the reliable path ACKs each frame,
+retransmits when ACKs time out, and treats duplicate fragments as safe. In
+`--reliability-mode redundant`, TX sends each reliable frame
+`--redundant-copies` times without waiting for ACKs, while RX suppresses
+duplicate fragments and late duplicate datagrams before forwarding. `--group-id`
+overrides `--session-id` for operators who prefer to describe the reliability
+domain as a bridge group on a shared RF channel.
 
 ## Build
 
