@@ -57,6 +57,11 @@ Options:
   --count N                      Produced datagram count (default: derived from duration)
   --interval-ms N                Producer interval (default: 5000)
   --snapshot-every N             Emit snapshot every N datagrams after first; 0 disables (default: 10)
+  --inter-frame-delay-ms N       LoRa TX delay between frames/datagrams (default: 2500)
+  --ack-timeout-ms N             Reliable fragment ACK timeout (default: 6000)
+  --retry-count N                Reliable fragment retry count (default: 8)
+  --expected-datagram-ms N       Expected RX drain time per datagram for timeout sizing (default: 6500)
+  --session-id N                 Bridge-local reliable session/group id (default: 17)
   --report PATH                  Markdown report path
   --workdir DIR                  Scratch/appdir directory; use a persistent path for long local sync
   --rpc-wait-seconds N           Wait for producer/receiver RPC startup (default: 90)
@@ -83,6 +88,11 @@ while [[ $# -gt 0 ]]; do
     --count) COUNT="${2:-}"; shift 2 ;;
     --interval-ms) INTERVAL_MS="${2:-}"; shift 2 ;;
     --snapshot-every) SNAPSHOT_EVERY="${2:-}"; shift 2 ;;
+    --inter-frame-delay-ms) INTER_FRAME_DELAY_MS="${2:-}"; shift 2 ;;
+    --ack-timeout-ms) ACK_TIMEOUT_MS="${2:-}"; shift 2 ;;
+    --retry-count) RETRY_COUNT="${2:-}"; shift 2 ;;
+    --expected-datagram-ms) EXPECTED_DATAGRAM_MS="${2:-}"; shift 2 ;;
+    --session-id) SESSION_ID="${2:-}"; shift 2 ;;
     --report) REPORT_PATH="${2:-}"; shift 2 ;;
     --workdir) WORKDIR="${2:-}"; shift 2 ;;
     --rpc-wait-seconds) RPC_WAIT_SECONDS="${2:-}"; shift 2 ;;
@@ -392,6 +402,8 @@ RESULT_LABEL="$(result_label "${PRODUCER_STATUS}" "${TX_STATUS}" "${RX_STATUS}" 
   echo "- Inter-frame delay: \`${INTER_FRAME_DELAY_MS}\` ms"
   echo "- Retry count: \`${RETRY_COUNT}\`"
   echo "- ACK timeout: \`${ACK_TIMEOUT_MS}\` ms"
+  echo "- Expected datagram drain: \`${EXPECTED_DATAGRAM_MS}\` ms"
+  echo "- Session/group id: \`${SESSION_ID}\`"
   echo "- Workdir: \`${WORKDIR}\`"
   echo
   echo "## Producer Node State Before"
@@ -417,6 +429,14 @@ RESULT_LABEL="$(result_label "${PRODUCER_STATUS}" "${TX_STATUS}" "${RX_STATUS}" 
   echo "- lora rx exit: \`${RX_STATUS}\`"
   echo "- ingest RPC check exit: \`${INGEST_STATUS}\`"
   echo "- digest comparison exit: \`${DIGESTS_STATUS}\`"
+  echo
+  echo "## Failure Markers"
+  echo
+  rg 'retry exhausted|ack timeout|read LoRa packet|pending fragments|timed out|Error:' "${TX_LOG}" "${RX_LOG}" || true
+  echo
+  echo "## Recent RX Recoveries"
+  echo
+  rg 'recovered KUDP datagram|received fragment' "${RX_LOG}" | tail -n 30 || true
   echo
   echo "## Receiver Ingest Summary"
   echo

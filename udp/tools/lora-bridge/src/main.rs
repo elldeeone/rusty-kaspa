@@ -240,13 +240,17 @@ fn tx(args: TxArgs) -> Result<()> {
             };
             stats.fragments_sent += attempts;
             eprintln!(
-                "sent datagram {}/{} frame {}/{}: app_payload={} serial_bytes={}",
+                "sent datagram {}/{} datagram_id={} session_id={} frame {}/{} frag_ix={}: app_payload={} serial_bytes={} elapsed_ms={}",
                 datagram_idx + 1,
                 datagrams.len(),
+                datagram_id,
+                session_id,
                 idx + 1,
                 frames.len(),
+                frag_ix,
                 frame.len(),
-                serial_bytes
+                serial_bytes,
+                started_at.elapsed().as_millis()
             );
             if (datagram_idx + 1 < datagrams.len() || idx + 1 < frames.len()) && !delay.is_zero() {
                 std::thread::sleep(delay);
@@ -321,7 +325,14 @@ fn rx(args: RxArgs) -> Result<()> {
                 recovered += 1;
                 stats.datagrams_recovered += 1;
                 stats.bytes_recovered += datagram.len();
-                eprintln!("recovered KUDP datagram {}/{}: {} bytes", recovered, args.count, datagram.len());
+                eprintln!(
+                    "recovered KUDP datagram {}/{}: {} bytes session_id={} elapsed_ms={}",
+                    recovered,
+                    args.count,
+                    datagram.len(),
+                    session_id,
+                    started_at.elapsed().as_millis()
+                );
             }
             Ok(None) => {}
             Err(err) => {
@@ -446,17 +457,22 @@ fn write_reliable_frame(
             frag_ix,
         )? {
             if attempt > 0 {
-                eprintln!("ack received after retry attempt={attempt} datagram_id={datagram_id} frag_ix={frag_ix}");
+                eprintln!(
+                    "ack received after retry attempt={attempt} session_id={session_id} datagram_id={datagram_id} frag_ix={frag_ix}"
+                );
             }
             return Ok((attempts, serial_bytes));
         }
         if should_retry(attempt, args.retry_count) {
             stats.retries += 1;
             stats.missing_fragments += 1;
-            eprintln!("ack timeout; retrying datagram_id={datagram_id} frag_ix={frag_ix} attempt={}", attempt + 1);
+            eprintln!(
+                "ack timeout; retrying session_id={session_id} datagram_id={datagram_id} frag_ix={frag_ix} attempt={}",
+                attempt + 1
+            );
         }
     }
-    bail!("retry exhausted for datagram_id={datagram_id} frag_ix={frag_ix}");
+    bail!("retry exhausted for session_id={session_id} datagram_id={datagram_id} frag_ix={frag_ix}");
 }
 
 fn wait_for_ack(
