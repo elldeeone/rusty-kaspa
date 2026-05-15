@@ -85,8 +85,8 @@ Recommended current live testnet setting for the two-HAT lab:
 
 This is not FEC and it is not a production RF reliability claim. It is a
 bridge-local alpha hardening step that improved the measured mixed live digest
-operating point from the old 50/60-datagram safe range to completed 75- and
-90-datagram runs on the same hardware.
+operating point from the old 50/60-datagram safe range to completed 75-, 90-,
+and 100-datagram runs on the same hardware.
 
 ## Remaining Limits
 

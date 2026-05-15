@@ -140,6 +140,7 @@ and every 10 datagrams, `2500 ms` inter-frame delay, `redundant-copies=2`, and
 
 | Run | Mode | Result | RX recovered | RX fragments | Duplicate fragments | Receiver frames | Failure point |
 | --- | --- | --- | ---: | ---: | ---: | ---: | --- |
+| 50 redundant x2 | redundant | pass | 50/50 | 109 | 54 | 50 | none |
 | 75 redundant x2 | redundant | pass | 75/75 | 165 | 82 | 75 | none |
 | 90 redundant x2 | redundant | pass | 90/90 | 197 | 98 | 90 | none |
 | 100 redundant x2 | redundant | pass | 100/100 | 219 | 109 | 100 | none |
