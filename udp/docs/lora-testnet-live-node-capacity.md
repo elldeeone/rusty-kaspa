@@ -164,13 +164,22 @@ Recommended current setting for longer live testnet lab runs:
 ```bash
 --reliability-mode redundant \
 --redundant-copies 2 \
+--stream-udp \
 --inter-frame-delay-ms 2500 \
---expected-datagram-ms 13000
+--interval-ms 5000 \
+--expected-datagram-ms 6500
 ```
 
+The follow-up robust soak is documented in
+[`lora-testnet-robust-soak-report.md`](lora-testnet-robust-soak-report.md).
+That run showed why `--stream-udp` matters: batch-mode TX recovered 165/165 over
+RF but stale-dropped every digest at receiver ingest, while streaming redundant
+x2 recovered and ingested 305/305 over a measured 1831-second soak with zero
+signature failures or ingest drops.
+
 This remains lab-grade. It costs duplicate airtime, does not prove production
-RF reliability, and still needs longer soak runs plus RF diagnostics before
-claiming a stable production envelope.
+RF reliability, and still needs RF diagnostics before claiming a stable
+production envelope.
 
 ## Reproduction Commands
 

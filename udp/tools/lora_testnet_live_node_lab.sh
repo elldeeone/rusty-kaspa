@@ -145,11 +145,17 @@ PRODUCER_LOG="${WORKDIR}/live-producer.log"
 TX_LOG="${WORKDIR}/lora-tx.log"
 RX_LOG="${WORKDIR}/lora-rx.log"
 POLL_LOG="${WORKDIR}/rpc-poll.log"
+POLL_CSV="${WORKDIR}/rpc-poll.csv"
 PRODUCER_INFO_BEFORE="${WORKDIR}/producer-info-before.json"
 PRODUCER_INFO_AFTER="${WORKDIR}/producer-info-after.json"
 RECEIVER_INFO_FINAL="${WORKDIR}/receiver-info-final.json"
 INGEST_INFO_JSON="${WORKDIR}/final-ingest-info.json"
 DIGESTS_JSON="${WORKDIR}/final-digests.json"
+SOAK_STARTED_MS="0"
+SOAK_ENDED_MS="0"
+SOAK_ELAPSED_SECONDS="0"
+
+echo "sample_time_utc,sample_ms,frames_received,bytes_total,signature_failures,drop_duplicate,drop_fragment_timeout,last_digest_epoch,last_digest_recv_ts_ms,last_digest_age_ms,divergence_detected,divergence_last_mismatch_epoch,source_count,rx_kbps,error" >"${POLL_CSV}"
 
 PIDS=()
 cleanup() {
@@ -181,6 +187,86 @@ wait_for_rpc() {
   done
   echo "timed out waiting for ${label} RPC at ${rpc_url}" >&2
   return 1
+}
+
+now_ms() {
+  python3 - <<'PY'
+import time
+print(int(time.time() * 1000))
+PY
+}
+
+write_poll_sample() {
+  local timestamp=$1
+  local json_path=$2
+  local error=${3:-}
+
+  python3 - "${timestamp}" "${json_path}" "${POLL_CSV}" "${error}" <<'PY'
+import csv
+import json
+import sys
+import time
+
+timestamp, json_path, csv_path, error = sys.argv[1:]
+sample_ms = int(time.time() * 1000)
+
+row = {
+    "sample_time_utc": timestamp,
+    "sample_ms": sample_ms,
+    "frames_received": "",
+    "bytes_total": "",
+    "signature_failures": "",
+    "drop_duplicate": "",
+    "drop_fragment_timeout": "",
+    "last_digest_epoch": "",
+    "last_digest_recv_ts_ms": "",
+    "last_digest_age_ms": "",
+    "divergence_detected": "",
+    "divergence_last_mismatch_epoch": "",
+    "source_count": "",
+    "rx_kbps": "",
+    "error": error,
+}
+
+if not error:
+    try:
+        with open(json_path, encoding="utf-8") as handle:
+            data = json.load(handle)
+        drops = {
+            item.get("label"): item.get("value")
+            for item in data.get("drops", [])
+            if isinstance(item, dict)
+        }
+        last_digest = data.get("lastDigest") or {}
+        divergence = data.get("divergence") or {}
+        recv_ts_ms = last_digest.get("recvTsMs")
+        row.update(
+            {
+                "frames_received": data.get("framesReceived", ""),
+                "bytes_total": data.get("bytesTotal", ""),
+                "signature_failures": data.get("signatureFailures", ""),
+                "drop_duplicate": drops.get("duplicate", ""),
+                "drop_fragment_timeout": drops.get("fragment_timeout", ""),
+                "last_digest_epoch": last_digest.get("epoch", ""),
+                "last_digest_recv_ts_ms": recv_ts_ms or "",
+                "last_digest_age_ms": ""
+                if recv_ts_ms is None
+                else max(0, sample_ms - int(recv_ts_ms)),
+                "divergence_detected": divergence.get("detected", ""),
+                "divergence_last_mismatch_epoch": divergence.get(
+                    "lastMismatchEpoch", ""
+                ),
+                "source_count": data.get("sourceCount", ""),
+                "rx_kbps": data.get("rxKbps", ""),
+            }
+        )
+    except Exception as exc:
+        row["error"] = f"parse_error:{exc}"
+
+with open(csv_path, "a", encoding="utf-8", newline="") as handle:
+    writer = csv.DictWriter(handle, fieldnames=list(row.keys()))
+    writer.writerow(row)
+PY
 }
 
 node_network_matches() {
@@ -332,6 +418,7 @@ echo "starting LoRa TX"
   --input udp \
   --udp-bind "${BRIDGE_UDP}" \
   --count "${COUNT}" \
+  --stream-udp \
   --reliable-fragments \
   --reliable-all \
   --retry-count "${RETRY_COUNT}" \
@@ -346,6 +433,7 @@ PIDS+=("${TX_PID}")
 
 sleep 1
 echo "starting live testnet producer count=${COUNT}"
+SOAK_STARTED_MS="$(now_ms)"
 "${ROOT_DIR}/target/debug/udp-live-digest-producer" \
   --rpc-url "${PRODUCER_RPC_URL}" \
   --network "${NETWORK}" \
@@ -362,8 +450,16 @@ PRODUCER_PID=$!
 PIDS+=("${PRODUCER_PID}")
 
 while kill -0 "${RX_PID}" 2>/dev/null; do
-  date -u '+%Y-%m-%dT%H:%M:%SZ' >>"${POLL_LOG}"
-  "${ROOT_DIR}/target/debug/udp-rpc-digests" --rpc-url "${RECEIVER_RPC_URL}" info >>"${POLL_LOG}" 2>&1 || true
+  poll_ts="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  poll_json="${WORKDIR}/poll-info.tmp.json"
+  echo "${poll_ts}" >>"${POLL_LOG}"
+  if "${ROOT_DIR}/target/debug/udp-rpc-digests" --rpc-url "${RECEIVER_RPC_URL}" info >"${poll_json}" 2>>"${POLL_LOG}"; then
+    cat "${poll_json}" >>"${POLL_LOG}"
+    write_poll_sample "${poll_ts}" "${poll_json}"
+  else
+    echo "poll failed" >>"${POLL_LOG}"
+    write_poll_sample "${poll_ts}" "${poll_json}" "poll_failed"
+  fi
   sleep 30
 done
 
@@ -373,6 +469,8 @@ RX_STATUS=0
 wait "${PRODUCER_PID}" || PRODUCER_STATUS=$?
 wait "${TX_PID}" || TX_STATUS=$?
 wait "${RX_PID}" || RX_STATUS=$?
+SOAK_ENDED_MS="$(now_ms)"
+SOAK_ELAPSED_SECONDS=$(((SOAK_ENDED_MS - SOAK_STARTED_MS) / 1000))
 
 if [[ "${POST_RX_WAIT_SECONDS}" -gt 0 ]]; then
   sleep "${POST_RX_WAIT_SECONDS}"
@@ -402,6 +500,7 @@ RESULT_LABEL="$(result_label "${PRODUCER_STATUS}" "${TX_STATUS}" "${RX_STATUS}" 
   echo "- Receiver RPC: \`${RECEIVER_RPC_URL}\`"
   echo "- Receiver UDP: \`${RECEIVER_UDP}\`"
   echo "- Duration target: \`${DURATION_SECONDS}\` seconds"
+  echo "- Measured soak runtime: \`${SOAK_ELAPSED_SECONDS}\` seconds"
   echo "- Produced datagrams: \`${COUNT}\`"
   echo "- Snapshot every: \`${SNAPSHOT_EVERY}\`"
   echo "- Lab progress counter: \`0\`"
@@ -412,6 +511,7 @@ RESULT_LABEL="$(result_label "${PRODUCER_STATUS}" "${TX_STATUS}" "${RX_STATUS}" 
   echo "- ACK timeout: \`${ACK_TIMEOUT_MS}\` ms"
   echo "- Reliability mode: \`${RELIABILITY_MODE}\`"
   echo "- Redundant copies: \`${REDUNDANT_COPIES}\`"
+  echo "- Stream UDP TX: \`1\`"
   echo "- Expected datagram drain: \`${EXPECTED_DATAGRAM_MS}\` ms"
   echo "- Session/group id: \`${SESSION_ID}\`"
   echo "- Workdir: \`${WORKDIR}\`"
@@ -439,10 +539,54 @@ RESULT_LABEL="$(result_label "${PRODUCER_STATUS}" "${TX_STATUS}" "${RX_STATUS}" 
   echo "- lora rx exit: \`${RX_STATUS}\`"
   echo "- ingest RPC check exit: \`${INGEST_STATUS}\`"
   echo "- digest comparison exit: \`${DIGESTS_STATUS}\`"
+  echo "- harness restarts attempted: \`0\`"
   echo
   echo "## Failure Markers"
   echo
   rg 'retry exhausted|ack timeout|read LoRa packet|pending fragments|timed out|Error:' "${TX_LOG}" "${RX_LOG}" || true
+  echo
+  echo "## Poll Metrics"
+  echo
+  echo "- Poll CSV: \`${POLL_CSV}\`"
+  awk -F, '
+    NR == 1 { next }
+    {
+      samples++;
+      if (samples == 1) {
+        first_time = $1;
+        first_frames = $3;
+      }
+      last_time = $1;
+      last_frames = $3;
+      last_age = $10;
+      if ($10 != "" && ($10 + 0) > max_age) max_age = $10 + 0;
+      if ($3 != "" && ($3 + 0) > max_frames) max_frames = $3 + 0;
+      error = $15;
+      gsub(/\r/, "", error);
+      if (error != "") errors++;
+    }
+    END {
+      printf("- samples: `%d`\n", samples);
+      printf("- first sample: `%s` frames=`%s`\n", first_time, first_frames);
+      printf("- last sample: `%s` frames=`%s` latest_digest_age_ms=`%s`\n", last_time, last_frames, last_age);
+      printf("- max observed frames: `%d`\n", max_frames);
+      printf("- max observed latest digest age: `%d` ms\n", max_age);
+      printf("- poll errors: `%d`\n", errors);
+    }
+  ' "${POLL_CSV}" || true
+  echo
+  echo "| sample_time_utc | frames_received | latest_digest_age_ms | signature_failures | drop_duplicate | drop_fragment_timeout | divergence_detected |"
+  echo "| --- | ---: | ---: | ---: | ---: | ---: | --- |"
+  awk -F, '
+    NR > 1 {
+      rows[++n] = "| " $1 " | " $3 " | " $10 " | " $5 " | " $6 " | " $7 " | " $11 " |";
+    }
+    END {
+      for (i = 1; i <= n; i++) {
+        if (i <= 3 || i > n - 3) print rows[i];
+      }
+    }
+  ' "${POLL_CSV}" || true
   echo
   echo "## Recent RX Recoveries"
   echo
@@ -476,6 +620,7 @@ RESULT_LABEL="$(result_label "${PRODUCER_STATUS}" "${TX_STATUS}" "${RX_STATUS}" 
   echo "- LoRa TX: \`${TX_LOG}\`"
   echo "- LoRa RX: \`${RX_LOG}\`"
   echo "- RPC poll: \`${POLL_LOG}\`"
+  echo "- RPC poll CSV: \`${POLL_CSV}\`"
 } >"${REPORT_PATH}"
 
 echo "wrote report: ${REPORT_PATH}"

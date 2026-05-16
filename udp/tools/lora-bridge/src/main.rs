@@ -125,6 +125,10 @@ struct TxArgs {
     /// Number of datagrams to read from the input source and send. File input always sends the file once.
     #[arg(long, default_value_t = 1)]
     count: usize,
+
+    /// For UDP input, transmit each datagram as it arrives instead of buffering all --count datagrams first.
+    #[arg(long)]
+    stream_udp: bool,
 }
 
 #[derive(Args, Debug)]
@@ -225,57 +229,87 @@ fn main() -> Result<()> {
 
 fn tx(args: TxArgs) -> Result<()> {
     let prefix = parse_fixed_prefix(&args.fixed_prefix_hex)?;
-    let datagrams = read_input_datagrams(&args)?;
     let mut port = open_serial(&args.serial)?;
     let mut stats = BridgeStats::default();
     let started_at = Instant::now();
     let session_id = args.effective_session_id();
 
-    for (datagram_idx, datagram) in datagrams.iter().enumerate() {
-        let datagram_id = args.datagram_id.wrapping_add(datagram_idx as u32);
-        let frames = fragment_datagram_with_options(
-            datagram,
-            datagram_id,
-            args.no_fragment,
-            args.reliable_fragments || args.reliable_all,
-            args.reliable_all,
-            session_id,
-        )?;
-        let delay = Duration::from_millis(args.inter_frame_delay_ms.unwrap_or_else(|| adaptive_delay_ms(frames.len())));
-        for (idx, frame) in frames.iter().enumerate() {
-            if frame.len() > LORA_APP_MTU {
-                bail!("internal frame too large: {} > {}", frame.len(), LORA_APP_MTU);
-            }
-            let frag_ix = fragment_index(frame).unwrap_or(idx as u16);
-            let (attempts, serial_bytes) = if (args.reliable_fragments || args.reliable_all) && is_reliable_fragment(frame) {
-                write_reliable_frame(&mut *port, &prefix, frame, session_id, datagram_id, frag_ix, delay, &args, &mut stats)?
-            } else {
-                let serial_bytes = write_lora_app_payload(&mut *port, &prefix, frame)?;
-                (1, serial_bytes)
-            };
-            stats.fragments_sent += attempts;
-            eprintln!(
-                "sent datagram {}/{} datagram_id={} session_id={} frame {}/{} frag_ix={}: app_payload={} serial_bytes={} elapsed_ms={}",
-                datagram_idx + 1,
-                datagrams.len(),
-                datagram_id,
-                session_id,
-                idx + 1,
-                frames.len(),
-                frag_ix,
-                frame.len(),
-                serial_bytes,
-                started_at.elapsed().as_millis()
-            );
-            if (datagram_idx + 1 < datagrams.len() || idx + 1 < frames.len()) && !delay.is_zero() {
-                std::thread::sleep(delay);
-            }
+    if matches!(args.input, InputKind::Udp) && args.stream_udp {
+        let bind = args.udp_bind.context("--udp-bind is required")?;
+        let socket = UdpSocket::bind(bind).with_context(|| format!("bind UDP {bind}"))?;
+        for datagram_idx in 0..args.count {
+            let mut datagram = vec![0u8; 65_535];
+            let (len, peer) = socket.recv_from(&mut datagram).context("receive UDP datagram")?;
+            datagram.truncate(len);
+            ensure_kudp(&datagram)?;
+            eprintln!("received UDP datagram {}/{} from {peer}: {len} bytes", datagram_idx + 1, args.count);
+            transmit_datagram(&args, &mut *port, &prefix, &datagram, datagram_idx, args.count, started_at, session_id, &mut stats)?;
         }
-        stats.datagrams_sent += 1;
-        stats.bytes_sent += datagram.len();
+        stats.print("tx", started_at);
+        return Ok(());
+    }
+
+    let datagrams = read_input_datagrams(&args)?;
+    for (datagram_idx, datagram) in datagrams.iter().enumerate() {
+        transmit_datagram(&args, &mut *port, &prefix, datagram, datagram_idx, datagrams.len(), started_at, session_id, &mut stats)?;
     }
 
     stats.print("tx", started_at);
+    Ok(())
+}
+
+fn transmit_datagram(
+    args: &TxArgs,
+    port: &mut dyn SerialPort,
+    prefix: &[u8; WAVESHARE_FIXED_PREFIX_LEN],
+    datagram: &[u8],
+    datagram_idx: usize,
+    datagram_count: usize,
+    started_at: Instant,
+    session_id: u32,
+    stats: &mut BridgeStats,
+) -> Result<()> {
+    let datagram_id = args.datagram_id.wrapping_add(datagram_idx as u32);
+    let frames = fragment_datagram_with_options(
+        datagram,
+        datagram_id,
+        args.no_fragment,
+        args.reliable_fragments || args.reliable_all,
+        args.reliable_all,
+        session_id,
+    )?;
+    let delay = Duration::from_millis(args.inter_frame_delay_ms.unwrap_or_else(|| adaptive_delay_ms(frames.len())));
+    for (idx, frame) in frames.iter().enumerate() {
+        if frame.len() > LORA_APP_MTU {
+            bail!("internal frame too large: {} > {}", frame.len(), LORA_APP_MTU);
+        }
+        let frag_ix = fragment_index(frame).unwrap_or(idx as u16);
+        let (attempts, serial_bytes) = if (args.reliable_fragments || args.reliable_all) && is_reliable_fragment(frame) {
+            write_reliable_frame(port, prefix, frame, session_id, datagram_id, frag_ix, delay, args, stats)?
+        } else {
+            let serial_bytes = write_lora_app_payload(port, prefix, frame)?;
+            (1, serial_bytes)
+        };
+        stats.fragments_sent += attempts;
+        eprintln!(
+            "sent datagram {}/{} datagram_id={} session_id={} frame {}/{} frag_ix={}: app_payload={} serial_bytes={} elapsed_ms={}",
+            datagram_idx + 1,
+            datagram_count,
+            datagram_id,
+            session_id,
+            idx + 1,
+            frames.len(),
+            frag_ix,
+            frame.len(),
+            serial_bytes,
+            started_at.elapsed().as_millis()
+        );
+        if (datagram_idx + 1 < datagram_count || idx + 1 < frames.len()) && !delay.is_zero() {
+            std::thread::sleep(delay);
+        }
+    }
+    stats.datagrams_sent += 1;
+    stats.bytes_sent += datagram.len();
     Ok(())
 }
 
@@ -1086,6 +1120,7 @@ mod tests {
             no_fragment: false,
             datagram_id: 1,
             count: 1,
+            stream_udp: false,
         };
         let rx = RxArgs {
             serial: SerialArgs { serial: "/dev/null".into(), baud: DEFAULT_BAUD, read_timeout_ms: 250 },

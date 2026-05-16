@@ -131,6 +131,8 @@ The repeatable reliability harness and current operating-envelope results are
 documented in [`lora-reliability-report.md`](lora-reliability-report.md).
 The completed live digest soak is summarized in
 [`lora-live-soak-report.md`](lora-live-soak-report.md).
+The real testnet robust/redundant streaming soak is summarized in
+[`lora-testnet-robust-soak-report.md`](lora-testnet-robust-soak-report.md).
 DigestV1 field authenticity and remaining production data gaps are tracked in
 [`lora-digest-authenticity.md`](lora-digest-authenticity.md).
 The current keep-`DigestV1` schema decision is documented in

@@ -136,6 +136,7 @@ cargo run -p lora-bridge -- tx \
   --serial /dev/lora-left \
   --input udp \
   --udp-bind 127.0.0.1:39000 \
+  --stream-udp \
   --reliable-fragments \
   --reliability-mode redundant \
   --redundant-copies 2 \
@@ -148,6 +149,8 @@ datagrams before forwarding. This trades airtime for avoiding ACK-dependent
 retry exhaustion; it is bridge-local alpha behavior, not a consensus or `KUDP`
 wire-format change. The protocol details are documented in
 [`udp/docs/lora-bridge-reliability-protocol.md`](../../docs/lora-bridge-reliability-protocol.md).
+For long live UDP producer runs, use `--stream-udp` so signed digests do not age
+in a pre-transmit bridge batch before reaching receiver ingest.
 
 Receiver:
 
@@ -227,6 +230,8 @@ LoRa bridge path is documented in
 [`udp/docs/lora-live-digest-producer-lab.md`](../../docs/lora-live-digest-producer-lab.md).
 The completed live soak result is summarized in
 [`udp/docs/lora-live-soak-report.md`](../../docs/lora-live-soak-report.md).
+The real testnet robust/redundant streaming soak is summarized in
+[`udp/docs/lora-testnet-robust-soak-report.md`](../../docs/lora-testnet-robust-soak-report.md).
 Digest field authenticity is tracked in
 [`udp/docs/lora-digest-authenticity.md`](../../docs/lora-digest-authenticity.md).
 Two-node agreement/divergence behavior is documented in
