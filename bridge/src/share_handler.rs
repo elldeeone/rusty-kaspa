@@ -1,7 +1,7 @@
 use crate::{
     diagnostic_ledger::{
-        DiagnosticCounters, DiagnosticJsonRpcError, DiagnosticLedgerConfig, DiagnosticOutcome, DiagnosticSubmitRecord,
-        SameWorkIdentity, append_submit_record, canonical_nonce_hex,
+        DiagnosticCounters, DiagnosticJsonRpcError, DiagnosticLedgerConfig, DiagnosticOutcome, DiagnosticShareQuality,
+        DiagnosticSubmitRecord, SameWorkIdentity, append_submit_record, canonical_nonce_hex,
     },
     errors::*,
     jsonrpc_event::{JsonRpcEvent, JsonRpcResponse},
@@ -291,6 +291,7 @@ impl ShareHandler {
         final_nonce: &str,
         job_id_matches_notify: bool,
         bridge_job_found: bool,
+        share_quality: Option<DiagnosticShareQuality>,
         outcome: DiagnosticOutcome,
         jsonrpc_result: Option<bool>,
         jsonrpc_error: Option<DiagnosticJsonRpcError>,
@@ -323,6 +324,7 @@ impl ShareHandler {
             canonical_nonce_hex(submitted_nonce),
             canonical_nonce_hex(final_nonce),
             SameWorkIdentity { job_id_matches_notify, nonce_matches_request: true, bridge_job_found },
+            share_quality,
             outcome,
             jsonrpc_result,
             jsonrpc_error,
@@ -359,6 +361,28 @@ impl ShareHandler {
 
     fn current_stratum_diff(ctx: &StratumContext) -> f64 {
         GetMiningState(ctx).stratum_diff().map(|d| d.diff_value).unwrap_or(0.0)
+    }
+
+    fn diagnostic_share_quality(
+        ctx: &StratumContext,
+        pow_value: &BigUint,
+        validation_job_id: u64,
+        submitted_job_id: u64,
+    ) -> DiagnosticShareQuality {
+        let state = GetMiningState(ctx);
+        let stratum_diff = state.stratum_diff();
+        let configured_share_difficulty = stratum_diff.as_ref().map(|d| d.diff_value).unwrap_or(0.0);
+        let bridge_target = stratum_diff.map(|d| d.target_value).unwrap_or_else(BigUint::zero);
+        let pow_lt_target = pow_value < &bridge_target;
+        let bridge_target_hex = format!("0x{:064x}", bridge_target);
+        DiagnosticShareQuality {
+            configured_share_difficulty,
+            bridge_target: bridge_target_hex,
+            pow_value: format!("0x{:064x}", pow_value),
+            pow_lt_target,
+            validation_job_id: validation_job_id.to_string(),
+            fallback_job_id: (validation_job_id != submitted_job_id).then(|| validation_job_id.to_string()),
+        }
     }
 
     pub fn get_create_stats(&self, ctx: &StratumContext) -> WorkStats {
@@ -577,6 +601,7 @@ impl ShareHandler {
                         &final_nonce_str,
                         true,
                         true,
+                        None,
                         DiagnosticOutcome::Duplicate,
                         Some(true),
                         None,
@@ -594,6 +619,7 @@ impl ShareHandler {
                         &final_nonce_str,
                         true,
                         true,
+                        None,
                         DiagnosticOutcome::Duplicate,
                         None,
                         Some(DiagnosticJsonRpcError::stale()),
@@ -611,6 +637,7 @@ impl ShareHandler {
                             &final_nonce_str,
                             true,
                             true,
+                            None,
                             DiagnosticOutcome::Duplicate,
                             None,
                             Some(DiagnosticJsonRpcError::weak()),
@@ -629,6 +656,7 @@ impl ShareHandler {
                         &final_nonce_str,
                         true,
                         true,
+                        None,
                         DiagnosticOutcome::Duplicate,
                         None,
                         Some(DiagnosticJsonRpcError::bad()),
@@ -1054,6 +1082,7 @@ impl ShareHandler {
                                 &final_nonce_str,
                                 current_job_id == job_id,
                                 true,
+                                None,
                                 DiagnosticOutcome::Stale,
                                 None,
                                 Some(DiagnosticJsonRpcError::stale()),
@@ -1097,6 +1126,7 @@ impl ShareHandler {
                                 &final_nonce_str,
                                 current_job_id == job_id,
                                 true,
+                                None,
                                 DiagnosticOutcome::Bad,
                                 None,
                                 Some(DiagnosticJsonRpcError::bad()),
@@ -1228,6 +1258,7 @@ impl ShareHandler {
                     &final_nonce_str,
                     current_job_id == job_id,
                     true,
+                    Some(Self::diagnostic_share_quality(&ctx, &pow_value, current_job_id, job_id)),
                     DiagnosticOutcome::Weak,
                     None,
                     Some(DiagnosticJsonRpcError::weak()),
@@ -1275,6 +1306,7 @@ impl ShareHandler {
             &final_nonce_str,
             current_job_id == job_id,
             true,
+            Some(Self::diagnostic_share_quality(&ctx, &pow_value, current_job_id, job_id)),
             DiagnosticOutcome::Accepted,
             Some(true),
             None,

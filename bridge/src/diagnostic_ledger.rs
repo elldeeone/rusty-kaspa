@@ -4,7 +4,7 @@ use std::fs::{OpenOptions, create_dir_all};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-pub const SCHEMA_VERSION: &str = "ks5-local-stratum-diagnostic-ledger/v1";
+pub const SCHEMA_VERSION: &str = "ks5-local-stratum-diagnostic-ledger/v2";
 pub const ENV_JSONL_PATH: &str = "RKSTRATUM_DIAGNOSTIC_JSONL";
 pub const ENV_RUN_ID: &str = "RKSTRATUM_DIAGNOSTIC_RUN_ID";
 pub const ENV_SESSION_ID: &str = "RKSTRATUM_DIAGNOSTIC_SESSION_ID";
@@ -115,6 +115,16 @@ impl DiagnosticJsonRpcError {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DiagnosticShareQuality {
+    pub configured_share_difficulty: f64,
+    pub bridge_target: String,
+    pub pow_value: String,
+    pub pow_lt_target: bool,
+    pub validation_job_id: String,
+    pub fallback_job_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DiagnosticSubmitRecord {
     pub schema_version: String,
     pub timestamp_utc: String,
@@ -133,6 +143,12 @@ pub struct DiagnosticSubmitRecord {
     pub submitted_nonce: String,
     pub final_nonce: String,
     pub same_work_identity: SameWorkIdentity,
+    pub configured_share_difficulty: Option<f64>,
+    pub bridge_target: Option<String>,
+    pub pow_value: Option<String>,
+    pub pow_lt_target: Option<bool>,
+    pub validation_job_id: Option<String>,
+    pub fallback_job_id: Option<String>,
     pub bridge_outcome: String,
     pub jsonrpc_result: Option<bool>,
     pub jsonrpc_error: Option<DiagnosticJsonRpcError>,
@@ -155,6 +171,7 @@ impl DiagnosticSubmitRecord {
         submitted_nonce: String,
         final_nonce: String,
         same_work_identity: SameWorkIdentity,
+        share_quality: Option<DiagnosticShareQuality>,
         outcome: DiagnosticOutcome,
         jsonrpc_result: Option<bool>,
         jsonrpc_error: Option<DiagnosticJsonRpcError>,
@@ -180,6 +197,12 @@ impl DiagnosticSubmitRecord {
             submitted_nonce,
             final_nonce,
             same_work_identity,
+            configured_share_difficulty: share_quality.as_ref().map(|quality| quality.configured_share_difficulty),
+            bridge_target: share_quality.as_ref().map(|quality| quality.bridge_target.clone()),
+            pow_value: share_quality.as_ref().map(|quality| quality.pow_value.clone()),
+            pow_lt_target: share_quality.as_ref().map(|quality| quality.pow_lt_target),
+            validation_job_id: share_quality.as_ref().map(|quality| quality.validation_job_id.clone()),
+            fallback_job_id: share_quality.as_ref().and_then(|quality| quality.fallback_job_id.clone()),
             bridge_outcome: outcome.as_str().to_string(),
             jsonrpc_result,
             jsonrpc_error,
@@ -264,6 +287,14 @@ mod tests {
             canonical_nonce_hex("0XABC"),
             canonical_nonce_hex("0000000000000abc"),
             SameWorkIdentity { job_id_matches_notify: true, nonce_matches_request: true, bridge_job_found: true },
+            Some(DiagnosticShareQuality {
+                configured_share_difficulty: 2048.0,
+                bridge_target: "0x000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff".to_string(),
+                pow_value: "0x0007ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff".to_string(),
+                pow_lt_target: true,
+                validation_job_id: "1001".to_string(),
+                fallback_job_id: None,
+            }),
             DiagnosticOutcome::Accepted,
             Some(true),
             None,
@@ -281,6 +312,10 @@ mod tests {
         assert_eq!(decoded["bridge_outcome"], "accepted");
         assert_eq!(decoded["request_owner"], "open_controller");
         assert_eq!(decoded["request_id"], decoded["response_id"]);
+        assert_eq!(decoded["configured_share_difficulty"], json!(2048.0));
+        assert_eq!(decoded["pow_lt_target"], json!(true));
+        assert_eq!(decoded["validation_job_id"], json!("1001"));
+        assert_eq!(decoded["fallback_job_id"], serde_json::Value::Null);
         assert_eq!(decoded["counters_before"]["valid_shares"], json!(0));
         assert_eq!(decoded["counters_after"]["valid_shares"], json!(1));
         assert!(decoded.get("raw_line").is_none());
