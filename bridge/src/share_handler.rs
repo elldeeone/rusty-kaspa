@@ -336,6 +336,21 @@ impl ShareHandler {
         }
     }
 
+    async fn reply_low_diff_share_for_diagnostic(&self, ctx: &StratumContext, request_id: &Option<Value>) -> bool {
+        let Some(id) = request_id else {
+            warn!("{} [DIAGNOSTIC] skipping low-diff ledger row: missing JSON-RPC request id", self.log_prefix());
+            return false;
+        };
+
+        match ctx.reply_low_diff_share(id).await {
+            Ok(()) => true,
+            Err(err) => {
+                warn!("{} [DIAGNOSTIC] skipping low-diff ledger row: failed to send JSON-RPC response: {}", self.log_prefix(), err);
+                false
+            }
+        }
+    }
+
     /// Return in-memory stats for a worker when already registered (authorize/submit lifecycle).
     fn get_stats_if_exists(&self, ctx: &StratumContext) -> Option<WorkStats> {
         let worker_id = ctx.effective_worker_name();
@@ -587,22 +602,21 @@ impl ShareHandler {
                     return Ok(());
                 }
                 DuplicateSubmitOutcome::LowDiff => {
-                    if let Some(id) = &event.id {
-                        let _ = ctx.reply_low_diff_share(id).await;
+                    if self.reply_low_diff_share_for_diagnostic(&ctx, &event.id).await {
+                        self.record_diagnostic_submit(
+                            &ctx,
+                            &event.id,
+                            job_id,
+                            &nonce_str,
+                            &final_nonce_str,
+                            true,
+                            true,
+                            DiagnosticOutcome::Duplicate,
+                            None,
+                            Some(DiagnosticJsonRpcError::weak()),
+                            "duplicate",
+                        );
                     }
-                    self.record_diagnostic_submit(
-                        &ctx,
-                        &event.id,
-                        job_id,
-                        &nonce_str,
-                        &final_nonce_str,
-                        true,
-                        true,
-                        DiagnosticOutcome::Duplicate,
-                        None,
-                        Some(DiagnosticJsonRpcError::weak()),
-                        "duplicate",
-                    );
                     return Ok(());
                 }
                 DuplicateSubmitOutcome::Bad => {
@@ -1198,28 +1212,28 @@ impl ShareHandler {
 
             record_weak_share(&self.worker_prom_context(&ctx, ""));
 
-            if let Some(id) = &event.id {
-                let _ = ctx.reply_low_diff_share(id).await;
-            }
+            let low_diff_response_sent = self.reply_low_diff_share_for_diagnostic(&ctx, &event.id).await;
 
             {
                 let now = Instant::now();
                 let mut guard = self.duplicate_submit_guard.lock();
                 guard.set_outcome(&submit_key, now, DuplicateSubmitOutcome::LowDiff);
             }
-            self.record_diagnostic_submit(
-                &ctx,
-                &event.id,
-                job_id,
-                &nonce_str,
-                &final_nonce_str,
-                current_job_id == job_id,
-                true,
-                DiagnosticOutcome::Weak,
-                None,
-                Some(DiagnosticJsonRpcError::weak()),
-                "weak",
-            );
+            if low_diff_response_sent {
+                self.record_diagnostic_submit(
+                    &ctx,
+                    &event.id,
+                    job_id,
+                    &nonce_str,
+                    &final_nonce_str,
+                    current_job_id == job_id,
+                    true,
+                    DiagnosticOutcome::Weak,
+                    None,
+                    Some(DiagnosticJsonRpcError::weak()),
+                    "weak",
+                );
+            }
             return Ok(());
         }
 
@@ -1841,18 +1855,20 @@ mod retention_tests {
     use std::sync::Arc;
     use tokio::sync::mpsc;
 
+    async fn test_ctx_async() -> Arc<StratumContext> {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let accept_handle = tokio::spawn(async move { listener.accept().await });
+        let _stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+        let (accepted_stream, _) = accept_handle.await.unwrap().unwrap();
+        let state = Arc::new(MiningState::new());
+        let (tx, _rx) = mpsc::unbounded_channel();
+        StratumContext::new("127.0.0.1".to_string(), 12345, accepted_stream, state, tx)
+    }
+
     fn test_ctx() -> Arc<StratumContext> {
         let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async {
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-            let addr = listener.local_addr().unwrap();
-            let accept_handle = tokio::spawn(async move { listener.accept().await });
-            let _stream = tokio::net::TcpStream::connect(addr).await.unwrap();
-            let (accepted_stream, _) = accept_handle.await.unwrap().unwrap();
-            let state = Arc::new(MiningState::new());
-            let (tx, _rx) = mpsc::unbounded_channel();
-            StratumContext::new("127.0.0.1".to_string(), 12345, accepted_stream, state, tx)
-        })
+        rt.block_on(test_ctx_async())
     }
 
     #[test]
@@ -1874,5 +1890,30 @@ mod retention_tests {
 
         handler.get_create_stats(&ctx);
         assert_eq!(handler.stats.lock().len(), 1, "authorize/submit lifecycle may recreate stats");
+    }
+
+    #[test]
+    fn low_diff_diagnostic_gate_rejects_missing_request_id() {
+        let handler = ShareHandler::new("test-instance".to_string());
+        let ctx = test_ctx();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+
+        let sent = rt.block_on(handler.reply_low_diff_share_for_diagnostic(&ctx, &None));
+
+        assert!(!sent, "diagnostic row must not be emitted without a JSON-RPC request id");
+    }
+
+    #[test]
+    fn low_diff_diagnostic_gate_rejects_failed_response_write() {
+        let handler = ShareHandler::new("test-instance".to_string());
+        let rt = tokio::runtime::Runtime::new().unwrap();
+
+        let sent = rt.block_on(async {
+            let ctx = test_ctx_async().await;
+            ctx.disconnect();
+            handler.reply_low_diff_share_for_diagnostic(&ctx, &Some(Value::from(23))).await
+        });
+
+        assert!(!sent, "diagnostic row must not be emitted when the low-diff response is not sent");
     }
 }
