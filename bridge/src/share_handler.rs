@@ -1,4 +1,8 @@
 use crate::{
+    diagnostic_ledger::{
+        DiagnosticCounters, DiagnosticJsonRpcError, DiagnosticLedgerConfig, DiagnosticOutcome, DiagnosticSubmitRecord,
+        SameWorkIdentity, append_submit_record, canonical_nonce_hex,
+    },
     errors::*,
     jsonrpc_event::{JsonRpcEvent, JsonRpcResponse},
     kaspaapi::NODE_STATUS,
@@ -241,6 +245,7 @@ pub struct ShareHandler {
     overall: Arc<WorkStats>,
     instance_id: String, // Instance identifier for logging
     duplicate_submit_guard: Arc<Mutex<DuplicateSubmitGuard>>,
+    diagnostic_counters: Arc<Mutex<HashMap<String, DiagnosticCounters>>>,
 }
 
 impl ShareHandler {
@@ -251,6 +256,7 @@ impl ShareHandler {
             overall: Arc::new(WorkStats::new("overall".to_string())),
             instance_id,
             duplicate_submit_guard: Arc::new(Mutex::new(DuplicateSubmitGuard::new(Duration::from_secs(180), 50_000))),
+            diagnostic_counters: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -273,6 +279,61 @@ impl ShareHandler {
         }
         let worker = self.worker_prom_context(ctx, "");
         ensure_worker_session_metrics(&worker, Self::workstats_session_start_unix(stats));
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn record_diagnostic_submit(
+        &self,
+        ctx: &StratumContext,
+        request_id: &Option<Value>,
+        job_id: u64,
+        submitted_nonce: &str,
+        final_nonce: &str,
+        job_id_matches_notify: bool,
+        bridge_job_found: bool,
+        outcome: DiagnosticOutcome,
+        jsonrpc_result: Option<bool>,
+        jsonrpc_error: Option<DiagnosticJsonRpcError>,
+        reject_class: &str,
+    ) {
+        let Some(config) = DiagnosticLedgerConfig::from_env() else {
+            return;
+        };
+
+        let worker = ctx.effective_worker_name();
+        let (counters_before, counters_after) = {
+            let mut counters = self.diagnostic_counters.lock();
+            let current = counters.entry(worker.clone()).or_default();
+            let before = current.clone();
+            current.increment(outcome);
+            let after = current.clone();
+            (before, after)
+        };
+
+        let response_id = request_id.clone().unwrap_or(Value::Null);
+        let record = DiagnosticSubmitRecord::new(
+            &config,
+            format!("{}:{}#{}", ctx.remote_addr, ctx.remote_port, ctx.id().unwrap_or(0)),
+            worker,
+            ctx.wallet_addr.lock().clone(),
+            format!("{}:{}", ctx.remote_addr, ctx.remote_port),
+            request_id.clone().unwrap_or(Value::Null),
+            response_id,
+            job_id.to_string(),
+            canonical_nonce_hex(submitted_nonce),
+            canonical_nonce_hex(final_nonce),
+            SameWorkIdentity { job_id_matches_notify, nonce_matches_request: true, bridge_job_found },
+            outcome,
+            jsonrpc_result,
+            jsonrpc_error,
+            reject_class,
+            counters_before,
+            counters_after,
+        );
+
+        if let Err(err) = append_submit_record(&config.path, &record) {
+            warn!("{} [DIAGNOSTIC] failed to append local stratum ledger row: {}", self.log_prefix(), err);
+        }
     }
 
     /// Return in-memory stats for a worker when already registered (authorize/submit lifecycle).
@@ -493,20 +554,72 @@ impl ShareHandler {
                 DuplicateSubmitOutcome::Accepted | DuplicateSubmitOutcome::InFlight => {
                     ctx.reply(JsonRpcResponse { id: event.id.clone(), result: Some(serde_json::Value::Bool(true)), error: None })
                         .await?;
+                    self.record_diagnostic_submit(
+                        &ctx,
+                        &event.id,
+                        job_id,
+                        &nonce_str,
+                        &final_nonce_str,
+                        true,
+                        true,
+                        DiagnosticOutcome::Duplicate,
+                        Some(true),
+                        None,
+                        "duplicate",
+                    );
                     return Ok(());
                 }
                 DuplicateSubmitOutcome::Stale => {
                     ctx.reply_stale_share(event.id.clone()).await?;
+                    self.record_diagnostic_submit(
+                        &ctx,
+                        &event.id,
+                        job_id,
+                        &nonce_str,
+                        &final_nonce_str,
+                        true,
+                        true,
+                        DiagnosticOutcome::Duplicate,
+                        None,
+                        Some(DiagnosticJsonRpcError::stale()),
+                        "duplicate",
+                    );
                     return Ok(());
                 }
                 DuplicateSubmitOutcome::LowDiff => {
                     if let Some(id) = &event.id {
                         let _ = ctx.reply_low_diff_share(id).await;
                     }
+                    self.record_diagnostic_submit(
+                        &ctx,
+                        &event.id,
+                        job_id,
+                        &nonce_str,
+                        &final_nonce_str,
+                        true,
+                        true,
+                        DiagnosticOutcome::Duplicate,
+                        None,
+                        Some(DiagnosticJsonRpcError::weak()),
+                        "duplicate",
+                    );
                     return Ok(());
                 }
                 DuplicateSubmitOutcome::Bad => {
                     ctx.reply_bad_share(event.id.clone()).await?;
+                    self.record_diagnostic_submit(
+                        &ctx,
+                        &event.id,
+                        job_id,
+                        &nonce_str,
+                        &final_nonce_str,
+                        true,
+                        true,
+                        DiagnosticOutcome::Duplicate,
+                        None,
+                        Some(DiagnosticJsonRpcError::bad()),
+                        "duplicate",
+                    );
                     return Ok(());
                 }
             }
@@ -919,6 +1032,19 @@ impl ShareHandler {
 
                             record_stale_share(&self.worker_prom_context(&ctx, ""));
                             ctx.reply_stale_share(event.id.clone()).await?;
+                            self.record_diagnostic_submit(
+                                &ctx,
+                                &event.id,
+                                job_id,
+                                &nonce_str,
+                                &final_nonce_str,
+                                current_job_id == job_id,
+                                true,
+                                DiagnosticOutcome::Stale,
+                                None,
+                                Some(DiagnosticJsonRpcError::stale()),
+                                "stale",
+                            );
                             return Ok(());
                         } else {
                             // Block rejected, unknown issue (probably bad pow)
@@ -949,6 +1075,19 @@ impl ShareHandler {
                                 guard.set_outcome(&submit_key, now, DuplicateSubmitOutcome::Bad);
                             }
                             ctx.reply_bad_share(event.id.clone()).await?;
+                            self.record_diagnostic_submit(
+                                &ctx,
+                                &event.id,
+                                job_id,
+                                &nonce_str,
+                                &final_nonce_str,
+                                current_job_id == job_id,
+                                true,
+                                DiagnosticOutcome::Bad,
+                                None,
+                                Some(DiagnosticJsonRpcError::bad()),
+                                "bad",
+                            );
                             return Ok(());
                         }
                     }
@@ -1068,6 +1207,19 @@ impl ShareHandler {
                 let mut guard = self.duplicate_submit_guard.lock();
                 guard.set_outcome(&submit_key, now, DuplicateSubmitOutcome::LowDiff);
             }
+            self.record_diagnostic_submit(
+                &ctx,
+                &event.id,
+                job_id,
+                &nonce_str,
+                &final_nonce_str,
+                current_job_id == job_id,
+                true,
+                DiagnosticOutcome::Weak,
+                None,
+                Some(DiagnosticJsonRpcError::weak()),
+                "weak",
+            );
             return Ok(());
         }
 
@@ -1101,6 +1253,19 @@ impl ShareHandler {
         ctx.reply(JsonRpcResponse { id: event.id.clone(), result: Some(serde_json::Value::Bool(true)), error: None })
             .await
             .map_err(|e| format!("failed to reply: {}", e))?;
+        self.record_diagnostic_submit(
+            &ctx,
+            &event.id,
+            job_id,
+            &nonce_str,
+            &final_nonce_str,
+            current_job_id == job_id,
+            true,
+            DiagnosticOutcome::Accepted,
+            Some(true),
+            None,
+            "none",
+        );
         Ok(())
     }
 

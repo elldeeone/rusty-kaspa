@@ -1,6 +1,7 @@
 pub mod app_config;
 pub mod client_handler;
 pub mod default_client;
+pub mod diagnostic_ledger;
 pub mod errors;
 pub mod hasher;
 pub mod jsonrpc_event;
@@ -20,6 +21,7 @@ pub mod stratum_server;
 pub use app_config::{BridgeConfig, InstanceConfig};
 pub use client_handler::*;
 pub use default_client::*;
+pub use diagnostic_ledger::*;
 pub use errors::*;
 pub use hasher::*;
 pub use jsonrpc_event::*;
