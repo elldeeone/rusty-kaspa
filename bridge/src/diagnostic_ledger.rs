@@ -11,6 +11,9 @@ pub const ENV_SESSION_ID: &str = "RKSTRATUM_DIAGNOSTIC_SESSION_ID";
 pub const ENV_REQUEST_OWNER: &str = "RKSTRATUM_DIAGNOSTIC_REQUEST_OWNER";
 pub const ENV_STRATUM_LISTENER: &str = "RKSTRATUM_DIAGNOSTIC_STRATUM_LISTENER";
 pub const ENV_NODE_RPC: &str = "RKSTRATUM_DIAGNOSTIC_NODE_RPC";
+pub const PRE_SUBMIT_QUOTE_SCHEMA_VERSION: &str = "ks5-local-stratum-pre-submit-quote/v1";
+pub const ENV_PRE_SUBMIT_QUOTE_JSONL_PATH: &str = "RKSTRATUM_DIAGNOSTIC_QUOTE_JSONL";
+pub const ENV_BRIDGE_COMMIT: &str = "RKSTRATUM_DIAGNOSTIC_BRIDGE_COMMIT";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiagnosticLedgerConfig {
@@ -36,6 +39,36 @@ impl DiagnosticLedgerConfig {
             request_owner: env_or_default(ENV_REQUEST_OWNER, "unknown"),
             stratum_listener: env_or_default(ENV_STRATUM_LISTENER, "unknown"),
             node_rpc: env_or_default(ENV_NODE_RPC, "unknown"),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiagnosticPreSubmitQuoteConfig {
+    pub path: PathBuf,
+    pub run_id: String,
+    pub session_id: String,
+    pub request_owner: String,
+    pub stratum_listener: String,
+    pub node_rpc: String,
+    pub bridge_commit: String,
+}
+
+impl DiagnosticPreSubmitQuoteConfig {
+    pub fn from_env() -> Option<Self> {
+        let path = std::env::var_os(ENV_PRE_SUBMIT_QUOTE_JSONL_PATH)?;
+        if path.is_empty() {
+            return None;
+        }
+
+        Some(Self {
+            path: PathBuf::from(path),
+            run_id: env_or_default(ENV_RUN_ID, "unset"),
+            session_id: env_or_default(ENV_SESSION_ID, "unset"),
+            request_owner: env_or_default(ENV_REQUEST_OWNER, "unknown"),
+            stratum_listener: env_or_default(ENV_STRATUM_LISTENER, "unknown"),
+            node_rpc: env_or_default(ENV_NODE_RPC, "unknown"),
+            bridge_commit: env_or_default(ENV_BRIDGE_COMMIT, "unknown"),
         })
     }
 }
@@ -157,6 +190,103 @@ pub struct DiagnosticSubmitRecord {
     pub counters_after: DiagnosticCounters,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DiagnosticPreSubmitQuoteRecord {
+    pub schema_version: String,
+    pub timestamp_utc: String,
+    pub run_id: String,
+    pub session_id: String,
+    pub quote_id: String,
+    pub bridge_commit: String,
+    pub diagnostic_method: String,
+    pub connection_id: String,
+    pub request_owner: String,
+    pub worker_identity: String,
+    pub wallet_identity: String,
+    pub remote_addr: String,
+    pub stratum_listener: String,
+    pub node_rpc: String,
+    pub request_id: Value,
+    pub submitted_job_id: String,
+    pub validation_job_id: String,
+    pub fallback_job_id: Option<String>,
+    pub bridge_job_found: bool,
+    pub submitted_nonce: String,
+    pub final_nonce: String,
+    pub configured_share_difficulty: f64,
+    pub bridge_target: String,
+    pub pow_value: String,
+    pub pow_lt_target: bool,
+    pub block_timestamp: u64,
+    pub block_bits: u32,
+    pub pre_pow_hash: String,
+    pub notify_job_match: bool,
+    pub quote_does_not_submit: bool,
+    pub quote_does_not_touch_node: bool,
+}
+
+#[allow(clippy::too_many_arguments)]
+impl DiagnosticPreSubmitQuoteRecord {
+    pub fn new(
+        config: &DiagnosticPreSubmitQuoteConfig,
+        quote_id: String,
+        diagnostic_method: &str,
+        connection_id: String,
+        worker_identity: String,
+        wallet_identity: String,
+        remote_addr: String,
+        request_id: Value,
+        submitted_job_id: String,
+        validation_job_id: String,
+        fallback_job_id: Option<String>,
+        bridge_job_found: bool,
+        submitted_nonce: String,
+        final_nonce: String,
+        configured_share_difficulty: f64,
+        bridge_target: String,
+        pow_value: String,
+        pow_lt_target: bool,
+        block_timestamp: u64,
+        block_bits: u32,
+        pre_pow_hash: String,
+        notify_job_match: bool,
+    ) -> Self {
+        Self {
+            schema_version: PRE_SUBMIT_QUOTE_SCHEMA_VERSION.to_string(),
+            timestamp_utc: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+            run_id: config.run_id.clone(),
+            session_id: config.session_id.clone(),
+            quote_id,
+            bridge_commit: config.bridge_commit.clone(),
+            diagnostic_method: diagnostic_method.to_string(),
+            connection_id,
+            request_owner: config.request_owner.clone(),
+            worker_identity,
+            wallet_identity,
+            remote_addr,
+            stratum_listener: config.stratum_listener.clone(),
+            node_rpc: config.node_rpc.clone(),
+            request_id,
+            submitted_job_id,
+            validation_job_id,
+            fallback_job_id,
+            bridge_job_found,
+            submitted_nonce,
+            final_nonce,
+            configured_share_difficulty,
+            bridge_target,
+            pow_value,
+            pow_lt_target,
+            block_timestamp,
+            block_bits,
+            pre_pow_hash,
+            notify_job_match,
+            quote_does_not_submit: true,
+            quote_does_not_touch_node: true,
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 impl DiagnosticSubmitRecord {
     pub fn new(
@@ -214,6 +344,14 @@ impl DiagnosticSubmitRecord {
 }
 
 pub fn append_submit_record(path: &Path, record: &DiagnosticSubmitRecord) -> io::Result<()> {
+    append_jsonl(path, record)
+}
+
+pub fn append_pre_submit_quote_record(path: &Path, record: &DiagnosticPreSubmitQuoteRecord) -> io::Result<()> {
+    append_jsonl(path, record)
+}
+
+fn append_jsonl<T: Serialize>(path: &Path, record: &T) -> io::Result<()> {
     if let Some(parent) = path.parent().filter(|parent| !parent.as_os_str().is_empty()) {
         create_dir_all(parent)?;
     }
@@ -243,6 +381,18 @@ mod tests {
             request_owner: "open_controller".to_string(),
             stratum_listener: "10.0.4.30:16120".to_string(),
             node_rpc: "10.0.4.30:16110".to_string(),
+        }
+    }
+
+    fn quote_config(path: PathBuf) -> DiagnosticPreSubmitQuoteConfig {
+        DiagnosticPreSubmitQuoteConfig {
+            path,
+            run_id: "w2247-fixture".to_string(),
+            session_id: "session-local".to_string(),
+            request_owner: "open_controller".to_string(),
+            stratum_listener: "10.0.4.30:16120".to_string(),
+            node_rpc: "10.0.4.30:16110".to_string(),
+            bridge_commit: "test-commit".to_string(),
         }
     }
 
@@ -321,6 +471,51 @@ mod tests {
         assert!(decoded.get("raw_line").is_none());
         assert!(decoded.get("password").is_none());
         assert!(decoded.get("authorize_params").is_none());
+    }
+
+    #[test]
+    fn appends_pre_submit_quote_schema_row() {
+        let path = temp_jsonl_path();
+        let cfg = quote_config(path.clone());
+        let record = DiagnosticPreSubmitQuoteRecord::new(
+            &cfg,
+            "quote-1".to_string(),
+            "mining.diagnostic_quote",
+            "10.0.0.197:41000#7".to_string(),
+            "worker_1".to_string(),
+            "kaspa:qfixture".to_string(),
+            "10.0.0.197:41000".to_string(),
+            json!(21),
+            "1001".to_string(),
+            "1001".to_string(),
+            None,
+            true,
+            canonical_nonce_hex("0XABC"),
+            canonical_nonce_hex("0000000000000abc"),
+            2048.0,
+            "0x000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff".to_string(),
+            "0x0007ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff".to_string(),
+            true,
+            1234567890,
+            0x1a2b3c4d,
+            "00".repeat(32),
+            true,
+        );
+
+        append_pre_submit_quote_record(&cfg.path, &record).unwrap();
+        let line = fs::read_to_string(&path).unwrap();
+        let decoded: serde_json::Value = serde_json::from_str(line.trim()).unwrap();
+        fs::remove_file(&path).ok();
+
+        assert_eq!(decoded["schema_version"], PRE_SUBMIT_QUOTE_SCHEMA_VERSION);
+        assert_eq!(decoded["quote_id"], json!("quote-1"));
+        assert_eq!(decoded["diagnostic_method"], json!("mining.diagnostic_quote"));
+        assert_eq!(decoded["submitted_job_id"], decoded["validation_job_id"]);
+        assert_eq!(decoded["fallback_job_id"], serde_json::Value::Null);
+        assert_eq!(decoded["bridge_job_found"], json!(true));
+        assert_eq!(decoded["pow_lt_target"], json!(true));
+        assert_eq!(decoded["quote_does_not_submit"], json!(true));
+        assert_eq!(decoded["quote_does_not_touch_node"], json!(true));
     }
 
     #[test]

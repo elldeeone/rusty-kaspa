@@ -3,7 +3,7 @@ use crate::{
     default_client::{default_handlers, handle_authorize, handle_subscribe},
     jsonrpc_event::JsonRpcEvent,
     kaspaapi::KaspaApi,
-    share_handler::{KaspaApiTrait, ShareHandler},
+    share_handler::{DIAGNOSTIC_QUOTE_METHOD, KaspaApiTrait, ShareHandler},
     stratum_context::StratumContext,
     stratum_listener::{StratumListener, StratumListenerConfig},
 };
@@ -165,6 +165,26 @@ async fn listen_and_serve_impl<T: KaspaApiTrait + Send + Sync + 'static>(
         }) as crate::stratum_listener::EventHandler
     };
     handlers.insert("mining.submit".to_string(), submit_handler);
+
+    if ShareHandler::diagnostic_quote_enabled() {
+        let quote_handler = {
+            let share_handler = Arc::clone(&share_handler);
+            Arc::new(move |ctx: Arc<StratumContext>, event: JsonRpcEvent| {
+                let share_handler = Arc::clone(&share_handler);
+                let ctx_clone = Arc::clone(&ctx);
+                Box::pin(async move {
+                    share_handler
+                        .handle_diagnostic_quote(ctx_clone, event)
+                        .await
+                        .map_err(|e| Box::new(std::io::Error::other(e.to_string())) as Box<dyn std::error::Error + Send + Sync>)
+                })
+                    as std::pin::Pin<
+                        Box<dyn std::future::Future<Output = Result<(), Box<dyn std::error::Error + Send + Sync>>> + Send>,
+                    >
+            }) as crate::stratum_listener::EventHandler
+        };
+        handlers.insert(DIAGNOSTIC_QUOTE_METHOD.to_string(), quote_handler);
+    }
 
     // Setup listener config
     // Each client will get its own MiningState (created in stratum_listener)

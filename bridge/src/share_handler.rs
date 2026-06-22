@@ -1,13 +1,14 @@
 use crate::{
     diagnostic_ledger::{
-        DiagnosticCounters, DiagnosticJsonRpcError, DiagnosticLedgerConfig, DiagnosticOutcome, DiagnosticShareQuality,
-        DiagnosticSubmitRecord, SameWorkIdentity, append_submit_record, canonical_nonce_hex,
+        DiagnosticCounters, DiagnosticJsonRpcError, DiagnosticLedgerConfig, DiagnosticOutcome, DiagnosticPreSubmitQuoteConfig,
+        DiagnosticPreSubmitQuoteRecord, DiagnosticShareQuality, DiagnosticSubmitRecord, SameWorkIdentity,
+        append_pre_submit_quote_record, append_submit_record, canonical_nonce_hex,
     },
     errors::*,
     jsonrpc_event::{JsonRpcEvent, JsonRpcResponse},
     kaspaapi::NODE_STATUS,
     log_colors::LogColors,
-    mining_state::GetMiningState,
+    mining_state::{GetMiningState, Job},
     prom::*,
     stratum_context::StratumContext,
 };
@@ -37,6 +38,7 @@ const STATS_PRUNE_INTERVAL: Duration = Duration::from_secs(60);
 const STATS_PRINT_INTERVAL: Duration = Duration::from_secs(10);
 const BLOCK_CONFIRM_RETRY_DELAY: Duration = Duration::from_secs(2);
 const BLOCK_CONFIRM_MAX_ATTEMPTS: usize = 30;
+pub const DIAGNOSTIC_QUOTE_METHOD: &str = "mining.diagnostic_quote";
 
 // VarDiff tunables
 const VARDIFF_MIN_ELAPSED_SECS: f64 = 30.0;
@@ -177,6 +179,14 @@ enum DuplicateSubmitOutcome {
 struct DuplicateSubmitEntry {
     ts: Instant,
     outcome: DuplicateSubmitOutcome,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SubmitCandidate {
+    job_id: u64,
+    submitted_nonce: String,
+    final_nonce: String,
+    nonce_val: u64,
 }
 
 struct DuplicateSubmitGuard {
@@ -363,6 +373,50 @@ impl ShareHandler {
         GetMiningState(ctx).stratum_diff().map(|d| d.diff_value).unwrap_or(0.0)
     }
 
+    pub fn diagnostic_quote_enabled() -> bool {
+        DiagnosticPreSubmitQuoteConfig::from_env().is_some()
+    }
+
+    fn parse_submit_candidate(ctx: &StratumContext, event: &JsonRpcEvent) -> Result<SubmitCandidate, String> {
+        if event.params.len() < 3 {
+            return Err(format!("malformed event, expected at least 3 params, got {}", event.params.len()));
+        }
+
+        let job_id = match &event.params[1] {
+            serde_json::Value::String(s) => s.parse::<u64>().map_err(|e| format!("job id is not parsable as a number: {}", e))?,
+            serde_json::Value::Number(n) => n.as_u64().ok_or_else(|| "job id number is out of range".to_string())?,
+            _ => return Err("job id must be a string or number".to_string()),
+        };
+
+        let nonce_param_idx = if event.params.len() >= 5 { 4 } else { 2 };
+        let nonce_str = event.params[nonce_param_idx].as_str().ok_or_else(|| "nonce must be a string".to_string())?;
+        let submitted_nonce = nonce_str.replace("0x", "");
+        let mut final_nonce = submitted_nonce.clone();
+        {
+            let extranonce = ctx.extranonce.lock();
+            if !extranonce.is_empty() {
+                let extranonce_val = extranonce.clone();
+                let extranonce2_len = 16usize.saturating_sub(extranonce_val.len());
+                if submitted_nonce.len() <= extranonce2_len {
+                    final_nonce = format!("{}{:0>width$}", extranonce_val, submitted_nonce, width = extranonce2_len);
+                }
+            }
+        }
+
+        let nonce_val = u64::from_str_radix(&final_nonce, 16).map_err(|e| format!("failed parsing noncestr: {}", e))?;
+
+        Ok(SubmitCandidate { job_id, submitted_nonce, final_nonce, nonce_val })
+    }
+
+    fn pow_value_for_job(job: &Job, nonce_val: u64) -> BigUint {
+        let header = &job.block.header;
+        let mut header_clone = (**header).clone();
+        header_clone.nonce = nonce_val;
+        let pow_state = kaspa_pow::State::new(&header_clone);
+        let (_check_passed, pow_value_uint256) = pow_state.check_pow(nonce_val);
+        BigUint::from_bytes_be(&pow_value_uint256.to_be_bytes())
+    }
+
     fn diagnostic_share_quality(
         ctx: &StratumContext,
         pow_value: &BigUint,
@@ -383,6 +437,83 @@ impl ShareHandler {
             validation_job_id: validation_job_id.to_string(),
             fallback_job_id: (validation_job_id != submitted_job_id).then(|| validation_job_id.to_string()),
         }
+    }
+
+    fn build_diagnostic_quote_record(
+        &self,
+        ctx: &StratumContext,
+        event: &JsonRpcEvent,
+        config: &DiagnosticPreSubmitQuoteConfig,
+    ) -> Result<DiagnosticPreSubmitQuoteRecord, String> {
+        let candidate = Self::parse_submit_candidate(ctx, event)?;
+        let state = GetMiningState(ctx);
+        let max_jobs = state.max_jobs() as u64;
+        let stored_job_id = state.get_job_id_at_slot(candidate.job_id % max_jobs);
+        let bridge_job_found = stored_job_id == Some(candidate.job_id);
+        if !bridge_job_found {
+            return Err(format!("submitted job {} is not the exact stored bridge job at its slot", candidate.job_id));
+        }
+        let job = state.get_job(candidate.job_id).ok_or_else(|| format!("job {} does not exist", candidate.job_id))?;
+        let stratum_diff = state.stratum_diff().ok_or_else(|| "stratum difficulty is not initialized".to_string())?;
+        let bridge_target = stratum_diff.target_value.clone();
+        let pow_value = Self::pow_value_for_job(&job, candidate.nonce_val);
+        let pow_lt_target = pow_value < bridge_target;
+        let connection_id = format!("{}:{}#{}", ctx.remote_addr, ctx.remote_port, ctx.id().unwrap_or(0));
+        let final_nonce = canonical_nonce_hex(&candidate.final_nonce);
+        let quote_id = format!("{}:{}:{}:{}", ctx.remote_addr, ctx.remote_port, candidate.job_id, final_nonce);
+
+        Ok(DiagnosticPreSubmitQuoteRecord::new(
+            config,
+            quote_id,
+            DIAGNOSTIC_QUOTE_METHOD,
+            connection_id,
+            ctx.effective_worker_name(),
+            ctx.wallet_addr.lock().clone(),
+            format!("{}:{}", ctx.remote_addr, ctx.remote_port),
+            event.id.clone().unwrap_or(Value::Null),
+            candidate.job_id.to_string(),
+            candidate.job_id.to_string(),
+            None,
+            true,
+            canonical_nonce_hex(&candidate.submitted_nonce),
+            final_nonce,
+            stratum_diff.diff_value,
+            format!("0x{:064x}", bridge_target),
+            format!("0x{:064x}", pow_value),
+            pow_lt_target,
+            job.block.header.timestamp,
+            job.block.header.bits,
+            job.pre_pow_hash.to_string(),
+            true,
+        ))
+    }
+
+    pub async fn handle_diagnostic_quote(
+        &self,
+        ctx: Arc<StratumContext>,
+        event: JsonRpcEvent,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let Some(config) = DiagnosticPreSubmitQuoteConfig::from_env() else {
+            ctx.reply(JsonRpcResponse::error(event.id.clone(), -32070, "diagnostic quote disabled", None)).await?;
+            return Ok(());
+        };
+
+        let record = match self.build_diagnostic_quote_record(&ctx, &event, &config) {
+            Ok(record) => record,
+            Err(err) => {
+                ctx.reply(JsonRpcResponse::error(event.id.clone(), -32071, &err, None)).await?;
+                return Ok(());
+            }
+        };
+
+        if let Err(err) = append_pre_submit_quote_record(&config.path, &record) {
+            warn!("{} [DIAGNOSTIC] failed to append pre-submit quote row: {}", self.log_prefix(), err);
+            ctx.reply(JsonRpcResponse::error(event.id.clone(), -32072, "failed to append diagnostic quote", None)).await?;
+            return Ok(());
+        }
+
+        ctx.reply(JsonRpcResponse::success(event.id.clone(), serde_json::to_value(record)?)).await?;
+        Ok(())
     }
 
     pub fn get_create_stats(&self, ctx: &StratumContext) -> WorkStats {
@@ -470,21 +601,14 @@ impl ShareHandler {
             }
         }
 
-        // Parse job ID - can be either string or number
-        let job_id = match &event.params[1] {
-            serde_json::Value::String(s) => {
-                debug!("[SUBMIT] Job ID is string: '{}'", s);
-                s.parse::<u64>().map_err(|e| format!("job id is not parsable as a number: {}", e))?
-            }
-            serde_json::Value::Number(n) => {
-                debug!("[SUBMIT] Job ID is number: {}", n);
-                n.as_u64().ok_or("job id number is out of range")?
-            }
-            _ => {
-                error!("[SUBMIT] ERROR: Job ID must be string or number, got: {:?}", event.params[1]);
-                return Err("job id must be a string or number".into());
-            }
-        };
+        let candidate = Self::parse_submit_candidate(&ctx, &event).map_err(|e| {
+            error!("{} [SUBMIT] ERROR: {}", self.log_prefix(), e);
+            e
+        })?;
+        let job_id = candidate.job_id;
+        let nonce_str = candidate.submitted_nonce;
+        let final_nonce_str = candidate.final_nonce;
+        let nonce_val = candidate.nonce_val;
 
         debug!("[SUBMIT] Parsed job_id: {}", job_id);
 
@@ -529,48 +653,8 @@ impl ShareHandler {
             }
         };
 
-        // Choose nonce param index based on miner param layout.
-        // - 3 params: nonce is params[2]
-        // - 5+ params: nonce is params[4] for EthereumStratum-style miners (and generally last param)
-        let nonce_param_idx = if event.params.len() >= 5 { 4 } else { 2 };
-        let nonce_str = event.params[nonce_param_idx].as_str().ok_or("nonce must be a string")?;
-        debug!("[SUBMIT] Raw nonce string: '{}'", nonce_str);
-
-        let nonce_str = nonce_str.replace("0x", "");
         debug!("[SUBMIT] Nonce after removing 0x: '{}' (length: {} hex chars)", nonce_str, nonce_str.len());
-
-        // Add extranonce if enabled
-        let mut final_nonce_str = nonce_str.clone();
-        {
-            let extranonce = ctx.extranonce.lock();
-            if !extranonce.is_empty() {
-                let extranonce_val = extranonce.clone();
-                let extranonce2_len = 16 - extranonce_val.len();
-
-                // Only prepend extranonce if nonce is shorter than expected
-                if nonce_str.len() <= extranonce2_len {
-                    // Format with zero-padding on the right
-                    final_nonce_str = format!("{}{:0>width$}", extranonce_val, nonce_str, width = extranonce2_len);
-                    debug!(
-                        "[SUBMIT] Extranonce prepended: '{}' = '{}' + '{:0>width$}'",
-                        final_nonce_str,
-                        extranonce_val,
-                        nonce_str,
-                        width = extranonce2_len
-                    );
-                }
-            }
-        } // extranonce guard is dropped here
-
         debug!("[SUBMIT] Final nonce string: '{}'", final_nonce_str);
-        let nonce_val = {
-            let prefix = self.log_prefix();
-            u64::from_str_radix(&final_nonce_str, 16).map_err(|e| {
-                error!("{} [SUBMIT] ERROR: Failed to parse nonce '{}' as hex: {}", prefix, final_nonce_str, e);
-                format!("failed parsing noncestr: {}", e)
-            })?
-        };
-
         debug!("[SUBMIT] Parsed nonce value (u64): {}", nonce_val);
         debug!("[SUBMIT] Nonce hex: {:016x}", nonce_val);
 
@@ -1883,7 +1967,14 @@ pub trait KaspaApiTrait: Send + Sync {
 #[cfg(test)]
 mod retention_tests {
     use super::*;
+    use crate::diagnostic_ledger::DiagnosticPreSubmitQuoteConfig;
+    use crate::hasher::KaspaDiff;
     use crate::mining_state::MiningState;
+    use kaspa_consensus_core::block::Block;
+    use kaspa_hashes::Hash;
+    use num_bigint::BigUint;
+    use serde_json::json;
+    use std::path::PathBuf;
     use std::sync::Arc;
     use tokio::sync::mpsc;
 
@@ -1901,6 +1992,35 @@ mod retention_tests {
     fn test_ctx() -> Arc<StratumContext> {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(test_ctx_async())
+    }
+
+    fn quote_config() -> DiagnosticPreSubmitQuoteConfig {
+        DiagnosticPreSubmitQuoteConfig {
+            path: PathBuf::from("/tmp/rkstratum-pre-submit-quote-test.jsonl"),
+            run_id: "w2247-test".to_string(),
+            session_id: "session-test".to_string(),
+            request_owner: "open_controller".to_string(),
+            stratum_listener: "10.0.4.30:16120".to_string(),
+            node_rpc: "10.0.4.30:16110".to_string(),
+            bridge_commit: "test-commit".to_string(),
+        }
+    }
+
+    fn install_test_job_and_diff(ctx: &StratumContext, target_value: BigUint) -> u64 {
+        let block = Block::from_precomputed_hash(Hash::from_bytes([7; 32]), vec![]);
+        let job = Job { block, pre_pow_hash: Hash::from_bytes([8; 32]) };
+        let job_id = ctx.state.add_job(job);
+        ctx.state.set_stratum_diff(KaspaDiff { hash_value: 0.0, diff_value: 2048.0, target_value });
+        job_id
+    }
+
+    fn quote_event(job_id: u64, nonce: &str) -> JsonRpcEvent {
+        JsonRpcEvent {
+            id: Some(json!(41)),
+            jsonrpc: "2.0".to_string(),
+            method: DIAGNOSTIC_QUOTE_METHOD.to_string(),
+            params: vec![json!("kaspa:qfixture.worker"), json!(job_id.to_string()), json!(nonce)],
+        }
     }
 
     #[test]
@@ -1947,5 +2067,55 @@ mod retention_tests {
         });
 
         assert!(!sent, "diagnostic row must not be emitted when the low-diff response is not sent");
+    }
+
+    #[test]
+    fn pre_submit_quote_marks_target_valid_candidate() {
+        let handler = ShareHandler::new("test-instance".to_string());
+        let ctx = test_ctx();
+        *ctx.worker_name.lock() = "worker_1".to_string();
+        *ctx.wallet_addr.lock() = "kaspa:qfixture".to_string();
+        let target = (BigUint::from(1u8) << 256usize) - BigUint::from(1u8);
+        let job_id = install_test_job_and_diff(&ctx, target);
+
+        let record = handler.build_diagnostic_quote_record(&ctx, &quote_event(job_id, "0x1"), &quote_config()).unwrap();
+
+        assert_eq!(record.schema_version, crate::diagnostic_ledger::PRE_SUBMIT_QUOTE_SCHEMA_VERSION);
+        assert_eq!(record.diagnostic_method, DIAGNOSTIC_QUOTE_METHOD);
+        assert_eq!(record.submitted_job_id, job_id.to_string());
+        assert_eq!(record.validation_job_id, job_id.to_string());
+        assert_eq!(record.fallback_job_id, None);
+        assert!(record.bridge_job_found);
+        assert!(record.pow_lt_target);
+        assert!(record.quote_does_not_submit);
+        assert!(record.quote_does_not_touch_node);
+    }
+
+    #[test]
+    fn pre_submit_quote_marks_weak_candidate() {
+        let handler = ShareHandler::new("test-instance".to_string());
+        let ctx = test_ctx();
+        let job_id = install_test_job_and_diff(&ctx, BigUint::from(0u8));
+
+        let record = handler.build_diagnostic_quote_record(&ctx, &quote_event(job_id, "0000000000000001"), &quote_config()).unwrap();
+
+        assert!(!record.pow_lt_target);
+        assert_eq!(record.bridge_target, format!("0x{:064x}", BigUint::from(0u8)));
+        assert_eq!(record.validation_job_id, record.submitted_job_id);
+        assert_eq!(record.fallback_job_id, None);
+    }
+
+    #[test]
+    fn pre_submit_quote_rejects_non_exact_stored_job() {
+        let handler = ShareHandler::new("test-instance".to_string());
+        let ctx = test_ctx();
+        let job_id = install_test_job_and_diff(&ctx, BigUint::from(0u8));
+        let missing_job_id = job_id + ctx.state.max_jobs() as u64;
+
+        let err = handler
+            .build_diagnostic_quote_record(&ctx, &quote_event(missing_job_id, "0000000000000001"), &quote_config())
+            .unwrap_err();
+
+        assert!(err.contains("not the exact stored bridge job"));
     }
 }
