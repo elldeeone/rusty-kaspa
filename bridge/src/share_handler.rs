@@ -1,7 +1,7 @@
 use crate::{
     diagnostic_ledger::{
         DiagnosticCounters, DiagnosticJsonRpcError, DiagnosticLedgerConfig, DiagnosticOutcome, DiagnosticPreSubmitQuoteConfig,
-        DiagnosticPreSubmitQuoteRecord, DiagnosticShareQuality, DiagnosticSubmitRecord, SameWorkIdentity,
+        DiagnosticPreSubmitQuoteRecord, DiagnosticShareQuality, DiagnosticSubmitRecord, ENV_TARGET_OVERRIDE_HEX, SameWorkIdentity,
         append_pre_submit_quote_record, append_submit_record, canonical_nonce_hex,
     },
     errors::*,
@@ -13,12 +13,13 @@ use crate::{
     stratum_context::StratumContext,
 };
 
+use crate::hasher::KaspaDiff;
 #[cfg(feature = "rkstratum_cpu_miner")]
 use crate::rkstratum_cpu_miner::InternalMinerMetrics;
 use kaspa_consensus_core::block::Block;
 // kaspa_pow used inline for PoW validation
 use num_bigint::BigUint;
-use num_traits::{ToPrimitive, Zero};
+use num_traits::{Num, ToPrimitive, Zero};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use serde_json::Value;
@@ -377,6 +378,43 @@ impl ShareHandler {
         DiagnosticPreSubmitQuoteConfig::from_env().is_some()
     }
 
+    fn diagnostic_target_override_enabled() -> bool {
+        DiagnosticLedgerConfig::from_env().is_some() || DiagnosticPreSubmitQuoteConfig::from_env().is_some()
+    }
+
+    fn diagnostic_target_override_from_env() -> Result<Option<BigUint>, String> {
+        if !Self::diagnostic_target_override_enabled() {
+            return Ok(None);
+        }
+        let Some(raw) = std::env::var(ENV_TARGET_OVERRIDE_HEX).ok() else {
+            return Ok(None);
+        };
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Ok(None);
+        }
+        let hex = trimmed.strip_prefix("0x").or_else(|| trimmed.strip_prefix("0X")).unwrap_or(trimmed);
+        if hex.is_empty() || hex.len() > 64 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(format!("invalid {ENV_TARGET_OVERRIDE_HEX}: expected 1..64 hex digits"));
+        }
+        BigUint::from_str_radix(hex, 16).map(Some).map_err(|e| format!("invalid {ENV_TARGET_OVERRIDE_HEX}: {e}"))
+    }
+
+    fn effective_stratum_diff(ctx: &StratumContext) -> Result<Option<KaspaDiff>, String> {
+        let mut stratum_diff = GetMiningState(ctx).stratum_diff();
+        if let Some(target) = Self::diagnostic_target_override_from_env()? {
+            let Some(diff) = stratum_diff.as_mut() else {
+                return Err(format!("{ENV_TARGET_OVERRIDE_HEX} set before stratum difficulty initialized"));
+            };
+            diff.target_value = target;
+        }
+        Ok(stratum_diff)
+    }
+
+    fn effective_pool_target(ctx: &StratumContext) -> Result<BigUint, String> {
+        Ok(Self::effective_stratum_diff(ctx)?.map(|d| d.target_value).unwrap_or_else(BigUint::zero))
+    }
+
     fn parse_submit_candidate(ctx: &StratumContext, event: &JsonRpcEvent) -> Result<SubmitCandidate, String> {
         if event.params.len() < 3 {
             return Err(format!("malformed event, expected at least 3 params, got {}", event.params.len()));
@@ -422,21 +460,20 @@ impl ShareHandler {
         pow_value: &BigUint,
         validation_job_id: u64,
         submitted_job_id: u64,
-    ) -> DiagnosticShareQuality {
-        let state = GetMiningState(ctx);
-        let stratum_diff = state.stratum_diff();
+    ) -> Result<DiagnosticShareQuality, String> {
+        let stratum_diff = Self::effective_stratum_diff(ctx)?;
         let configured_share_difficulty = stratum_diff.as_ref().map(|d| d.diff_value).unwrap_or(0.0);
         let bridge_target = stratum_diff.map(|d| d.target_value).unwrap_or_else(BigUint::zero);
         let pow_lt_target = pow_value < &bridge_target;
         let bridge_target_hex = format!("0x{:064x}", bridge_target);
-        DiagnosticShareQuality {
+        Ok(DiagnosticShareQuality {
             configured_share_difficulty,
             bridge_target: bridge_target_hex,
             pow_value: format!("0x{:064x}", pow_value),
             pow_lt_target,
             validation_job_id: validation_job_id.to_string(),
             fallback_job_id: (validation_job_id != submitted_job_id).then(|| validation_job_id.to_string()),
-        }
+        })
     }
 
     fn build_diagnostic_quote_record(
@@ -454,7 +491,7 @@ impl ShareHandler {
             return Err(format!("submitted job {} is not the exact stored bridge job at its slot", candidate.job_id));
         }
         let job = state.get_job(candidate.job_id).ok_or_else(|| format!("job {} does not exist", candidate.job_id))?;
-        let stratum_diff = state.stratum_diff().ok_or_else(|| "stratum difficulty is not initialized".to_string())?;
+        let stratum_diff = Self::effective_stratum_diff(ctx)?.ok_or_else(|| "stratum difficulty is not initialized".to_string())?;
         let bridge_target = stratum_diff.target_value.clone();
         let pow_value = Self::pow_value_for_job(&job, candidate.nonce_val);
         let pow_lt_target = pow_value < bridge_target;
@@ -1223,7 +1260,8 @@ impl ShareHandler {
             }
 
             // Check pool difficulty
-            let pool_target = state.stratum_diff().map(|d| d.target_value.clone()).unwrap_or_else(BigUint::zero);
+            let pool_target =
+                Self::effective_pool_target(&ctx).map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidInput, err))?;
 
             // Compare FULL pow_value against pool_target (not just lower bits)
             // Compare full 256-bit values
@@ -1326,6 +1364,8 @@ impl ShareHandler {
 
             record_weak_share(&self.worker_prom_context(&ctx, ""));
 
+            let share_quality = Self::diagnostic_share_quality(&ctx, &pow_value, current_job_id, job_id)
+                .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidInput, err))?;
             let low_diff_response_sent = self.reply_low_diff_share_for_diagnostic(&ctx, &event.id).await;
 
             {
@@ -1342,7 +1382,7 @@ impl ShareHandler {
                     &final_nonce_str,
                     current_job_id == job_id,
                     true,
-                    Some(Self::diagnostic_share_quality(&ctx, &pow_value, current_job_id, job_id)),
+                    Some(share_quality),
                     DiagnosticOutcome::Weak,
                     None,
                     Some(DiagnosticJsonRpcError::weak()),
@@ -1379,6 +1419,9 @@ impl ShareHandler {
             guard.set_outcome(&submit_key, now, DuplicateSubmitOutcome::Accepted);
         }
 
+        let share_quality = Self::diagnostic_share_quality(&ctx, &pow_value, current_job_id, job_id)
+            .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidInput, err))?;
+
         ctx.reply(JsonRpcResponse { id: event.id.clone(), result: Some(serde_json::Value::Bool(true)), error: None })
             .await
             .map_err(|e| format!("failed to reply: {}", e))?;
@@ -1390,7 +1433,7 @@ impl ShareHandler {
             &final_nonce_str,
             current_job_id == job_id,
             true,
-            Some(Self::diagnostic_share_quality(&ctx, &pow_value, current_job_id, job_id)),
+            Some(share_quality),
             DiagnosticOutcome::Accepted,
             Some(true),
             None,
@@ -1967,16 +2010,57 @@ pub trait KaspaApiTrait: Send + Sync {
 #[cfg(test)]
 mod retention_tests {
     use super::*;
-    use crate::diagnostic_ledger::DiagnosticPreSubmitQuoteConfig;
+    use crate::diagnostic_ledger::{
+        DiagnosticPreSubmitQuoteConfig, ENV_JSONL_PATH, ENV_PRE_SUBMIT_QUOTE_JSONL_PATH, ENV_TARGET_OVERRIDE_HEX,
+    };
     use crate::hasher::KaspaDiff;
     use crate::mining_state::MiningState;
     use kaspa_consensus_core::block::Block;
     use kaspa_hashes::Hash;
     use num_bigint::BigUint;
     use serde_json::json;
+    use std::ffi::OsString;
     use std::path::PathBuf;
     use std::sync::Arc;
     use tokio::sync::mpsc;
+
+    static DIAGNOSTIC_ENV_LOCK: once_cell::sync::Lazy<parking_lot::Mutex<()>> =
+        once_cell::sync::Lazy::new(|| parking_lot::Mutex::new(()));
+
+    const DIAGNOSTIC_ENV_KEYS: &[&str] = &[ENV_JSONL_PATH, ENV_PRE_SUBMIT_QUOTE_JSONL_PATH, ENV_TARGET_OVERRIDE_HEX];
+
+    struct DiagnosticEnvGuard {
+        _guard: parking_lot::MutexGuard<'static, ()>,
+        saved: Vec<(&'static str, Option<OsString>)>,
+    }
+
+    impl DiagnosticEnvGuard {
+        fn new(values: &[(&'static str, &str)]) -> Self {
+            let guard = DIAGNOSTIC_ENV_LOCK.lock();
+            let saved = DIAGNOSTIC_ENV_KEYS.iter().copied().map(|key| (key, std::env::var_os(key))).collect();
+            for key in DIAGNOSTIC_ENV_KEYS {
+                // The guard serializes diagnostic env mutation for these tests.
+                unsafe { std::env::remove_var(key) };
+            }
+            for (key, value) in values {
+                unsafe { std::env::set_var(key, value) };
+            }
+            Self { _guard: guard, saved }
+        }
+    }
+
+    impl Drop for DiagnosticEnvGuard {
+        fn drop(&mut self) {
+            for key in DIAGNOSTIC_ENV_KEYS {
+                unsafe { std::env::remove_var(key) };
+            }
+            for (key, value) in &self.saved {
+                if let Some(value) = value {
+                    unsafe { std::env::set_var(key, value) };
+                }
+            }
+        }
+    }
 
     async fn test_ctx_async() -> Arc<StratumContext> {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -2071,6 +2155,7 @@ mod retention_tests {
 
     #[test]
     fn pre_submit_quote_marks_target_valid_candidate() {
+        let _env = DiagnosticEnvGuard::new(&[]);
         let handler = ShareHandler::new("test-instance".to_string());
         let ctx = test_ctx();
         *ctx.worker_name.lock() = "worker_1".to_string();
@@ -2093,6 +2178,7 @@ mod retention_tests {
 
     #[test]
     fn pre_submit_quote_marks_weak_candidate() {
+        let _env = DiagnosticEnvGuard::new(&[]);
         let handler = ShareHandler::new("test-instance".to_string());
         let ctx = test_ctx();
         let job_id = install_test_job_and_diff(&ctx, BigUint::from(0u8));
@@ -2106,7 +2192,68 @@ mod retention_tests {
     }
 
     #[test]
+    fn diagnostic_target_override_is_ignored_without_diagnostic_env() {
+        let _env =
+            DiagnosticEnvGuard::new(&[(ENV_TARGET_OVERRIDE_HEX, "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")]);
+        let handler = ShareHandler::new("test-instance".to_string());
+        let ctx = test_ctx();
+        let job_id = install_test_job_and_diff(&ctx, BigUint::from(0u8));
+
+        let record = handler.build_diagnostic_quote_record(&ctx, &quote_event(job_id, "0000000000000001"), &quote_config()).unwrap();
+
+        assert!(!record.pow_lt_target);
+        assert_eq!(record.bridge_target, format!("0x{:064x}", BigUint::from(0u8)));
+    }
+
+    #[test]
+    fn pre_submit_quote_uses_diagnostic_target_override() {
+        let _env = DiagnosticEnvGuard::new(&[
+            (ENV_PRE_SUBMIT_QUOTE_JSONL_PATH, "/tmp/rkstratum-pre-submit-quote-target-override-test.jsonl"),
+            (ENV_TARGET_OVERRIDE_HEX, "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"),
+        ]);
+        let handler = ShareHandler::new("test-instance".to_string());
+        let ctx = test_ctx();
+        let job_id = install_test_job_and_diff(&ctx, BigUint::from(0u8));
+
+        let record = handler.build_diagnostic_quote_record(&ctx, &quote_event(job_id, "0000000000000001"), &quote_config()).unwrap();
+
+        assert!(record.pow_lt_target);
+        assert_eq!(record.bridge_target, "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+        assert_eq!(record.configured_share_difficulty, 2048.0);
+    }
+
+    #[test]
+    fn submit_pool_target_helper_uses_diagnostic_target_override() {
+        let _env = DiagnosticEnvGuard::new(&[
+            (ENV_JSONL_PATH, "/tmp/rkstratum-submit-ledger-target-override-test.jsonl"),
+            (ENV_TARGET_OVERRIDE_HEX, "0f"),
+        ]);
+        let ctx = test_ctx();
+        install_test_job_and_diff(&ctx, BigUint::from(0u8));
+
+        let target = ShareHandler::effective_pool_target(&ctx).unwrap();
+
+        assert_eq!(target, BigUint::from(15u8));
+    }
+
+    #[test]
+    fn diagnostic_target_override_rejects_malformed_hex() {
+        let _env = DiagnosticEnvGuard::new(&[
+            (ENV_PRE_SUBMIT_QUOTE_JSONL_PATH, "/tmp/rkstratum-pre-submit-quote-target-override-test.jsonl"),
+            (ENV_TARGET_OVERRIDE_HEX, "not-hex"),
+        ]);
+        let handler = ShareHandler::new("test-instance".to_string());
+        let ctx = test_ctx();
+        let job_id = install_test_job_and_diff(&ctx, BigUint::from(0u8));
+
+        let err = handler.build_diagnostic_quote_record(&ctx, &quote_event(job_id, "0000000000000001"), &quote_config()).unwrap_err();
+
+        assert!(err.contains("invalid RKSTRATUM_DIAGNOSTIC_TARGET_OVERRIDE_HEX"));
+    }
+
+    #[test]
     fn pre_submit_quote_rejects_non_exact_stored_job() {
+        let _env = DiagnosticEnvGuard::new(&[]);
         let handler = ShareHandler::new("test-instance".to_string());
         let ctx = test_ctx();
         let job_id = install_test_job_and_diff(&ctx, BigUint::from(0u8));

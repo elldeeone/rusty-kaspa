@@ -14,6 +14,7 @@ pub const ENV_NODE_RPC: &str = "RKSTRATUM_DIAGNOSTIC_NODE_RPC";
 pub const PRE_SUBMIT_QUOTE_SCHEMA_VERSION: &str = "ks5-local-stratum-pre-submit-quote/v1";
 pub const ENV_PRE_SUBMIT_QUOTE_JSONL_PATH: &str = "RKSTRATUM_DIAGNOSTIC_QUOTE_JSONL";
 pub const ENV_BRIDGE_COMMIT: &str = "RKSTRATUM_DIAGNOSTIC_BRIDGE_COMMIT";
+pub const ENV_TARGET_OVERRIDE_HEX: &str = "RKSTRATUM_DIAGNOSTIC_TARGET_OVERRIDE_HEX";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiagnosticLedgerConfig {
