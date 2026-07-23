@@ -166,12 +166,11 @@ impl SwarmDriver {
             autonat::Event::OutboundProbe(autonat::OutboundProbeEvent::Response { .. }) => {
                 self.autonat_private_until = None;
             }
-            autonat::Event::OutboundProbe(autonat::OutboundProbeEvent::Error { error, .. }) => {
-                if !self.allow_private_addrs
-                    && matches!(error, autonat::OutboundProbeError::Response(autonat::ResponseError::DialError))
-                {
-                    self.autonat_private_until = Some(Instant::now() + AUTONAT_PRIVATE_COOLDOWN);
-                }
+            autonat::Event::OutboundProbe(autonat::OutboundProbeEvent::Error {
+                error: autonat::OutboundProbeError::Response(autonat::ResponseError::DialError),
+                ..
+            }) if !self.allow_private_addrs => {
+                self.autonat_private_until = Some(Instant::now() + AUTONAT_PRIVATE_COOLDOWN);
             }
             _ => {}
         }
