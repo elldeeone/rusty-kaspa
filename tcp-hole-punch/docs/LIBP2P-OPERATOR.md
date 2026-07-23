@@ -6,7 +6,7 @@
 - **bridge**: hybrid; libp2p runtime runs (helper/reservations/DCUtR) but outbound Kaspa dials use TCP, with a libp2p attempt/cooldown path available in the connector for future hybrid work. Safe for mainnet nodes that need TCP peers.
 - **full/helper**: libp2p stack enabled (helper == full for now) and used for outbound; overlay-only mode for the NAT lab.
 - Full/helper remain overlay-only; bridge/role changes do **not** alter DCUtR behaviour in full mode.
-- Helper API binds only when `--libp2p-helper-listen <addr>` is set (e.g., `127.0.0.1:38080`).
+- Helper API binds only when `--libp2p-helper-listen <addr>` is set, and the address must be loopback (e.g., `127.0.0.1:38080`).
 - Ports: TCP P2P port stays unchanged (`--listen`/default p2p port); libp2p uses a dedicated port (`--libp2p-listen-port`, default `p2p_port+1`). Libp2p is intentionally **not** multiplexed on the P2P TCP port.
 - AutoNAT posture: client+server enabled in full/helper modes; server is public-only by default (`server_only_if_public=true`). Labs can opt into private IP reachability with `--libp2p-autonat-allow-private`.
 
@@ -60,7 +60,7 @@
 - Mainnet node with bridge mode (default private role, keeps TCP outbound): `kaspad --libp2p-mode=bridge`
 - Public relay with persistent ID + advertised addresses (bridge or full):
   ```
-  target/debug/kaspad --simnet --libp2p-mode=bridge --libp2p-role=public --libp2p-helper-listen=0.0.0.0:38080 \
+  target/debug/kaspad --simnet --libp2p-mode=bridge --libp2p-role=public \
     --libp2p-identity-path=/var/lib/kaspad/libp2p.id \
     --libp2p-reservations=/ip4/203.0.113.10/tcp/16111/p2p/12D3KooWRelayPeer \
     --libp2p-external-multiaddrs=/ip4/198.51.100.50/tcp/16111 \
@@ -89,7 +89,11 @@
 
 ## Helper API (Testing / Debugging)
 
-The helper API provides a simple JSON interface for triggering libp2p operations. **For testing only** - binds to localhost by default.
+The helper API provides a simple JSON interface for triggering libp2p operations. It is **for testing only** and only accepts loopback bind addresses. For remote debugging, keep it on loopback and forward it over SSH:
+
+```bash
+ssh -L 38080:127.0.0.1:38080 user@node
+```
 
 ### Enabling
 ```bash
@@ -147,5 +151,5 @@ echo '{"action":"dial","multiaddr":"/ip4/RELAY_IP/tcp/16112/p2p/RELAY_PEER_ID/p2
 ### Important Notes
 - Nodes must have `--libp2p-external-multiaddrs` configured with their WAN IP for DCUtR to have addresses to send
 - Both nodes should have reservations on the same relay
-- The helper API only binds when `--libp2p-helper-listen` is explicitly set
+- The helper API only binds when `--libp2p-helper-listen` is explicitly set to a loopback address
 - Use `--loglevel=debug` to see detailed DCUtR negotiation logs

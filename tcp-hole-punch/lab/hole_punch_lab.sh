@@ -69,7 +69,7 @@ nohup ${BIN_PATH} \\
   --rpclisten=0.0.0.0:${RPC_PORT} \\
   --libp2p-mode=full \\
   --libp2p-listen-port=${LIBP2P_PORT} \\
-  --libp2p-helper-listen=0.0.0.0:${HELPER_PORT} \\
+  --libp2p-helper-listen=127.0.0.1:${HELPER_PORT} \\
   --libp2p-identity-path=${APPDIR_C}/libp2p.id \\
   >>"\${LOG}" 2>&1 < /dev/null & echo \$! > ${APPDIR_C}/kaspad.pid
 EOF

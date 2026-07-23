@@ -1,5 +1,5 @@
 use super::Libp2pService;
-use super::helper::{HELPER_MAX_LINE, handle_helper_connection};
+use super::helper::{HELPER_MAX_LINE, handle_helper_connection, validate_helper_listen_addr};
 use super::inbound::{
     INBOUND_LISTEN_MAX_RETRYABLE_ERRORS, InboundListenErrorAction, inbound_listen_error_action, start_inbound_bridge,
 };
@@ -275,6 +275,38 @@ async fn helper_rejects_long_lines() {
     let payload = "x".repeat(HELPER_MAX_LINE + 10);
     let resp = run_helper_once(&payload).await;
     assert!(resp.contains("request too long"));
+}
+
+#[tokio::test]
+async fn helper_rejects_oversized_unterminated_requests_without_waiting_for_timeout() {
+    let api = HelperApi::new(Arc::new(MockProvider::default()));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind helper listener");
+    let addr = listener.local_addr().expect("listener addr");
+    tokio::spawn(async move {
+        if let Ok((stream, _)) = listener.accept().await {
+            handle_helper_connection(stream, api).await;
+        }
+    });
+
+    let mut client = tokio::net::TcpStream::connect(addr).await.expect("connect helper");
+    client.write_all(&vec![b'x'; HELPER_MAX_LINE + 1]).await.expect("write oversized payload");
+    let mut resp = String::new();
+    tokio::time::timeout(Duration::from_secs(1), client.read_to_string(&mut resp))
+        .await
+        .expect("oversized request waited for the helper read timeout")
+        .expect("read helper response");
+
+    assert!(resp.contains("request too long"));
+}
+
+#[test]
+fn helper_listener_accepts_only_loopback_addresses() {
+    assert!(validate_helper_listen_addr("127.0.0.1:38080".parse().unwrap()).is_ok());
+    assert!(validate_helper_listen_addr("[::1]:38080".parse().unwrap()).is_ok());
+    assert!(matches!(
+        validate_helper_listen_addr("0.0.0.0:38080".parse().unwrap()),
+        Err(Libp2pError::ListenFailed(message)) if message.contains("loopback")
+    ));
 }
 
 #[tokio::test]
