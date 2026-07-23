@@ -486,7 +486,10 @@ a large RAM (~64GB) can set this value to ~3.0-4.0 and gain superior performance
                 .value_name("IP:PORT")
                 .require_equals(true)
                 .value_parser(clap::value_parser!(SocketAddr))
-                .help("Enable the libp2p helper/control API on the specified socket address. Disabled unless set explicitly."),
+                .help(
+                    "Enable the testing-only libp2p helper/control API on a loopback socket address. \
+                     Use an SSH tunnel for remote access. Disabled unless set explicitly.",
+                ),
         )
         .arg(
             Arg::new("libp2p-listen-port")
