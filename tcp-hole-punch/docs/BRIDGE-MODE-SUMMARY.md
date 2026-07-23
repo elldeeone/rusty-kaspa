@@ -6,7 +6,7 @@
 - Status/RPC: bridge is reported as `full` until the RPC enum grows a bridge variant.
 - Quick CLI:
   - Mainnet-safe hybrid: `kaspad --libp2p-mode=bridge`
-  - Public relay: `kaspad --libp2p-mode=bridge --libp2p-role=public --libp2p-helper-listen=0.0.0.0:38080`
+  - Public relay: `kaspad --libp2p-mode=bridge --libp2p-role=public`
   - Private/DCUtR node: `kaspad --libp2p-mode=bridge --libp2p-role=private --libp2p-reservations=... --libp2p-external-multiaddrs=...`
 
 ## Regression fix note
