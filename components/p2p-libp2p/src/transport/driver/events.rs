@@ -78,8 +78,7 @@ impl SwarmDriver {
         match event {
             identify::Event::Received { peer_id, ref info, .. } => {
                 let supports_dcutr = info.protocols.iter().any(|p| p.as_ref() == dcutr::PROTOCOL_NAME.as_ref());
-                info!(
-                    target: "libp2p_identify",
+                debug!(
                     "identify received from {peer_id}: protocols={:?} (dcutr={supports_dcutr}) listen_addrs={:?}",
                     info.protocols,
                     info.listen_addrs
@@ -108,16 +107,14 @@ impl SwarmDriver {
             }
             identify::Event::Pushed { peer_id, ref info, .. } => {
                 let supports_dcutr = info.protocols.iter().any(|p| p.as_ref() == dcutr::PROTOCOL_NAME.as_ref());
-                info!(
-                    target: "libp2p_identify",
+                debug!(
                     "identify pushed to {peer_id}: protocols={:?} (dcutr={supports_dcutr}) listen_addrs={:?}",
                     info.protocols,
                     info.listen_addrs
                 );
             }
             identify::Event::Sent { peer_id, .. } => {
-                info!(
-                    target: "libp2p_identify",
+                debug!(
                     "identify sent to {peer_id}; expecting advertisement of {}",
                     dcutr::PROTOCOL_NAME
                 );
@@ -135,7 +132,7 @@ impl SwarmDriver {
             .any(|conn| conn.peer_id == event.remote_peer_id && matches!(conn.path, PathKind::Direct) && conn.dcutr_upgraded);
         match &event.result {
             Err(e) if is_dcutr_retry_trigger_error(e) && !(is_attempts_exceeded(e) && is_spurious_attempts) => {
-                warn!(
+                debug!(
                     "libp2p dcutr retry-trigger failure for {}: {:?} (local_candidates={} remote_candidates={})",
                     event.remote_peer_id, e, local_candidates, remote_candidates
                 );
@@ -151,10 +148,10 @@ impl SwarmDriver {
                 );
             }
             _ => {
-                info!("libp2p dcutr event: {:?} (swarm has {} external addrs: {:?})", event, external_addrs.len(), external_addrs);
+                debug!("libp2p dcutr event: {:?} (swarm has {} external addrs: {:?})", event, external_addrs.len(), external_addrs);
             }
         }
-        info!(
+        debug!(
             "libp2p dcutr summary: peer={} result={:?} local_candidates={} remote_candidates={} upgraded_direct={}",
             event.remote_peer_id, event.result, local_candidates, remote_candidates, is_spurious_attempts
         );
