@@ -164,9 +164,7 @@ async fn dcutr_client_relay_smoke() {
                         }
                     }
                     SwarmEvent::OutgoingConnectionError { peer_id: Some(peer_id), .. }
-                        if peer_id == dst_id.peer_id
-                            && dial_attempts < 4
-                            && src.dial(dst_relay_addr.clone()).is_ok() =>
+                        if peer_id == dst_id.peer_id && dial_attempts < 4 && src.dial(dst_relay_addr.clone()).is_ok() =>
                     {
                         dial_attempts += 1;
                     }
