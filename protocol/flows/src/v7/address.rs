@@ -9,7 +9,7 @@ use kaspa_p2p_lib::{
 };
 use kaspa_utils::networking::{RelayRole, synthetic_relay_endpoint};
 use rand::seq::SliceRandom;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 use tokio::time::{Duration, sleep};
 
 /// The maximum number of addresses that are sent in a single kaspa Addresses message.
@@ -22,6 +22,39 @@ const MAX_ADDRESSES_RECEIVE: usize = 2500;
 const ADDRESS_REFRESH_INTERVAL: Duration = Duration::from_secs(45);
 
 type Libp2pAdvertisement = (u64, Option<u16>, Option<u32>, Option<u64>, Option<RelayRole>, Option<String>, Option<String>);
+
+fn merge_duplicate_addresses(addresses: Vec<NetAddress>) -> Vec<NetAddress> {
+    let mut merged: Vec<NetAddress> = Vec::with_capacity(addresses.len());
+    let mut index_by_endpoint: HashMap<NetAddress, usize> = HashMap::with_capacity(addresses.len());
+    for address in addresses {
+        if let Some(index) = index_by_endpoint.get(&address).copied() {
+            merged[index].merge_metadata(&address);
+        } else {
+            index_by_endpoint.insert(address.clone(), merged.len());
+            merged.push(address);
+        }
+    }
+    merged
+}
+
+fn select_addresses_for_gossip(mut addresses: Vec<NetAddress>, local_address: Option<NetAddress>) -> Vec<NetAddress> {
+    let guarantee_local = local_address.as_ref().is_some_and(NetAddress::has_libp2p_discovery_metadata);
+    if let Some(local_address) = local_address.as_ref() {
+        if guarantee_local {
+            addresses.retain(|address| address != local_address);
+        } else {
+            addresses.push(local_address.clone());
+        }
+    }
+
+    let unique_addresses = merge_duplicate_addresses(addresses);
+    let sample_size = MAX_ADDRESSES_SEND.saturating_sub(usize::from(guarantee_local));
+    let mut selected = unique_addresses.choose_multiple(&mut rand::thread_rng(), sample_size).cloned().collect_vec();
+    if guarantee_local {
+        selected.push(local_address.expect("guaranteed local address is present"));
+    }
+    selected
+}
 
 fn apply_libp2p_advertisement(base_address: Option<NetAddress>, advertisement: Libp2pAdvertisement) -> Option<NetAddress> {
     let (services, relay_port, relay_capacity, relay_ttl_ms, relay_role, libp2p_peer_id, relay_hint) = advertisement;
@@ -132,15 +165,12 @@ impl SendAddressesFlow {
     async fn start_impl(&mut self) -> Result<(), ProtocolError> {
         loop {
             dequeue!(self.incoming_route, Payload::RequestAddresses)?;
-            let mut addresses = self.ctx.address_manager.lock().iterate_addresses().collect_vec();
-            if let Some(local_address) = self.current_local_address() {
-                addresses.push(local_address);
-            }
-            let unique_addresses = addresses.into_iter().unique().collect_vec();
-            let address_list = unique_addresses
-                .choose_multiple(&mut rand::thread_rng(), MAX_ADDRESSES_SEND)
-                .map(|addr| addr.clone().into())
-                .collect();
+            let addresses = {
+                let address_manager = self.ctx.address_manager.lock();
+                address_manager.iterate_addresses().chain(address_manager.libp2p_discovery_addresses()).collect_vec()
+            };
+            let address_list =
+                select_addresses_for_gossip(addresses, self.current_local_address()).into_iter().map(Into::into).collect();
             self.router.enqueue(make_message!(Payload::Addresses, AddressesMessage { address_list })).await?;
         }
     }
@@ -154,8 +184,8 @@ impl SendAddressesFlow {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kaspa_utils::networking::{IpAddress, synthetic_relay_endpoint};
-    use std::str::FromStr;
+    use kaspa_utils::networking::{IpAddress, NET_ADDRESS_SERVICE_LIBP2P_RELAY, synthetic_relay_endpoint};
+    use std::{net::Ipv4Addr, str::FromStr};
 
     const PEER_ID: &str = "12D3KooWANUDpDH4cX56NHHs7u7aFPZ63Sdo8GTDpVwGScBht9u7";
     const RELAY_HINT: &str = "/ip4/23.118.8.163/tcp/18111/p2p/12D3KooWK8n2eei2n7MaUvYgCF9Km1unreBEyDndEhgyYdJSbqvo/p2p-circuit";
@@ -194,5 +224,52 @@ mod tests {
         assert_eq!(address.port, base.port);
         assert_eq!(address.libp2p_peer_id.as_deref(), Some(PEER_ID));
         assert_eq!(address.relay_circuit_hint.as_deref(), Some(RELAY_HINT));
+    }
+
+    #[test]
+    fn complete_local_advertisement_is_guaranteed_in_a_full_gossip_response() {
+        let local = NetAddress::new(IpAddress::from_str("8.8.8.8").unwrap(), 16111)
+            .with_services(NET_ADDRESS_SERVICE_LIBP2P_RELAY)
+            .with_relay_port(Some(16112))
+            .with_relay_role(Some(RelayRole::Public));
+        let mut addresses = vec![NetAddress::new(local.ip, local.port)];
+        addresses.extend(
+            (0..1_100u16).map(|index| NetAddress::new(Ipv4Addr::new(11, (index / 256) as u8, (index % 256) as u8, 1).into(), 16111)),
+        );
+
+        let selected = select_addresses_for_gossip(addresses, Some(local.clone()));
+
+        assert_eq!(selected.len(), MAX_ADDRESSES_SEND);
+        let matching = selected.iter().filter(|address| address.ip == local.ip && address.port == local.port).collect_vec();
+        assert_eq!(matching.len(), 1);
+        assert_eq!(matching[0].relay_port, Some(16112));
+        assert!(matching[0].has_services(NET_ADDRESS_SERVICE_LIBP2P_RELAY));
+    }
+
+    #[test]
+    fn ordinary_local_address_keeps_existing_sampling_behavior() {
+        let local = NetAddress::new(IpAddress::from_str("8.8.8.8").unwrap(), 16111);
+        let addresses = vec![NetAddress::new(IpAddress::from_str("1.1.1.1").unwrap(), 16111)];
+
+        let selected = select_addresses_for_gossip(addresses, Some(local.clone()));
+
+        assert_eq!(selected.len(), 2);
+        assert!(selected.contains(&local));
+    }
+
+    #[test]
+    fn discovery_metadata_is_merged_into_an_earlier_plain_duplicate() {
+        let plain = NetAddress::new(IpAddress::from_str("8.8.8.8").unwrap(), 16111);
+        let enriched = plain
+            .clone()
+            .with_services(NET_ADDRESS_SERVICE_LIBP2P_RELAY)
+            .with_relay_port(Some(16112))
+            .with_relay_role(Some(RelayRole::Public));
+
+        let selected = select_addresses_for_gossip(vec![plain, enriched], None);
+
+        assert_eq!(selected.len(), 1);
+        assert!(selected[0].has_services(NET_ADDRESS_SERVICE_LIBP2P_RELAY));
+        assert_eq!(selected[0].relay_port, Some(16112));
     }
 }

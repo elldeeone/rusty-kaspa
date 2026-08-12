@@ -200,7 +200,7 @@ impl ConnectionManager {
         }
 
         let mut missing_connections = if force_private_rendezvous { 1 } else { self.outbound_target - active_outbound.len() };
-        let mut addr_iter = self.address_manager.lock().iterate_prioritized_random_addresses(active_outbound);
+        let mut addr_iter = self.address_manager.lock().iterate_prioritized_random_addresses_with_libp2p_discovery(active_outbound);
         let mut used_relays = Self::active_relay_usage(peer_by_address);
         let mut relay_peer_id_by_key = self.relay_peer_id_by_key.lock().await.clone();
         let mut assigned_relays_by_target: HashMap<String, String> = HashMap::new();

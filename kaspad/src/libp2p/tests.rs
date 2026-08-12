@@ -84,8 +84,8 @@ mod relay_source_tests {
     use kaspa_database::prelude::ConnBuilder;
     use kaspa_p2p_libp2p::relay_pool::RelayCandidateSource;
     use kaspa_utils::networking::{IpAddress, NET_ADDRESS_SERVICE_LIBP2P_RELAY, NetAddress};
-    use std::str::FromStr;
     use std::sync::Arc;
+    use std::{net::Ipv4Addr, str::FromStr};
 
     #[tokio::test]
     async fn relay_source_filters_private_and_unroutable_candidates() {
@@ -120,6 +120,41 @@ mod relay_source_tests {
         assert_eq!(updates.len(), 1);
         assert_eq!(updates[0].key, "8.8.8.8:16112");
         drop(source);
+        drop(db);
+        drop(db_lifetime);
+    }
+
+    #[tokio::test]
+    async fn relay_source_reads_candidate_evicted_from_a_full_address_store() {
+        let (db_lifetime, db) = create_temp_db!(ConnBuilder::default().with_files_limit(16));
+        let config = ConsensusConfig::new(SIMNET_PARAMS);
+        let (am, _) = AddressManager::new(Arc::new(config), db.clone(), Arc::new(TickService::default()));
+        let relay = NetAddress::new(IpAddress::from_str("8.8.8.8").unwrap(), 16111)
+            .with_services(NET_ADDRESS_SERVICE_LIBP2P_RELAY)
+            .with_relay_port(Some(16112));
+
+        {
+            let mut guard = am.lock();
+            for index in 0..4_096u32 {
+                let address = NetAddress::new(Ipv4Addr::new(11, (index >> 16) as u8, (index >> 8) as u8, index as u8).into(), 16111);
+                guard.add_address(address.clone());
+                guard.mark_connection_success(address);
+            }
+            guard.add_address(relay.clone());
+            assert!(!guard.get_all_addresses().contains(&relay));
+        }
+
+        let source = AddressManagerRelaySource::new(am.clone());
+        let updates = source.fetch_candidates().await;
+        assert_eq!(updates.len(), 1);
+        assert_eq!(updates[0].key, "8.8.8.8:16112");
+
+        for _ in 0..3 {
+            am.lock().mark_connection_failure(relay.clone());
+        }
+        assert!(source.fetch_candidates().await.is_empty());
+        drop(source);
+        drop(am);
         drop(db);
         drop(db_lifetime);
     }

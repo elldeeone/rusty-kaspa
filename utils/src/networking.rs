@@ -381,6 +381,18 @@ impl NetAddress {
             || self.relay_role == Some(RelayRole::Public)
     }
 
+    /// Whether this address carries enough metadata to participate in libp2p
+    /// relay or private-peer discovery.
+    pub fn has_libp2p_discovery_metadata(&self) -> bool {
+        let public_relay = self.has_services(NET_ADDRESS_SERVICE_LIBP2P_RELAY)
+            && self.relay_port.is_some()
+            && self.ip.is_publicly_routable()
+            && self.relay_role != Some(RelayRole::Private);
+        let private_peer = self.libp2p_peer_id.as_deref().is_some_and(|peer_id| !peer_id.is_empty())
+            && self.relay_circuit_hint.as_deref().is_some_and(|hint| hint.starts_with('/') || SocketAddr::from_str(hint).is_ok());
+        public_relay || private_peer
+    }
+
     pub fn clear_relay_advertisement(&mut self) {
         self.services &= !NET_ADDRESS_SERVICE_LIBP2P_RELAY;
         self.relay_port = None;
@@ -736,6 +748,38 @@ mod tests {
         let mut set = HashSet::new();
         set.insert(a);
         assert!(set.contains(&b));
+    }
+
+    #[test]
+    fn libp2p_discovery_metadata_requires_a_complete_public_relay_or_private_hint() {
+        let public_relay = NetAddress::new(IpAddress::from_str("8.8.8.8").unwrap(), 16111)
+            .with_services(NET_ADDRESS_SERVICE_LIBP2P_RELAY)
+            .with_relay_port(Some(16112));
+        assert!(public_relay.has_libp2p_discovery_metadata());
+
+        let private_peer = NetAddress::new(IpAddress::from_str("10.0.0.2").unwrap(), 16111)
+            .with_relay_role(Some(RelayRole::Private))
+            .with_libp2p_peer_id(Some("12D3KooWPrivate".into()))
+            .with_relay_circuit_hint(Some("/ip4/8.8.8.8/tcp/16112/p2p/12D3KooWRelay/p2p-circuit".into()));
+        assert!(private_peer.has_libp2p_discovery_metadata());
+
+        let missing_port =
+            NetAddress::new(IpAddress::from_str("8.8.4.4").unwrap(), 16111).with_services(NET_ADDRESS_SERVICE_LIBP2P_RELAY);
+        let missing_hint = NetAddress::new(IpAddress::from_str("10.0.0.3").unwrap(), 16111)
+            .with_relay_role(Some(RelayRole::Private))
+            .with_libp2p_peer_id(Some("12D3KooWPrivate".into()));
+        let socket_hint = NetAddress::new(IpAddress::from_str("10.0.0.4").unwrap(), 16111)
+            .with_relay_role(Some(RelayRole::Private))
+            .with_libp2p_peer_id(Some("12D3KooWPrivate".into()))
+            .with_relay_circuit_hint(Some("8.8.8.8:16112".into()));
+        let malformed_hint = NetAddress::new(IpAddress::from_str("10.0.0.5").unwrap(), 16111)
+            .with_relay_role(Some(RelayRole::Private))
+            .with_libp2p_peer_id(Some("12D3KooWPrivate".into()))
+            .with_relay_circuit_hint(Some("not-a-relay-address".into()));
+        assert!(!missing_port.has_libp2p_discovery_metadata());
+        assert!(!missing_hint.has_libp2p_discovery_metadata());
+        assert!(socket_hint.has_libp2p_discovery_metadata());
+        assert!(!malformed_hint.has_libp2p_discovery_metadata());
     }
 
     #[test]

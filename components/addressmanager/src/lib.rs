@@ -1,8 +1,15 @@
+mod libp2p_discovery;
 mod port_mapping_extender;
 mod stores;
 extern crate self as address_manager;
 
-use std::{collections::HashSet, iter, net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    collections::HashSet,
+    iter,
+    net::SocketAddr,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use address_manager::port_mapping_extender::Extender;
 use igd_next::{
@@ -17,8 +24,10 @@ use kaspa_consensus_core::config::Config;
 use kaspa_core::{debug, info, task::tick::TickService, time::unix_now, warn};
 use kaspa_database::prelude::{CachePolicy, DB, StoreResultExt};
 use kaspa_utils::networking::IpAddress;
+use libp2p_discovery::Libp2pDiscoveryAddressBook;
 use local_ip_address::list_afinet_netifas;
 use parking_lot::Mutex;
+use rand::seq::SliceRandom;
 use stores::banned_address_store::{BannedAddressesStore, BannedAddressesStoreReader, ConnectionBanTimestamp, DbBannedAddressesStore};
 use thiserror::Error;
 
@@ -54,15 +63,37 @@ pub enum UpnpError {
 pub struct AddressManager {
     banned_address_store: DbBannedAddressesStore,
     address_store: address_store_with_cache::Store,
+    libp2p_discovery: Libp2pDiscoveryAddressBook,
     config: Arc<Config>,
     local_net_addresses: Vec<NetAddress>,
 }
+
+struct PrioritizedAddresses {
+    private_discovery: std::vec::IntoIter<NetAddress>,
+    ordinary: address_store_with_cache::RandomWeightedIterator,
+}
+
+impl Iterator for PrioritizedAddresses {
+    type Item = NetAddress;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.private_discovery.next().or_else(|| self.ordinary.next())
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let remaining = self.private_discovery.len() + self.ordinary.len();
+        (remaining, Some(remaining))
+    }
+}
+
+impl ExactSizeIterator for PrioritizedAddresses {}
 
 impl AddressManager {
     pub fn new(config: Arc<Config>, db: Arc<DB>, tick_service: Arc<TickService>) -> (Arc<Mutex<Self>>, Option<Extender>) {
         let mut instance = Self {
             banned_address_store: DbBannedAddressesStore::new(db.clone(), CachePolicy::Count(MAX_ADDRESSES)),
             address_store: address_store_with_cache::new(db),
+            libp2p_discovery: Libp2pDiscoveryAddressBook::default(),
             local_net_addresses: Vec::new(),
             config,
         };
@@ -300,6 +331,8 @@ impl AddressManager {
             return;
         }
 
+        self.libp2p_discovery.observe(&address, Instant::now());
+
         if self.address_store.has(&address) {
             self.address_store.merge_metadata(&address);
             return;
@@ -310,6 +343,8 @@ impl AddressManager {
     }
 
     pub fn mark_connection_failure(&mut self, address: NetAddress) {
+        self.libp2p_discovery.mark_connection_failure(&address);
+
         if !self.address_store.has(&address) {
             return;
         }
@@ -323,6 +358,8 @@ impl AddressManager {
     }
 
     pub fn mark_connection_success(&mut self, address: NetAddress) {
+        self.libp2p_discovery.mark_connection_success(&address);
+
         if !self.address_store.has(&address) {
             return;
         }
@@ -341,9 +378,30 @@ impl AddressManager {
         self.address_store.iterate_prioritized_random_addresses(exceptions)
     }
 
+    pub fn libp2p_discovery_addresses(&self) -> Vec<NetAddress> {
+        self.libp2p_discovery.addresses(Instant::now())
+    }
+
+    pub fn iterate_prioritized_random_addresses_with_libp2p_discovery(
+        &self,
+        exceptions: HashSet<NetAddress>,
+    ) -> impl ExactSizeIterator<Item = NetAddress> + 'static {
+        let mut private_discovery = self.libp2p_discovery.private_addresses(Instant::now());
+        private_discovery.retain(|address| !exceptions.contains(address));
+        private_discovery.shuffle(&mut rand::thread_rng());
+
+        let mut store_exceptions = exceptions;
+        store_exceptions.extend(private_discovery.iter().cloned());
+        PrioritizedAddresses {
+            private_discovery: private_discovery.into_iter(),
+            ordinary: self.address_store.iterate_prioritized_random_addresses(store_exceptions),
+        }
+    }
+
     pub fn ban(&mut self, ip: IpAddress) {
         self.banned_address_store.set(ip.into(), ConnectionBanTimestamp(unix_now())).unwrap();
         self.address_store.remove_by_ip(ip.into());
+        self.libp2p_discovery.remove_by_ip(ip);
     }
 
     pub fn unban(&mut self, ip: IpAddress) {
@@ -371,6 +429,56 @@ impl AddressManager {
 
     pub fn get_all_banned_addresses(&self) -> Vec<IpAddress> {
         self.banned_address_store.iterator().map(|x| IpAddress::from(x.unwrap().0)).collect_vec()
+    }
+}
+
+#[cfg(test)]
+mod discovery_integration_tests {
+    use super::*;
+    use kaspa_consensus_core::config::params::SIMNET_PARAMS;
+    use kaspa_database::{create_temp_db, prelude::ConnBuilder};
+    use kaspa_utils::networking::{NET_ADDRESS_SERVICE_LIBP2P_RELAY, RelayRole};
+    use std::net::Ipv4Addr;
+
+    #[test]
+    fn full_store_retains_public_relays_and_prioritizes_private_hints() {
+        let (db_lifetime, db) = create_temp_db!(ConnBuilder::default().with_files_limit(16));
+        let (address_manager, _) =
+            AddressManager::new(Arc::new(Config::new(SIMNET_PARAMS)), db.clone(), Arc::new(TickService::default()));
+        let mut manager = address_manager.lock();
+
+        for index in 0..MAX_ADDRESSES as u32 {
+            manager
+                .add_address(NetAddress::new(Ipv4Addr::new(11, (index >> 16) as u8, (index >> 8) as u8, index as u8).into(), 16111));
+        }
+
+        let public_relay = NetAddress::new(Ipv4Addr::new(8, 8, 8, 8).into(), 16111)
+            .with_services(NET_ADDRESS_SERVICE_LIBP2P_RELAY)
+            .with_relay_port(Some(16112));
+        let private_peer = NetAddress::new(Ipv4Addr::new(10, 0, 0, 2).into(), 16111)
+            .with_relay_role(Some(RelayRole::Private))
+            .with_libp2p_peer_id(Some("12D3KooWPrivate".to_string()))
+            .with_relay_circuit_hint(Some("/ip4/8.8.8.8/tcp/16112/p2p/12D3KooWRelay/p2p-circuit".to_string()));
+        manager.add_address(public_relay.clone());
+        manager.add_address(private_peer.clone());
+
+        let discovery = manager.libp2p_discovery_addresses();
+        assert!(discovery.contains(&public_relay));
+        assert!(discovery.contains(&private_peer));
+        assert_eq!(
+            manager
+                .iterate_prioritized_random_addresses_with_libp2p_discovery(HashSet::new())
+                .next()
+                .unwrap()
+                .libp2p_peer_id
+                .as_deref(),
+            private_peer.libp2p_peer_id.as_deref()
+        );
+
+        drop(manager);
+        drop(address_manager);
+        drop(db);
+        drop(db_lifetime);
     }
 }
 
@@ -515,10 +623,7 @@ mod address_store_with_cache {
         ///                 y: connection failures of the ip.
         ///                 n: number of ips with the same prefix bytes.
         ///```
-        pub fn iterate_prioritized_random_addresses(
-            &self,
-            exceptions: HashSet<NetAddress>,
-        ) -> impl ExactSizeIterator<Item = NetAddress> + 'static {
+        pub fn iterate_prioritized_random_addresses(&self, exceptions: HashSet<NetAddress>) -> RandomWeightedIterator {
             let exceptions: HashSet<AddressKey> = exceptions.into_iter().map(|addr| addr.into()).collect();
             let mut prefix_counter: HashMap<PrefixBucket, usize> = HashMap::new();
             let (mut weights, filtered_addresses): (Vec<f64>, Vec<NetAddress>) = self

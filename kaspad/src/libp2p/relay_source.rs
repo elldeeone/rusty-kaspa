@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use futures_util::future::BoxFuture;
 use kaspa_addressmanager::AddressManager;
@@ -23,8 +23,14 @@ impl AddressManagerRelaySource {
 impl RelayCandidateSource for AddressManagerRelaySource {
     fn fetch_candidates<'a>(&'a self) -> BoxFuture<'a, Vec<RelayCandidateUpdate>> {
         Box::pin(async move {
-            let addresses = self.address_manager.lock().get_all_addresses();
+            let addresses = {
+                let address_manager = self.address_manager.lock();
+                let mut addresses = address_manager.libp2p_discovery_addresses();
+                addresses.extend(address_manager.get_all_addresses());
+                addresses
+            };
             let mut updates = Vec::new();
+            let mut seen = HashSet::new();
             for addr in addresses {
                 if !addr.has_services(NET_ADDRESS_SERVICE_LIBP2P_RELAY) {
                     continue;
@@ -41,7 +47,8 @@ impl RelayCandidateSource for AddressManagerRelaySource {
                 let ttl = addr.relay_ttl_ms.map(Duration::from_millis).unwrap_or(self.ttl);
                 let capacity = addr.relay_capacity.map(|cap| cap as usize);
                 match relay_update_from_netaddr(addr, relay_port, ttl, capacity) {
-                    Ok(update) => updates.push(update),
+                    Ok(update) if seen.insert(update.key.clone()) => updates.push(update),
+                    Ok(_) => {}
                     Err(err) => log::debug!("libp2p relay source: invalid relay candidate: {err}"),
                 }
             }
