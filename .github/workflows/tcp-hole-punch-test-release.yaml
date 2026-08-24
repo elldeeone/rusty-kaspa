@@ -41,7 +41,9 @@ jobs:
         shell: bash
         run: |
           binary="target/x86_64-unknown-linux-musl/release/kaspad"
-          "$binary" --version
+          version_output=$("$binary" --version 2>&1 || true)
+          printf '%s\n' "$version_output"
+          test "$version_output" = "kaspad 2.0.1"
           archive="rusty-kaspa-${GITHUB_REF_NAME}-linux-amd64.zip"
           zip -j "$archive" "$binary"
           sha256sum "$archive" > "${archive}.sha256"
@@ -78,7 +80,12 @@ jobs:
         shell: pwsh
         run: |
           $binary = "target/release/kaspad.exe"
-          & $binary --version
+          $versionOutput = (& $binary --version 2>&1 | Out-String).Trim()
+          Write-Output $versionOutput
+          if ($versionOutput -ne "kaspad 2.0.1") {
+            throw "Unexpected Kaspad version output: $versionOutput"
+          }
+          $global:LASTEXITCODE = 0
           $archive = "rusty-kaspa-${env:GITHUB_REF_NAME}-windows-x64.zip"
           Compress-Archive -Path $binary -DestinationPath $archive
           $hash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLower()
@@ -124,7 +131,9 @@ jobs:
         shell: bash
         run: |
           binary="target/release/kaspad"
-          "$binary" --version
+          version_output=$("$binary" --version 2>&1 || true)
+          printf '%s\n' "$version_output"
+          test "$version_output" = "kaspad 2.0.1"
           archive="rusty-kaspa-${GITHUB_REF_NAME}-macos-${{ matrix.arch }}.zip"
           zip -j "$archive" "$binary"
           shasum -a 256 "$archive" > "${archive}.sha256"
