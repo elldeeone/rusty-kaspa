@@ -1,0 +1,137 @@
+name: TCP hole punch test release
+
+on:
+  push:
+    tags:
+      - "tcp-hole-punch-test-v*"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  linux-amd64:
+    name: Linux AMD64
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v4
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build static Kaspad
+        shell: bash
+        run: |
+          source musl-toolchain/build.sh
+          cd "$GITHUB_WORKSPACE"
+          cargo build --locked --release --bin kaspad --target x86_64-unknown-linux-musl
+
+      - name: Verify and package
+        shell: bash
+        run: |
+          binary="target/x86_64-unknown-linux-musl/release/kaspad"
+          "$binary" --version
+          archive="rusty-kaspa-${GITHUB_REF_NAME}-linux-amd64.zip"
+          zip -j "$archive" "$binary"
+          sha256sum "$archive" > "${archive}.sha256"
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            rusty-kaspa-${{ github.ref_name }}-linux-amd64.zip
+            rusty-kaspa-${{ github.ref_name }}-linux-amd64.zip.sha256
+
+  windows-x64:
+    name: Windows x64
+    runs-on: windows-latest
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v4
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build Kaspad
+        run: cargo build --locked --release --bin kaspad
+
+      - name: Verify and package
+        shell: pwsh
+        run: |
+          $binary = "target/release/kaspad.exe"
+          & $binary --version
+          $archive = "rusty-kaspa-${env:GITHUB_REF_NAME}-windows-x64.zip"
+          Compress-Archive -Path $binary -DestinationPath $archive
+          $hash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLower()
+          "$hash  $archive" | Set-Content -NoNewline "${archive}.sha256"
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            rusty-kaspa-${{ github.ref_name }}-windows-x64.zip
+            rusty-kaspa-${{ github.ref_name }}-windows-x64.zip.sha256
+
+  macos:
+    name: macOS ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v4
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build Kaspad
+        run: cargo build --locked --release --bin kaspad
+
+      - name: Verify and package
+        shell: bash
+        run: |
+          binary="target/release/kaspad"
+          "$binary" --version
+          archive="rusty-kaspa-${GITHUB_REF_NAME}-macos-${{ matrix.arch }}.zip"
+          zip -j "$archive" "$binary"
+          shasum -a 256 "$archive" > "${archive}.sha256"
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            rusty-kaspa-${{ github.ref_name }}-macos-${{ matrix.arch }}.zip
+            rusty-kaspa-${{ github.ref_name }}-macos-${{ matrix.arch }}.zip.sha256
