@@ -86,7 +86,6 @@ impl SwarmDriver {
             effective_role,
             auto_role,
             max_peers_per_relay: max_peers_per_relay.max(1),
-            autonat_private_until: None,
             metrics,
             listening: false,
             shutdown,

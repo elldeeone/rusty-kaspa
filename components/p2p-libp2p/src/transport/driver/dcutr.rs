@@ -385,18 +385,6 @@ impl SwarmDriver {
         }
 
         let now = Instant::now();
-        if !self.allow_private_addrs
-            && let Some(until) = self.autonat_private_until
-        {
-            if until > now {
-                if let Some(metrics) = self.metrics.as_ref() {
-                    metrics.dcutr().record_dialback_skipped_private();
-                }
-                debug!("libp2p dcutr: skipping dial-back to {peer_id}: autonat private until {:?}", until);
-                return;
-            }
-            self.autonat_private_until = None;
-        }
         if !force
             && let Some(next_allowed) = self.dialback_cooldowns.get(&peer_id)
             && *next_allowed > now

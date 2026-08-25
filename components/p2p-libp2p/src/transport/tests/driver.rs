@@ -371,19 +371,13 @@ async fn dialback_uses_live_relay_connections_even_if_state_flag_stale() {
     assert!(driver.peer_states.get(&peer).expect("peer state").connected_via_relay);
 }
 
-#[test]
-fn dcutr_dialback_skips_when_autonat_private() {
-    let (mut driver, peer) = dialback_ready_driver();
-    driver.autonat_private_until = Some(Instant::now() + Duration::from_secs(60));
-
-    driver.maybe_request_dialback(peer);
-    assert!(driver.dialback_cooldowns.is_empty());
-}
-
 #[tokio::test]
-async fn dcutr_dialback_allows_private_autonat_when_private_addrs_allowed() {
-    let (mut driver, peer) = dialback_ready_driver_with_allow_private(true);
-    driver.autonat_private_until = Some(Instant::now() + Duration::from_secs(60));
+async fn dcutr_dialback_proceeds_after_autonat_dial_error() {
+    let (mut driver, peer) = dialback_ready_driver();
+    let config_addr: Multiaddr = "/ip4/8.8.8.8/tcp/16112".parse().unwrap();
+    driver.swarm.add_external_address(config_addr.clone());
+    driver.record_local_candidate(config_addr, LocalCandidateSource::Config);
+    driver.handle_autonat_probe_error(&autonat::OutboundProbeError::Response(autonat::ResponseError::DialError));
 
     driver.maybe_request_dialback(peer);
     assert!(driver.dialback_cooldowns.contains_key(&peer));

@@ -158,22 +158,26 @@ impl SwarmDriver {
     }
     pub(super) fn handle_autonat_event(&mut self, event: autonat::Event) {
         debug!("libp2p autonat event: {:?}", event);
+        let outcome = match &event {
+            autonat::Event::OutboundProbe(autonat::OutboundProbeEvent::Response { .. }) => AutonatProbeOutcome::Public,
+            autonat::Event::OutboundProbe(autonat::OutboundProbeEvent::Error { error, .. }) => {
+                return self.handle_autonat_probe_error(error);
+            }
+            _ => AutonatProbeOutcome::Inconclusive,
+        };
+        self.handle_autonat_probe_outcome(outcome);
+    }
+    pub(super) fn handle_autonat_probe_error(&mut self, error: &autonat::OutboundProbeError) {
+        let outcome = match error {
+            autonat::OutboundProbeError::Response(autonat::ResponseError::DialError) => AutonatProbeOutcome::Private,
+            _ => AutonatProbeOutcome::Inconclusive,
+        };
+        self.handle_autonat_probe_outcome(outcome);
+    }
+    pub(super) fn handle_autonat_probe_outcome(&mut self, outcome: AutonatProbeOutcome) {
         let has_external_addr = self.has_usable_external_addr();
-        match &event {
-            autonat::Event::OutboundProbe(autonat::OutboundProbeEvent::Response { .. }) => {
-                self.autonat_private_until = None;
-            }
-            autonat::Event::OutboundProbe(autonat::OutboundProbeEvent::Error {
-                error: autonat::OutboundProbeError::Response(autonat::ResponseError::DialError),
-                ..
-            }) if !self.allow_private_addrs => {
-                self.autonat_private_until = Some(Instant::now() + AUTONAT_PRIVATE_COOLDOWN);
-            }
-            _ => {}
-        }
         if let Some(auto_role) = self.auto_role.as_mut() {
-            let is_public_probe = matches!(event, autonat::Event::OutboundProbe(autonat::OutboundProbeEvent::Response { .. }));
-            if is_public_probe {
+            if matches!(outcome, AutonatProbeOutcome::Public) {
                 auto_role.record_autonat_public(Instant::now());
             }
             match auto_role.update_role(Instant::now(), has_external_addr) {

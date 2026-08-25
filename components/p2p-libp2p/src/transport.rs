@@ -410,7 +410,6 @@ const PENDING_DIAL_TIMEOUT: Duration = Duration::from_secs(30);
 const PENDING_DIAL_CLEANUP_INTERVAL: Duration = Duration::from_secs(5);
 const DIALBACK_COOLDOWN: Duration = Duration::from_secs(30);
 const DIRECT_UPGRADE_COOLDOWN: Duration = Duration::from_secs(5 * 60);
-const AUTONAT_PRIVATE_COOLDOWN: Duration = Duration::from_secs(10 * 60);
 const DCUTR_PREFLIGHT_RETRY_DELAY: Duration = Duration::from_secs(3);
 const DCUTR_LOCAL_OBSERVED_FRESHNESS: Duration = Duration::from_secs(2 * 60);
 const DCUTR_REMOTE_CANDIDATE_FRESHNESS: Duration = Duration::from_secs(2 * 60);
@@ -428,6 +427,13 @@ pub struct PeerSnapshot {
     pub duration_ms: u128,
     pub libp2p: bool,
     pub dcutr_upgraded: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AutonatProbeOutcome {
+    Public,
+    Private,
+    Inconclusive,
 }
 
 struct SwarmDriver {
@@ -451,7 +457,6 @@ struct SwarmDriver {
     effective_role: crate::Role,
     auto_role: Option<AutoRoleState>,
     max_peers_per_relay: usize,
-    autonat_private_until: Option<Instant>,
     metrics: Option<Arc<Libp2pMetrics>>,
     listening: bool,
     shutdown: Listener,
